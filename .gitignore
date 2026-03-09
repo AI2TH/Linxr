@@ -1,5 +1,5 @@
 # Build outputs
-build/
+# APK/AAB too large for git — download from GitHub Releases
 *.apk
 *.aab
 

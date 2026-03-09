@@ -104,6 +104,10 @@ echo "--- Step 3: flutter pub get ---"
 flutter pub get
 
 echo ""
+echo "--- Step 3b: Generate launcher icons ---"
+dart run flutter_launcher_icons
+
+echo ""
 echo "--- Step 4: flutter build apk ('"${BUILD_TYPE}"') ---"
 flutter build apk --'"${BUILD_TYPE}"' 2>&1 || true
 

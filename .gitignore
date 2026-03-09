@@ -1,0 +1,36 @@
+# Build outputs
+# APK/AAB too large for git — download from GitHub Releases
+*.apk
+*.aab
+
+# Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+pubspec.lock
+
+# Android
+android/app/src/main/jniLibs/
+android/local.properties
+android/.gradle/
+android/app/debug.keystore
+*.jks
+
+# VM assets (large binary files — built locally via build_qcow2.sh)
+android/app/src/main/assets/vm/base.qcow2.gz
+android/app/src/main/assets/vm/initramfs-virt
+android/app/src/main/assets/vm/vmlinuz-virt
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Docker build cache
+docker/
+guest/

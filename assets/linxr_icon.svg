@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="55%" r="55%">
+      <stop offset="0%"   stop-color="#0C2418"/>
+      <stop offset="50%"  stop-color="#07150E"/>
+      <stop offset="100%" stop-color="#030907"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="80" fill="url(#bg)"/>
+
+  <!-- Alpine mountain range — main peak (256,75), two flanking secondary peaks -->
+  <polyline
+    points="50,305 128,222 168,165 210,188 256,75 302,188 344,165 384,222 462,305"
+    fill="none"
+    stroke="#00BEAA"
+    stroke-width="40"
+    stroke-linecap="square"
+    stroke-linejoin="miter"/>
+
+  <!-- Terminal > -->
+  <polyline
+    points="164,344 216,380 164,416"
+    fill="none"
+    stroke="#00FF6E"
+    stroke-width="30"
+    stroke-linecap="square"
+    stroke-linejoin="miter"/>
+
+  <!-- Terminal _ -->
+  <rect x="234" y="404" width="112" height="20" rx="2" fill="#00FF6E"/>
+</svg>

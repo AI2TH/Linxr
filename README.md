@@ -19,9 +19,13 @@ Linxr runs a full Alpine Linux environment inside a QEMU virtual machine on any 
 
 ## Screenshots
 
-| Home | Terminal | About |
-|------|----------|-------|
-| VM stopped / running states | Auto-connect SSH shell | Company info, license, open-source credits |
+| Home — stopped | Home — running | Terminal |
+|---|---|---|
+| ![Home stopped](https://ai2th.github.io/screenshots/linxr/01-home-stopped.png) | ![Home running](https://ai2th.github.io/screenshots/linxr/02-home-running.png) | ![Terminal](https://ai2th.github.io/screenshots/linxr/05-terminal-keyboard.png) |
+
+| About | License | Components |
+|---|---|---|
+| ![About](https://ai2th.github.io/screenshots/linxr/06-about.png) | ![License](https://ai2th.github.io/screenshots/linxr/07-about-license.png) | ![Components](https://ai2th.github.io/screenshots/linxr/08-about-components.png) |
 
 ---
 
@@ -228,7 +232,7 @@ SOFTWARE.
 
 ## About AI2TH
 
-**Applied Intelligence to Humanity**
+**Applied Intelligence To Tackle Hardships**
 
 AI2TH builds developer tools that bring powerful computing environments to constrained devices.
 

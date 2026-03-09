@@ -40,7 +40,7 @@ class _CompanyBranding extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          'www.ai2th.com',
+          'ai2th.github.io',
           style: TextStyle(
             fontSize: 12,
             color: Colors.white.withOpacity(0.35),

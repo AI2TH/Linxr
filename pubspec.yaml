@@ -23,5 +23,4 @@ flutter:
   uses-material-design: true
   assets:
     - assets/ai2th_logo.png
-    - assets/ai2th_logo_sm.png
     - assets/linxr_icon.png

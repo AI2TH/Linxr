@@ -6,6 +6,39 @@ import 'package:provider/provider.dart';
 import 'package:xterm/xterm.dart';
 import '../services/vm_platform.dart';
 
+// ─── Connection state ─────────────────────────────────────────────────────────
+
+enum _ConnState { idle, connecting, connected }
+
+// ─── Per-tab state ────────────────────────────────────────────────────────────
+
+class _Tab {
+  final String label;
+  final Terminal terminal;
+  final TerminalController controller;
+
+  SSHClient? client;
+  SSHSession? session;
+  _ConnState connState = _ConnState.idle;
+  Timer? retryTimer;
+  int retryCount = 0;
+
+  static const _maxRetries = 24; // ~2 minutes
+
+  _Tab(this.label)
+      : terminal = Terminal(maxLines: 5000),
+        controller = TerminalController();
+
+  void close() {
+    retryTimer?.cancel();
+    session?.stdin.close();
+    client?.close();
+    controller.dispose();
+  }
+}
+
+// ─── Screen widget ────────────────────────────────────────────────────────────
+
 class TerminalScreen extends StatefulWidget {
   const TerminalScreen({super.key});
 
@@ -14,139 +47,159 @@ class TerminalScreen extends StatefulWidget {
 }
 
 class _TerminalScreenState extends State<TerminalScreen> {
-  final _terminal = Terminal(maxLines: 5000);
-  final _terminalController = TerminalController();
+  final List<_Tab> _tabs = [];
+  int _activeIdx = 0;
+  int _nextId = 1;
 
-  SSHClient? _client;
-  SSHSession? _session;
+  static const _maxTabs = 5;
 
-  _ConnState _connState = _ConnState.idle;
-  String? _error;
-  Timer? _retryTimer;
-  int _retryCount = 0;
-  static const _maxRetries = 24; // 2 minutes total
+  _Tab get _active => _tabs[_activeIdx];
 
   @override
   void initState() {
     super.initState();
+    _tabs.add(_Tab('Shell ${_nextId++}'));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final status = context.read<VmState>().status;
-      if (status == 'running') _scheduleConnect(delaySeconds: 5);
+      if (status == 'running') _scheduleConnect(_active, delaySeconds: 5);
     });
-  }
-
-  void _scheduleConnect({int delaySeconds = 0}) {
-    _retryTimer?.cancel();
-    _retryTimer = Timer(Duration(seconds: delaySeconds), _connect);
   }
 
   @override
   void dispose() {
-    _retryTimer?.cancel();
-    _disconnect();
-    _terminalController.dispose();
+    for (final t in _tabs) t.close();
     super.dispose();
   }
 
-  Future<void> _connect() async {
-    if (_connState == _ConnState.connecting || _connState == _ConnState.connected) return;
+  // ── Tab management ──────────────────────────────────────────────────────────
 
+  void _newTab() {
+    if (_tabs.length >= _maxTabs) return;
+    final tab = _Tab('Shell ${_nextId++}');
+    _tabs.add(tab);
+    setState(() => _activeIdx = _tabs.length - 1);
+    // Connect immediately — this tab is now active
+    final status = context.read<VmState>().status;
+    if (status == 'running') _scheduleConnect(tab);
+  }
+
+  void _selectTab(int i) {
+    setState(() => _activeIdx = i);
+    final tab = _tabs[i];
+    // Auto-connect if tab is idle and VM is running
+    if (tab.connState == _ConnState.idle) {
+      final status = context.read<VmState>().status;
+      if (status == 'running') _scheduleConnect(tab);
+    }
+  }
+
+  void _closeTab(int i) {
+    if (_tabs.length == 1) return;
+    _tabs[i].close();
+    _tabs.removeAt(i);
     setState(() {
-      _connState = _ConnState.connecting;
-      _error = null;
+      if (_activeIdx >= _tabs.length) _activeIdx = _tabs.length - 1;
     });
-    _terminal.write('\r\nConnecting to Linxr...\r\n');
+  }
+
+  // ── SSH connection ──────────────────────────────────────────────────────────
+
+  void _scheduleConnect(_Tab tab, {int delaySeconds = 0}) {
+    tab.retryTimer?.cancel();
+    tab.retryTimer =
+        Timer(Duration(seconds: delaySeconds), () => _connect(tab));
+  }
+
+  Future<void> _connect(_Tab tab) async {
+    if (tab.connState == _ConnState.connecting ||
+        tab.connState == _ConnState.connected) return;
+
+    setState(() => tab.connState = _ConnState.connecting);
+    tab.terminal.write('\r\nConnecting to Linxr...\r\n');
 
     try {
       final socket = await SSHSocket.connect('127.0.0.1', 2222)
           .timeout(const Duration(seconds: 10));
 
-      _client = SSHClient(
+      tab.client = SSHClient(
         socket,
         username: 'root',
         onPasswordRequest: () => 'alpine',
       );
 
-      _session = await _client!.shell(
+      tab.session = await tab.client!.shell(
         pty: SSHPtyConfig(
           type: 'xterm-256color',
-          width: _terminal.viewWidth,
-          height: _terminal.viewHeight,
+          width: tab.terminal.viewWidth,
+          height: tab.terminal.viewHeight,
         ),
       );
 
-      // VM output → terminal display
-      _session!.stdout.listen(
-        (data) => _terminal.write(String.fromCharCodes(data)),
-        onDone: _onSessionDone,
+      tab.session!.stdout.listen(
+        (data) => tab.terminal.write(String.fromCharCodes(data)),
+        onDone: () => _onSessionDone(tab),
       );
-      _session!.stderr.listen(
-        (data) => _terminal.write(String.fromCharCodes(data)),
+      tab.session!.stderr.listen(
+        (data) => tab.terminal.write(String.fromCharCodes(data)),
       );
 
-      // Keyboard input → SSH session
-      _terminal.onOutput = (data) {
-        _session?.stdin.add(Uint8List.fromList(data.codeUnits));
+      tab.terminal.onOutput = (data) {
+        tab.session?.stdin.add(Uint8List.fromList(data.codeUnits));
+      };
+      tab.terminal.onResize = (w, h, pw, ph) {
+        tab.session?.resizeTerminal(w, h);
       };
 
-      // Terminal resize → SSH PTY resize
-      _terminal.onResize = (w, h, pw, ph) {
-        _session?.resizeTerminal(w, h);
-      };
-
-      _retryCount = 0;
-      if (mounted) setState(() => _connState = _ConnState.connected);
+      tab.retryCount = 0;
+      if (mounted) setState(() => tab.connState = _ConnState.connected);
     } on TimeoutException {
-      _retryOrError('Connection timed out (attempt ${_retryCount + 1}/$_maxRetries)');
+      _retryOrError(tab,
+          'Timed out (${tab.retryCount + 1}/${_Tab._maxRetries})');
     } catch (e) {
-      _retryOrError('Connection failed: $e');
+      _retryOrError(tab, 'Failed: $e');
     }
   }
 
-  void _retryOrError(String msg) {
+  void _retryOrError(_Tab tab, String msg) {
     if (!mounted) return;
-    _retryCount++;
-    if (_retryCount < _maxRetries) {
-      setState(() { _connState = _ConnState.idle; });
-      _terminal.write('\r\n[$msg — retrying in 5s...]\r\n');
-      _scheduleConnect(delaySeconds: 5);
+    tab.retryCount++;
+    final isActive = _tabs.indexOf(tab) == _activeIdx;
+    if (tab.retryCount < _Tab._maxRetries) {
+      setState(() => tab.connState = _ConnState.idle);
+      if (isActive) {
+        // Only active tab retries automatically — background tabs wait until selected
+        tab.terminal.write('\r\n[$msg — retrying in 5s...]\r\n');
+        _scheduleConnect(tab, delaySeconds: 5);
+      } else {
+        tab.terminal.write('\r\n[$msg — will retry when tab is selected]\r\n');
+      }
     } else {
-      _retryCount = 0;
-      _setError('$msg — gave up after $_maxRetries attempts.');
+      tab.retryCount = 0;
+      setState(() => tab.connState = _ConnState.idle);
+      tab.terminal.write('\r\nERROR: $msg — gave up.\r\n');
     }
   }
 
-  void _onSessionDone() {
+  void _onSessionDone(_Tab tab) {
     if (mounted) {
-      _terminal.write('\r\n\r\n[Session closed]\r\n');
-      setState(() => _connState = _ConnState.idle);
+      tab.terminal.write('\r\n\r\n[Session closed]\r\n');
+      setState(() => tab.connState = _ConnState.idle);
     }
-  }
-
-  void _setError(String msg) {
-    if (mounted) {
-      setState(() {
-        _connState = _ConnState.idle;
-        _error = msg;
-      });
-      _terminal.write('\r\nERROR: $msg\r\n');
-    }
-  }
-
-  void _disconnect() {
-    _session?.stdin.close();
-    _client?.close();
-    _session = null;
-    _client = null;
   }
 
   void _reconnect() {
-    _retryTimer?.cancel();
-    _retryCount = 0;
-    _disconnect();
-    _terminal.write('\r\n--- Reconnecting ---\r\n');
-    _connect();
+    final tab = _active;
+    tab.retryTimer?.cancel();
+    tab.retryCount = 0;
+    tab.session?.stdin.close();
+    tab.client?.close();
+    tab.session = null;
+    tab.client = null;
+    tab.terminal.write('\r\n--- Reconnecting ---\r\n');
+    _connect(tab);
   }
+
+  // ── Build ───────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -156,7 +209,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
       appBar: AppBar(
         title: const Text('Terminal'),
         actions: [
-          _StatusChip(_connState),
+          _StatusChip(_active.connState),
           const SizedBox(width: 8),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -168,53 +221,44 @@ class _TerminalScreenState extends State<TerminalScreen> {
       ),
       body: Column(
         children: [
+          _TabBar(
+            tabs: _tabs,
+            activeIndex: _activeIdx,
+            canAdd: _tabs.length < _maxTabs,
+            onSelect: _selectTab,
+            onClose: _tabs.length > 1 ? _closeTab : null,
+            onAdd: _newTab,
+          ),
           if (vmStatus != 'running')
             _Banner(
               icon: Icons.warning_amber,
               color: const Color(0xFFFFC107),
               message: 'VM is not running. Start it from the Home tab.',
             )
-          else if (_connState == _ConnState.idle)
+          else if (_active.connState == _ConnState.idle)
             _Banner(
               icon: Icons.info_outline,
               color: const Color(0xFF0D6EFD),
               message: 'Not connected.',
               action: TextButton(
-                onPressed: _connect,
-                child: const Text('Connect', style: TextStyle(color: Colors.white)),
+                onPressed: () => _connect(_active),
+                child: const Text('Connect',
+                    style: TextStyle(color: Colors.white)),
               ),
             ),
           Expanded(
-            child: TerminalView(
-              _terminal,
-              controller: _terminalController,
-              autofocus: true,
-              backgroundOpacity: 1,
-              theme: const TerminalTheme(
-                cursor: Color(0xFF20C997),
-                selection: Color(0x440D6EFD),
-                foreground: Color(0xFFE0E0E0),
-                background: Color(0xFF0E1117),
-                black: Color(0xFF1A1D23),
-                white: Color(0xFFE0E0E0),
-                red: Color(0xFFDC3545),
-                green: Color(0xFF20C997),
-                yellow: Color(0xFFFFC107),
-                blue: Color(0xFF0D6EFD),
-                magenta: Color(0xFF9B59B6),
-                cyan: Color(0xFF17A2B8),
-                brightBlack: Color(0xFF6C757D),
-                brightWhite: Color(0xFFFFFFFF),
-                brightRed: Color(0xFFFF6B6B),
-                brightGreen: Color(0xFF5EF0B0),
-                brightYellow: Color(0xFFFFD93D),
-                brightBlue: Color(0xFF74B9FF),
-                brightMagenta: Color(0xFFBB8FCE),
-                brightCyan: Color(0xFF48C9B0),
-                searchHitBackground: Color(0x44FFFFFF),
-                searchHitBackgroundCurrent: Color(0x660D6EFD),
-                searchHitForeground: Color(0xFF000000),
-              ),
+            child: IndexedStack(
+              index: _activeIdx,
+              children: [
+                for (final tab in _tabs)
+                  TerminalView(
+                    tab.terminal,
+                    controller: tab.controller,
+                    autofocus: true,
+                    backgroundOpacity: 1,
+                    theme: _kTermTheme,
+                  ),
+              ],
             ),
           ),
         ],
@@ -223,7 +267,120 @@ class _TerminalScreenState extends State<TerminalScreen> {
   }
 }
 
-enum _ConnState { idle, connecting, connected }
+// ─── Tab bar ──────────────────────────────────────────────────────────────────
+
+class _TabBar extends StatelessWidget {
+  const _TabBar({
+    required this.tabs,
+    required this.activeIndex,
+    required this.canAdd,
+    required this.onSelect,
+    required this.onClose,
+    required this.onAdd,
+  });
+
+  final List<_Tab> tabs;
+  final int activeIndex;
+  final bool canAdd;
+  final ValueChanged<int> onSelect;
+  final ValueChanged<int>? onClose;
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 36,
+      color: const Color(0xFF111827),
+      child: Row(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: tabs.length,
+              itemBuilder: (_, i) {
+                final active = i == activeIndex;
+                final tab = tabs[i];
+                final dotColor = switch (tab.connState) {
+                  _ConnState.connected  => const Color(0xFF20C997),
+                  _ConnState.connecting => const Color(0xFFFFC107),
+                  _ConnState.idle       => Colors.white24,
+                };
+                return GestureDetector(
+                  onTap: () => onSelect(i),
+                  child: Container(
+                    constraints:
+                        const BoxConstraints(minWidth: 80, maxWidth: 130),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      color: active
+                          ? const Color(0xFF0E1117)
+                          : Colors.transparent,
+                      border: Border(
+                        bottom: BorderSide(
+                          color: active
+                              ? const Color(0xFF0D6EFD)
+                              : Colors.transparent,
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
+                          margin: const EdgeInsets.only(right: 6),
+                          decoration: BoxDecoration(
+                              shape: BoxShape.circle, color: dotColor),
+                        ),
+                        Flexible(
+                          child: Text(
+                            tab.label,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: active ? Colors.white : Colors.white54,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (onClose != null)
+                          GestureDetector(
+                            onTap: () => onClose!(i),
+                            child: Padding(
+                              padding: const EdgeInsets.only(left: 6),
+                              child: Icon(
+                                Icons.close,
+                                size: 13,
+                                color: active
+                                    ? Colors.white60
+                                    : Colors.white24,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          if (canAdd)
+            InkWell(
+              onTap: onAdd,
+              child: const SizedBox(
+                width: 36,
+                height: 36,
+                child: Icon(Icons.add, size: 16, color: Colors.white54),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Shared widgets ───────────────────────────────────────────────────────────
 
 class _StatusChip extends StatelessWidget {
   const _StatusChip(this.state);
@@ -247,7 +404,11 @@ class _StatusChip extends StatelessWidget {
 }
 
 class _Banner extends StatelessWidget {
-  const _Banner({required this.icon, required this.color, required this.message, this.action});
+  const _Banner(
+      {required this.icon,
+      required this.color,
+      required this.message,
+      this.action});
   final IconData icon;
   final Color color;
   final String message;
@@ -262,10 +423,40 @@ class _Banner extends StatelessWidget {
         children: [
           Icon(icon, color: color, size: 16),
           const SizedBox(width: 8),
-          Expanded(child: Text(message, style: TextStyle(color: color, fontSize: 13))),
+          Expanded(
+              child: Text(message,
+                  style: TextStyle(color: color, fontSize: 13))),
           if (action != null) action!,
         ],
       ),
     );
   }
 }
+
+// ─── Terminal theme (shared across all tabs) ──────────────────────────────────
+
+const _kTermTheme = TerminalTheme(
+  cursor: Color(0xFF20C997),
+  selection: Color(0x440D6EFD),
+  foreground: Color(0xFFE0E0E0),
+  background: Color(0xFF0E1117),
+  black: Color(0xFF1A1D23),
+  white: Color(0xFFE0E0E0),
+  red: Color(0xFFDC3545),
+  green: Color(0xFF20C997),
+  yellow: Color(0xFFFFC107),
+  blue: Color(0xFF0D6EFD),
+  magenta: Color(0xFF9B59B6),
+  cyan: Color(0xFF17A2B8),
+  brightBlack: Color(0xFF6C757D),
+  brightWhite: Color(0xFFFFFFFF),
+  brightRed: Color(0xFFFF6B6B),
+  brightGreen: Color(0xFF5EF0B0),
+  brightYellow: Color(0xFFFFD93D),
+  brightBlue: Color(0xFF74B9FF),
+  brightMagenta: Color(0xFFBB8FCE),
+  brightCyan: Color(0xFF48C9B0),
+  searchHitBackground: Color(0x44FFFFFF),
+  searchHitBackgroundCurrent: Color(0x660D6EFD),
+  searchHitForeground: Color(0xFF000000),
+);

@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Linxr Feature Graphic</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 1024px;
+    height: 500px;
+    background: linear-gradient(135deg, #0E1117, #1A1D23);
+    font-family: -apple-system, Arial, sans-serif;
+    color: #fff;
+    overflow: hidden;
+    position: relative;
+  }
+  body::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+                       linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  .accent-top, .accent-bottom {
+    position: absolute;
+    left: 0; right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #0D6EFD, #20C997);
+  }
+  .accent-top { top: 0; }
+  .accent-bottom { bottom: 0; }
+
+  .terminal {
+    position: absolute;
+    left: 60px; top: 60px;
+    width: 420px; height: 320px;
+    background: #0a0d12;
+    border-radius: 10px;
+    border: 1.5px solid #2a2d33;
+    overflow: hidden;
+  }
+  .terminal-bar {
+    height: 36px;
+    background: #1A1D23;
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    gap: 8px;
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .dot-red { background: #DC3545; }
+  .dot-yellow { background: #FFC107; }
+  .dot-green { background: #20C997; }
+  .terminal-body {
+    padding: 20px;
+    font-family: 'Menlo', 'Consolas', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .t-green { color: #20C997; }
+  .t-gray { color: #6C757D; }
+  .t-white { color: #E0E0E0; }
+  .t-blue { color: #0D6EFD; }
+  .cursor {
+    display: inline-block;
+    width: 8px; height: 14px;
+    background: #20C997;
+    vertical-align: middle;
+    animation: blink 1s step-end infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .right { position: absolute; left: 540px; top: 70px; }
+  .icon-box {
+    display: inline-block;
+    width: 120px; height: 120px;
+    background: rgba(13,110,253,0.12);
+    border-radius: 24px;
+    text-align: center;
+    line-height: 120px;
+    font-size: 60px;
+    font-weight: bold;
+    color: #0D6EFD;
+    vertical-align: top;
+  }
+  .title-block {
+    display: inline-block;
+    vertical-align: top;
+    margin-left: 20px;
+    margin-top: 10px;
+  }
+  .app-name { font-size: 52px; font-weight: bold; }
+  .byline { font-size: 18px; color: #6C757D; letter-spacing: 3px; margin-top: 4px; }
+
+  .tagline { margin-top: 30px; }
+  .tagline h2 { font-size: 26px; font-weight: 600; line-height: 1.3; }
+  .tagline .sub { font-size: 16px; color: #6C757D; margin-top: 8px; }
+
+  .pills { margin-top: 24px; display: flex; gap: 10px; }
+  .pill {
+    padding: 8px 20px;
+    border-radius: 16px;
+    font-size: 13px;
+  }
+  .pill-blue { background: rgba(13,110,253,0.15); color: #0D6EFD; }
+  .pill-green { background: rgba(32,201,151,0.15); color: #20C997; }
+  .pill-yellow { background: rgba(255,193,7,0.15); color: #FFC107; }
+
+  .waves {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 80px;
+    overflow: hidden;
+  }
+  .wave1 {
+    position: absolute;
+    bottom: 0; left: -50px; right: -50px;
+    height: 80px;
+    background: #0D6EFD;
+    opacity: 0.04;
+    border-radius: 50% 50% 0 0;
+  }
+  .wave2 {
+    position: absolute;
+    bottom: 0; left: -30px; right: -30px;
+    height: 60px;
+    background: #20C997;
+    opacity: 0.03;
+    border-radius: 50% 50% 0 0;
+  }
+</style>
+</head>
+<body>
+  <div class="accent-top"></div>
+  <div class="accent-bottom"></div>
+
+  <div class="terminal">
+    <div class="terminal-bar">
+      <span class="dot dot-red"></span>
+      <span class="dot dot-yellow"></span>
+      <span class="dot dot-green"></span>
+    </div>
+    <div class="terminal-body">
+      <div class="t-green">$ ssh root@localhost -p 2222</div>
+      <div class="t-gray">root@alpine's password:</div>
+      <br>
+      <div class="t-white">Welcome to Alpine Linux 3.19</div>
+      <br>
+      <div class="t-white">alpine:~# apk add curl git python3</div>
+      <div class="t-gray">(1/42) Installing ca-certificates...</div>
+      <div class="t-gray">(2/42) Installing nghttp2-libs...</div>
+      <div class="t-gray">...</div>
+      <br>
+      <div class="t-green">OK: 148 MiB in 56 packages</div>
+      <br>
+      <div><span class="t-blue">alpine:~#</span> <span class="cursor"></span></div>
+    </div>
+  </div>
+
+  <div class="right">
+    <div>
+      <div class="icon-box">A</div>
+      <div class="title-block">
+        <div class="app-name">Linxr</div>
+        <div class="byline">BY AI2TH</div>
+      </div>
+    </div>
+    <div class="tagline">
+      <h2>Run a full Linux VM<br>on your Android phone.</h2>
+      <div class="sub">No root required.</div>
+    </div>
+    <div class="pills">
+      <span class="pill pill-blue">Alpine Linux</span>
+      <span class="pill pill-green">SSH Terminal</span>
+      <span class="pill pill-yellow">Persistent</span>
+    </div>
+  </div>
+
+  <div class="waves">
+    <div class="wave1"></div>
+    <div class="wave2"></div>
+  </div>
+</body>
+</html>

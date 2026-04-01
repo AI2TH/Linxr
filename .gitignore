@@ -15,6 +15,7 @@ android/app/src/main/jniLibs/
 android/local.properties
 android/.gradle/
 android/app/debug.keystore
+android/key.properties
 *.jks
 
 # VM assets (large binary files — built locally via build_qcow2.sh)

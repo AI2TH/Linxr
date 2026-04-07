@@ -35,3 +35,5 @@ android/app/src/main/assets/vm/vmlinuz-virt
 # Docker build cache
 docker/
 guest/
+
+# Build artifacts

@@ -1,8 +1,10 @@
 package com.ai2th.linxr
 
+import android.app.ActivityManager
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
+import android.os.StatFs
 import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
@@ -29,7 +31,7 @@ class VmManager(private val context: Context) {
         get() = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
 
     // Bump when base.qcow2.gz changes (forces re-extraction on next launch)
-    private val ASSETS_VERSION = "v4"
+    private val ASSETS_VERSION = "v5"
 
     // -------------------------------------------------------------------------
     // Public API
@@ -50,8 +52,8 @@ class VmManager(private val context: Context) {
         }
 
         val qemuBin = resolveQemuBinary()
-        val vcpu  = getFlutterInt("flutter.vcpu_count", 2)
-        val ramMb = getFlutterInt("flutter.ram_mb", 1024)
+        val vcpu  = getFlutterInt("flutter.vcpu_count", dynamicVcpu())
+        val ramMb = getFlutterInt("flutter.ram_mb", dynamicRamMb())
 
         val baseImage = File(vmDir, "base.qcow2")
         val userImage = File(vmDir, "user.qcow2")
@@ -237,10 +239,13 @@ class VmManager(private val context: Context) {
         if (!qemuImg.exists()) throw IllegalStateException(
             "libqemu_img.so not found in $nativeLibDir"
         )
+        val prefDiskGb = getFlutterInt("flutter.disk_gb", 0).toLong()
+        val sizeGb = if (prefDiskGb > 0) prefDiskGb else availableOverlaySizeGb()
+        Log.d(TAG, "Creating user.qcow2 with ${sizeGb}G virtual size (pref=${prefDiskGb}G)")
         val proc = ProcessBuilder(
             qemuImg.absolutePath, "create",
             "-f", "qcow2", "-b", baseImagePath, "-F", "qcow2",
-            userImagePath, "8G"
+            userImagePath, "${sizeGb}G"
         ).apply {
             environment()["LD_LIBRARY_PATH"] = nativeLibDir.absolutePath
         }.start()
@@ -250,6 +255,50 @@ class VmManager(private val context: Context) {
             throw RuntimeException("qemu-img create failed (exit $exitCode): $err")
         }
         Log.d(TAG, "Created user.qcow2 at $userImagePath")
+    }
+
+    // Returns a virtual disk size (GB) sized to the phone's available storage,
+    // minus 2 GB headroom. QCOW2 is sparse so this costs nothing until written.
+    private fun availableOverlaySizeGb(): Long {
+        return try {
+            val stat = StatFs(filesDir.absolutePath)
+            val availableGb = (stat.availableBlocksLong * stat.blockSizeLong) / (1024L * 1024 * 1024)
+            (availableGb - 2L).coerceAtLeast(8L)
+        } catch (_: Exception) {
+            8L
+        }
+    }
+
+    // Half the device's CPU cores, clamped to [1, cores].
+    private fun dynamicVcpu(): Int =
+        (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
+
+    // 25% of device total RAM in MB, clamped to [512, totalRam].
+    private fun dynamicRamMb(): Int {
+        return try {
+            val info = ActivityManager.MemoryInfo()
+            (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager)
+                .getMemoryInfo(info)
+            val totalMb = (info.totalMem / (1024L * 1024)).toInt()
+            (totalMb / 4).coerceAtLeast(512)
+        } catch (_: Exception) {
+            1024
+        }
+    }
+
+    fun getDeviceInfo(): Map<String, Any> {
+        val cores = Runtime.getRuntime().availableProcessors()
+        val ramInfo = ActivityManager.MemoryInfo()
+        (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager)
+            .getMemoryInfo(ramInfo)
+        val totalRamMb = (ramInfo.totalMem / (1024L * 1024)).toInt()
+        val stat = StatFs(filesDir.absolutePath)
+        val freeStorageGb = ((stat.availableBlocksLong * stat.blockSizeLong) / (1024L * 1024 * 1024)).toInt()
+        return mapOf(
+            "cores"        to cores,
+            "totalRamMb"   to totalRamMb,
+            "freeStorageGb" to freeStorageGb
+        )
     }
 
     // -------------------------------------------------------------------------

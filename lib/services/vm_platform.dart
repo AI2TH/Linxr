@@ -23,6 +23,20 @@ class VmPlatform {
     }
   }
 
+  static Future<DeviceInfo> getDeviceInfo() async {
+    try {
+      final Map<Object?, Object?> raw =
+          await _channel.invokeMethod('getDeviceInfo');
+      return DeviceInfo(
+        cores:         (raw['cores']         as int?) ?? 4,
+        totalRamMb:    (raw['totalRamMb']    as int?) ?? 4096,
+        freeStorageGb: (raw['freeStorageGb'] as int?) ?? 32,
+      );
+    } on PlatformException {
+      return const DeviceInfo(cores: 4, totalRamMb: 4096, freeStorageGb: 32);
+    }
+  }
+
   static Future<bool> pingSsh() async {
     SSHClient? client;
     try {
@@ -44,6 +58,17 @@ class VmPlatform {
       client?.close();
     }
   }
+}
+
+class DeviceInfo {
+  final int cores;
+  final int totalRamMb;
+  final int freeStorageGb;
+  const DeviceInfo({
+    required this.cores,
+    required this.totalRamMb,
+    required this.freeStorageGb,
+  });
 }
 
 class VmState extends ChangeNotifier {

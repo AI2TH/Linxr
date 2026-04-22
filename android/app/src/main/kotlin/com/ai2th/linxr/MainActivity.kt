@@ -50,6 +50,14 @@ class MainActivity : FlutterActivity() {
                         }
                     }
 
+                    "getDeviceInfo" -> {
+                        try {
+                            result.success(vmManager.getDeviceInfo())
+                        } catch (e: Exception) {
+                            result.success(mapOf("cores" to 4, "totalRamMb" to 4096, "freeStorageGb" to 32))
+                        }
+                    }
+
                     else -> result.notImplemented()
                 }
             }

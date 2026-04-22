@@ -1,7 +1,7 @@
 name: alpine_vm
 description: Linxr — bare Alpine Linux on Android, no root required
 publish_to: 'none'
-version: 1.0.3+5
+version: 1.1.0+6
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -13,6 +13,7 @@ dependencies:
   dartssh2: ^2.8.2
   xterm: ^4.0.0
   cupertino_icons: ^1.0.2
+  shared_preferences: ^2.2.0
 
 dev_dependencies:
   flutter_test:

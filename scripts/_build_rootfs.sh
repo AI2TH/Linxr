@@ -22,7 +22,8 @@ apk --root "${ROOTFS}" --initdb --no-cache add \
     openssh \
     sudo \
     bash \
-    shadow
+    shadow \
+    e2fsprogs
 
 # ── Directory skeleton ────────────────────────────────────────────────────────
 mkdir -p "${ROOTFS}/proc" \

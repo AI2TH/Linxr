@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'screens/terminal_screen.dart';
 import 'screens/about_screen.dart';
+import 'screens/settings_screen.dart';
 import 'services/vm_platform.dart';
 
 void main() {
@@ -66,6 +67,7 @@ class _MainScreenState extends State<MainScreen> {
   static const _screens = <Widget>[
     _HomeScreen(),
     TerminalScreen(),
+    SettingsScreen(),
     AboutScreen(),
   ];
 
@@ -90,6 +92,7 @@ class _MainScreenState extends State<MainScreen> {
         destinations: const [
           NavigationDestination(icon: Icon(Icons.home), label: 'Home'),
           NavigationDestination(icon: Icon(Icons.terminal), label: 'Terminal'),
+          NavigationDestination(icon: Icon(Icons.settings), label: 'Settings'),
           NavigationDestination(icon: Icon(Icons.info_outline), label: 'About'),
         ],
       ),

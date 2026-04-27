@@ -81,6 +81,9 @@ cp    /workspace/android/gradle.properties              android/gradle.propertie
 rm -rf android/app/src/main/kotlin/
 cp -r /workspace/android/app/src/main/kotlin            android/app/src/main/
 
+[ -d /workspace/android/app/src/androidTest ] && \
+    cp -r /workspace/android/app/src/androidTest        android/app/src/ || true
+
 cp -r /workspace/android/app/src/main/res/.             android/app/src/main/res/
 
 mkdir -p android/app/src/main/assets
@@ -122,6 +125,19 @@ else
     echo "ERROR: APK not found at $APK_SRC"
     ls -la build/app/outputs/flutter-apk/ 2>/dev/null || true
     exit 1
+fi
+
+echo ""
+echo "--- Step 6: Build androidTest APK ---"
+cd android
+./gradlew app:assembleDebugAndroidTest 2>&1 || true
+cd ..
+TEST_APK="build/app/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+if [ -f "$TEST_APK" ]; then
+    cp "$TEST_APK" /out/linxr-androidTest.apk
+    echo "Test APK size: $(du -sh /out/linxr-androidTest.apk | cut -f1)"
+else
+    echo "WARNING: Test APK not found — instrumentation tests will not be available"
 fi
 '
 

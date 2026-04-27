@@ -5,7 +5,7 @@
 set -e
 
 ROOTFS=/tmp/rootfs
-IMAGE_SIZE=1500M
+IMAGE_SIZE=2G
 
 echo "--- Installing build tools ---"
 apk add --no-cache e2fsprogs qemu-img
@@ -23,7 +23,8 @@ apk --root "${ROOTFS}" --initdb --no-cache add \
     sudo \
     bash \
     shadow \
-    e2fsprogs
+    e2fsprogs \
+    e2fsprogs-extra
 
 # ── Directory skeleton ────────────────────────────────────────────────────────
 mkdir -p "${ROOTFS}/proc" \
@@ -77,6 +78,30 @@ echo "linxr" > "${ROOTFS}/etc/hostname"
 
 printf '/dev/vda\t/\text4\trw,relatime\t0 1\ntmpfs\t/tmp\ttmpfs\tdefaults\t0 0\n' \
     > "${ROOTFS}/etc/fstab"
+
+# ── diskexpand OpenRC service — resize2fs runs before sshd ───────────────────
+# This runs in the boot runlevel (completes before default/sshd starts).
+# It expands the ext4 filesystem to fill whatever virtual disk size was set
+# when user.qcow2 was created (e.g. 8 GB, 50 GB).
+cat > "${ROOTFS}/etc/init.d/diskexpand" << 'EOF'
+#!/sbin/openrc-run
+description="Expand filesystem to fill virtual disk"
+depend() {
+    after modules bootmisc
+    use dev
+}
+start() {
+    [ -f /etc/.disk_expanded ] && return 0
+    ebegin "Expanding filesystem to disk size"
+    /usr/sbin/resize2fs /dev/vda >/tmp/resize.log 2>&1
+    local ret=$?
+    /bin/df -h / >> /tmp/resize.log 2>&1
+    [ $ret -eq 0 ] && /bin/touch /etc/.disk_expanded
+    eend 0
+}
+EOF
+chmod +x "${ROOTFS}/etc/init.d/diskexpand"
+ln -sf /etc/init.d/diskexpand "${ROOTFS}/etc/runlevels/boot/diskexpand"
 
 # ── inittab — ttyAMA0 console ─────────────────────────────────────────────────
 cat > "${ROOTFS}/etc/inittab" << 'EOF'

@@ -31,7 +31,7 @@ class VmManager(private val context: Context) {
         get() = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
 
     // Bump when base.qcow2.gz changes (forces re-extraction on next launch)
-    private val ASSETS_VERSION = "v5"
+    private val ASSETS_VERSION = "v15"
 
     // -------------------------------------------------------------------------
     // Public API
@@ -44,6 +44,8 @@ class VmManager(private val context: Context) {
             Log.d(TAG, "Stopping existing VM before restart")
             stopVm()
         }
+        // Kill any orphaned QEMU from a previous process (e.g. after app restart)
+        killOrphanQemu()
 
         val freshExtraction = !assetsReady()
         if (freshExtraction) {
@@ -82,6 +84,15 @@ class VmManager(private val context: Context) {
             redirectErrorStream(true)
         }.start()
 
+        // Persist PID so we can kill this QEMU if the app restarts before stopVm()
+        // Use reflection: Process.pid() is Java 9+ but source compat is Java 8
+        try {
+            val pid = (vmProcess!!.javaClass.getMethod("pid").invoke(vmProcess!!) as Long).toInt()
+            if (pid > 0) File(filesDir, "vm.pid").writeText(pid.toString())
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not save vm.pid: ${e.message}")
+        }
+
         isRunning = true
 
         // Drain QEMU stdout/stderr on a daemon thread to prevent pipe buffer deadlock
@@ -111,7 +122,23 @@ class VmManager(private val context: Context) {
         }
         vmProcess = null
         isRunning = false
+        File(filesDir, "vm.pid").delete()
         Log.d(TAG, "VM stopped")
+    }
+
+    private fun killOrphanQemu() {
+        val pidFile = File(filesDir, "vm.pid")
+        if (!pidFile.exists()) return
+        val pid = pidFile.readText().trim().toIntOrNull()
+        pidFile.delete()
+        if (pid == null) return
+        try {
+            android.os.Process.killProcess(pid)
+            Log.d(TAG, "Killed orphan QEMU PID $pid")
+            Thread.sleep(500) // brief pause so the port is released
+        } catch (e: Exception) {
+            Log.w(TAG, "killOrphan: ${e.message}")
+        }
     }
 
     fun getStatus(): String {
@@ -191,16 +218,16 @@ class VmManager(private val context: Context) {
         vmDir.mkdirs()
         bootstrapDir.mkdirs()
 
-        // base.qcow2.gz — aapt2 may pre-decompress .gz and drop the extension
+        // Always re-extract base.qcow2 — this function is only called when
+        // ASSETS_VERSION changed, so the old image must be replaced.
         val baseQcow2 = File(vmDir, "base.qcow2")
-        if (!baseQcow2.exists()) {
-            try {
-                extractAsset("vm/base.qcow2", baseQcow2)
-                Log.d(TAG, "Extracted base.qcow2 (aapt2 pre-decompressed)")
-            } catch (_: Exception) {
-                extractAndDecompress("vm/base.qcow2.gz", baseQcow2)
-                Log.d(TAG, "Extracted + decompressed base.qcow2.gz")
-            }
+        baseQcow2.delete()
+        try {
+            extractAsset("vm/base.qcow2", baseQcow2)
+            Log.d(TAG, "Extracted base.qcow2 (aapt2 pre-decompressed)")
+        } catch (_: Exception) {
+            extractAndDecompress("vm/base.qcow2.gz", baseQcow2)
+            Log.d(TAG, "Extracted + decompressed base.qcow2.gz")
         }
 
         listOf("vmlinuz-virt", "initramfs-virt").forEach { name ->
@@ -284,6 +311,12 @@ class VmManager(private val context: Context) {
         } catch (_: Exception) {
             1024
         }
+    }
+
+    fun resetStorage() {
+        val userImage = File(vmDir, "user.qcow2")
+        userImage.delete()
+        Log.d(TAG, "user.qcow2 deleted — will be recreated with current disk_gb on next start")
     }
 
     fun getDeviceInfo(): Map<String, Any> {

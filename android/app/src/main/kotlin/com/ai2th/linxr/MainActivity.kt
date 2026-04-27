@@ -58,6 +58,17 @@ class MainActivity : FlutterActivity() {
                         }
                     }
 
+                    "resetStorage" -> executor.execute {
+                        try {
+                            vmManager.stopVm()
+                            stopVmService()
+                            vmManager.resetStorage()
+                            runOnUiThread { result.success(null) }
+                        } catch (e: Exception) {
+                            runOnUiThread { result.error("RESET_ERROR", e.message, null) }
+                        }
+                    }
+
                     else -> result.notImplemented()
                 }
             }

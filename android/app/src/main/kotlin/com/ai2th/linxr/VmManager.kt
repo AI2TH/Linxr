@@ -1,8 +1,10 @@
 package com.ai2th.linxr
 
+import android.app.ActivityManager
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
+import android.os.StatFs
 import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
@@ -29,7 +31,7 @@ class VmManager(private val context: Context) {
         get() = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
 
     // Bump when base.qcow2.gz changes (forces re-extraction on next launch)
-    private val ASSETS_VERSION = "v4"
+    private val ASSETS_VERSION = "v15"
 
     // -------------------------------------------------------------------------
     // Public API
@@ -42,6 +44,8 @@ class VmManager(private val context: Context) {
             Log.d(TAG, "Stopping existing VM before restart")
             stopVm()
         }
+        // Kill any orphaned QEMU from a previous process (e.g. after app restart)
+        killOrphanQemu()
 
         val freshExtraction = !assetsReady()
         if (freshExtraction) {
@@ -50,8 +54,8 @@ class VmManager(private val context: Context) {
         }
 
         val qemuBin = resolveQemuBinary()
-        val vcpu  = getFlutterInt("flutter.vcpu_count", 2)
-        val ramMb = getFlutterInt("flutter.ram_mb", 1024)
+        val vcpu  = getFlutterInt("flutter.vcpu_count", dynamicVcpu())
+        val ramMb = getFlutterInt("flutter.ram_mb", dynamicRamMb())
 
         val baseImage = File(vmDir, "base.qcow2")
         val userImage = File(vmDir, "user.qcow2")
@@ -79,6 +83,15 @@ class VmManager(private val context: Context) {
             environment()["LD_LIBRARY_PATH"] = nativeLibDir.absolutePath
             redirectErrorStream(true)
         }.start()
+
+        // Persist PID so we can kill this QEMU if the app restarts before stopVm()
+        // Use reflection: Process.pid() is Java 9+ but source compat is Java 8
+        try {
+            val pid = (vmProcess!!.javaClass.getMethod("pid").invoke(vmProcess!!) as Long).toInt()
+            if (pid > 0) File(filesDir, "vm.pid").writeText(pid.toString())
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not save vm.pid: ${e.message}")
+        }
 
         isRunning = true
 
@@ -109,7 +122,23 @@ class VmManager(private val context: Context) {
         }
         vmProcess = null
         isRunning = false
+        File(filesDir, "vm.pid").delete()
         Log.d(TAG, "VM stopped")
+    }
+
+    private fun killOrphanQemu() {
+        val pidFile = File(filesDir, "vm.pid")
+        if (!pidFile.exists()) return
+        val pid = pidFile.readText().trim().toIntOrNull()
+        pidFile.delete()
+        if (pid == null) return
+        try {
+            android.os.Process.killProcess(pid)
+            Log.d(TAG, "Killed orphan QEMU PID $pid")
+            Thread.sleep(500) // brief pause so the port is released
+        } catch (e: Exception) {
+            Log.w(TAG, "killOrphan: ${e.message}")
+        }
     }
 
     fun getStatus(): String {
@@ -189,16 +218,16 @@ class VmManager(private val context: Context) {
         vmDir.mkdirs()
         bootstrapDir.mkdirs()
 
-        // base.qcow2.gz — aapt2 may pre-decompress .gz and drop the extension
+        // Always re-extract base.qcow2 — this function is only called when
+        // ASSETS_VERSION changed, so the old image must be replaced.
         val baseQcow2 = File(vmDir, "base.qcow2")
-        if (!baseQcow2.exists()) {
-            try {
-                extractAsset("vm/base.qcow2", baseQcow2)
-                Log.d(TAG, "Extracted base.qcow2 (aapt2 pre-decompressed)")
-            } catch (_: Exception) {
-                extractAndDecompress("vm/base.qcow2.gz", baseQcow2)
-                Log.d(TAG, "Extracted + decompressed base.qcow2.gz")
-            }
+        baseQcow2.delete()
+        try {
+            extractAsset("vm/base.qcow2", baseQcow2)
+            Log.d(TAG, "Extracted base.qcow2 (aapt2 pre-decompressed)")
+        } catch (_: Exception) {
+            extractAndDecompress("vm/base.qcow2.gz", baseQcow2)
+            Log.d(TAG, "Extracted + decompressed base.qcow2.gz")
         }
 
         listOf("vmlinuz-virt", "initramfs-virt").forEach { name ->
@@ -237,10 +266,13 @@ class VmManager(private val context: Context) {
         if (!qemuImg.exists()) throw IllegalStateException(
             "libqemu_img.so not found in $nativeLibDir"
         )
+        val prefDiskGb = getFlutterInt("flutter.disk_gb", 0).toLong()
+        val sizeGb = if (prefDiskGb > 0) prefDiskGb else availableOverlaySizeGb()
+        Log.d(TAG, "Creating user.qcow2 with ${sizeGb}G virtual size (pref=${prefDiskGb}G)")
         val proc = ProcessBuilder(
             qemuImg.absolutePath, "create",
             "-f", "qcow2", "-b", baseImagePath, "-F", "qcow2",
-            userImagePath, "8G"
+            userImagePath, "${sizeGb}G"
         ).apply {
             environment()["LD_LIBRARY_PATH"] = nativeLibDir.absolutePath
         }.start()
@@ -250,6 +282,56 @@ class VmManager(private val context: Context) {
             throw RuntimeException("qemu-img create failed (exit $exitCode): $err")
         }
         Log.d(TAG, "Created user.qcow2 at $userImagePath")
+    }
+
+    // Returns a virtual disk size (GB) sized to the phone's available storage,
+    // minus 2 GB headroom. QCOW2 is sparse so this costs nothing until written.
+    private fun availableOverlaySizeGb(): Long {
+        return try {
+            val stat = StatFs(filesDir.absolutePath)
+            val availableGb = (stat.availableBlocksLong * stat.blockSizeLong) / (1024L * 1024 * 1024)
+            (availableGb - 2L).coerceAtLeast(8L)
+        } catch (_: Exception) {
+            8L
+        }
+    }
+
+    // Half the device's CPU cores, clamped to [1, cores].
+    private fun dynamicVcpu(): Int =
+        (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
+
+    // 25% of device total RAM in MB, clamped to [512, totalRam].
+    private fun dynamicRamMb(): Int {
+        return try {
+            val info = ActivityManager.MemoryInfo()
+            (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager)
+                .getMemoryInfo(info)
+            val totalMb = (info.totalMem / (1024L * 1024)).toInt()
+            (totalMb / 4).coerceAtLeast(512)
+        } catch (_: Exception) {
+            1024
+        }
+    }
+
+    fun resetStorage() {
+        val userImage = File(vmDir, "user.qcow2")
+        userImage.delete()
+        Log.d(TAG, "user.qcow2 deleted — will be recreated with current disk_gb on next start")
+    }
+
+    fun getDeviceInfo(): Map<String, Any> {
+        val cores = Runtime.getRuntime().availableProcessors()
+        val ramInfo = ActivityManager.MemoryInfo()
+        (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager)
+            .getMemoryInfo(ramInfo)
+        val totalRamMb = (ramInfo.totalMem / (1024L * 1024)).toInt()
+        val stat = StatFs(filesDir.absolutePath)
+        val freeStorageGb = ((stat.availableBlocksLong * stat.blockSizeLong) / (1024L * 1024 * 1024)).toInt()
+        return mapOf(
+            "cores"        to cores,
+            "totalRamMb"   to totalRamMb,
+            "freeStorageGb" to freeStorageGb
+        )
     }
 
     // -------------------------------------------------------------------------

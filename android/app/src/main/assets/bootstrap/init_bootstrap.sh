@@ -6,6 +6,16 @@
 echo "=== Alpine VM Bootstrap Starting ==="
 
 # ---------------------------------------------------------------------------
+# Expand filesystem to fill the virtual disk
+# ---------------------------------------------------------------------------
+echo "Expanding filesystem to fill disk..."
+if ! command -v resize2fs >/dev/null 2>&1; then
+    apk add --no-cache e2fsprogs >/dev/null 2>&1 || true
+fi
+resize2fs /dev/vda 2>/dev/null || true
+echo "Disk expansion complete: $(df -h / | awk 'NR==2{print $2}') total"
+
+# ---------------------------------------------------------------------------
 # Set root password
 # ---------------------------------------------------------------------------
 echo "root:alpine" | chpasswd 2>/dev/null || true

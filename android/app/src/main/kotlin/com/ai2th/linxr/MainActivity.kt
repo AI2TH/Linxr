@@ -50,6 +50,25 @@ class MainActivity : FlutterActivity() {
                         }
                     }
 
+                    "getDeviceInfo" -> {
+                        try {
+                            result.success(vmManager.getDeviceInfo())
+                        } catch (e: Exception) {
+                            result.success(mapOf("cores" to 4, "totalRamMb" to 4096, "freeStorageGb" to 32))
+                        }
+                    }
+
+                    "resetStorage" -> executor.execute {
+                        try {
+                            vmManager.stopVm()
+                            stopVmService()
+                            vmManager.resetStorage()
+                            runOnUiThread { result.success(null) }
+                        } catch (e: Exception) {
+                            runOnUiThread { result.error("RESET_ERROR", e.message, null) }
+                        }
+                    }
+
                     else -> result.notImplemented()
                 }
             }

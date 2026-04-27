@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'screens/terminal_screen.dart';
 import 'screens/about_screen.dart';
+import 'screens/settings_screen.dart';
 import 'services/vm_platform.dart';
 
 void main() {
@@ -66,6 +67,7 @@ class _MainScreenState extends State<MainScreen> {
   static const _screens = <Widget>[
     _HomeScreen(),
     TerminalScreen(),
+    SettingsScreen(),
     AboutScreen(),
   ];
 
@@ -90,6 +92,7 @@ class _MainScreenState extends State<MainScreen> {
         destinations: const [
           NavigationDestination(icon: Icon(Icons.home), label: 'Home'),
           NavigationDestination(icon: Icon(Icons.terminal), label: 'Terminal'),
+          NavigationDestination(icon: Icon(Icons.settings), label: 'Settings'),
           NavigationDestination(icon: Icon(Icons.info_outline), label: 'About'),
         ],
       ),
@@ -134,6 +137,7 @@ class _StatusCard extends StatelessWidget {
 
     final (label, color, icon) = switch (vm.status) {
       'running'  => ('Running', const Color(0xFF20C997), Icons.check_circle),
+      'booting'  => ('Booting...', const Color(0xFFFFC107), Icons.hourglass_top),
       'starting' => ('Starting...', const Color(0xFFFFC107), Icons.hourglass_top),
       'error'    => ('Error', const Color(0xFFDC3545), Icons.error),
       _          => ('Stopped', Colors.white38, Icons.stop_circle_outlined),
@@ -239,6 +243,21 @@ class _ControlButton extends StatelessWidget {
       return const Center(child: CircularProgressIndicator());
     }
 
+    if (vm.isBooting) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Center(child: CircularProgressIndicator()),
+          const SizedBox(height: 10),
+          const Text(
+            'Booting — pinging SSH...',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white38, fontSize: 12),
+          ),
+        ],
+      );
+    }
+
     if (vm.isRunning) {
       return FilledButton.icon(
         onPressed: () => vm.stopVm(),
@@ -251,14 +270,25 @@ class _ControlButton extends StatelessWidget {
       );
     }
 
-    return FilledButton.icon(
-      onPressed: () => vm.startVm(),
-      icon: const Icon(Icons.play_arrow),
-      label: const Text('Start VM'),
-      style: FilledButton.styleFrom(
-        backgroundColor: const Color(0xFF0D6EFD),
-        padding: const EdgeInsets.symmetric(vertical: 14),
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        FilledButton.icon(
+          onPressed: () => vm.startVm(),
+          icon: const Icon(Icons.play_arrow),
+          label: const Text('Start VM'),
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF0D6EFD),
+            padding: const EdgeInsets.symmetric(vertical: 14),
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Boot + SSH ready takes 2–4 min',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Colors.white38, fontSize: 12),
+        ),
+      ],
     );
   }
 }

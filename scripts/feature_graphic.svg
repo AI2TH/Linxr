@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="500" viewBox="0 0 1024 500">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0E1117"/>
+      <stop offset="100%" style="stop-color:#1A1D23"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#0D6EFD"/>
+      <stop offset="100%" style="stop-color:#20C997"/>
+    </linearGradient>
+    <!-- Subtle grid pattern -->
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#ffffff" stroke-width="0.3" opacity="0.06"/>
+    </pattern>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1024" height="500" fill="url(#bg)"/>
+  <rect width="1024" height="500" fill="url(#grid)"/>
+
+  <!-- Accent line top -->
+  <rect x="0" y="0" width="1024" height="4" fill="url(#accent)"/>
+
+  <!-- Terminal window mockup -->
+  <rect x="60" y="60" width="420" height="320" rx="10" fill="#0a0d12" stroke="#2a2d33" stroke-width="1.5"/>
+  <!-- Title bar -->
+  <rect x="60" y="60" width="420" height="36" rx="10" fill="#1A1D23"/>
+  <rect x="60" y="86" width="420" height="10" fill="#1A1D23"/>
+  <!-- Window buttons -->
+  <circle cx="80" cy="78" r="5" fill="#DC3545"/>
+  <circle cx="98" cy="78" r="5" fill="#FFC107"/>
+  <circle cx="116" cy="78" r="5" fill="#20C997"/>
+  <!-- Terminal text -->
+  <text x="80" y="120" font-family="monospace" font-size="13" fill="#20C997">$ ssh root@localhost -p 2222</text>
+  <text x="80" y="140" font-family="monospace" font-size="13" fill="#6C757D">root@alpine's password:</text>
+  <text x="80" y="165" font-family="monospace" font-size="13" fill="#E0E0E0">Welcome to Alpine Linux 3.19</text>
+  <text x="80" y="190" font-family="monospace" font-size="13" fill="#E0E0E0">alpine:~# apk add curl git python3</text>
+  <text x="80" y="210" font-family="monospace" font-size="13" fill="#6C757D">(1/42) Installing ca-certificates...</text>
+  <text x="80" y="230" font-family="monospace" font-size="13" fill="#6C757D">(2/42) Installing nghttp2-libs...</text>
+  <text x="80" y="250" font-family="monospace" font-size="13" fill="#6C757D">...</text>
+  <text x="80" y="275" font-family="monospace" font-size="13" fill="#20C997">OK: 148 MiB in 56 packages</text>
+  <text x="80" y="300" font-family="monospace" font-size="13" fill="#0D6EFD">alpine:~#</text>
+  <!-- Blinking cursor -->
+  <rect x="172" y="290" width="8" height="14" fill="#20C997" opacity="0.9"/>
+
+  <!-- App icon -->
+  <rect x="540" y="70" width="120" height="120" rx="24" fill="#0D6EFD" opacity="0.12"/>
+  <text x="600" y="145" font-family="Arial, sans-serif" font-size="60" font-weight="bold" fill="#0D6EFD" text-anchor="middle" dominant-baseline="central">A</text>
+
+  <!-- App name -->
+  <text x="690" y="110" font-family="Arial, sans-serif" font-size="52" font-weight="bold" fill="#FFFFFF">Linxr</text>
+  <text x="690" y="155" font-family="Arial, sans-serif" font-size="18" fill="#6C757D" letter-spacing="3">BY AI2TH</text>
+
+  <!-- Tagline -->
+  <text x="540" y="220" font-family="Arial, sans-serif" font-size="26" fill="#FFFFFF">Run a full Linux VM</text>
+  <text x="540" y="255" font-family="Arial, sans-serif" font-size="26" fill="#FFFFFF">on your Android phone.</text>
+  <text x="540" y="295" font-family="Arial, sans-serif" font-size="16" fill="#6C757D">No root required.</text>
+
+  <!-- Feature pills -->
+  <rect x="540" y="330" width="145" height="32" rx="16" fill="#0D6EFD" opacity="0.15"/>
+  <text x="612" y="351" font-family="Arial, sans-serif" font-size="13" fill="#0D6EFD" text-anchor="middle" dominant-baseline="central">Alpine Linux</text>
+
+  <rect x="695" y="330" width="130" height="32" rx="16" fill="#20C997" opacity="0.15"/>
+  <text x="760" y="351" font-family="Arial, sans-serif" font-size="13" fill="#20C997" text-anchor="middle" dominant-baseline="central">SSH Terminal</text>
+
+  <rect x="835" y="330" width="130" height="32" rx="16" fill="#FFC107" opacity="0.15"/>
+  <text x="900" y="351" font-family="Arial, sans-serif" font-size="13" fill="#FFC107" text-anchor="middle" dominant-baseline="central">Persistent</text>
+
+  <!-- Bottom accent -->
+  <rect x="0" y="496" width="1024" height="4" fill="url(#accent)"/>
+
+  <!-- Subtle Alpine wave decoration -->
+  <path d="M0 420 Q256 380 512 420 Q768 460 1024 420 L1024 500 L0 500 Z" fill="#0D6EFD" opacity="0.04"/>
+  <path d="M0 440 Q256 400 512 440 Q768 480 1024 440 L1024 500 L0 500 Z" fill="#20C997" opacity="0.03"/>
+</svg>

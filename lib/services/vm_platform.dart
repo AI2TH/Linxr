@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -21,6 +22,57 @@ class VmPlatform {
       return 'unknown';
     }
   }
+
+  static Future<DeviceInfo> getDeviceInfo() async {
+    try {
+      final Map<Object?, Object?> raw =
+          await _channel.invokeMethod('getDeviceInfo');
+      return DeviceInfo(
+        cores:         (raw['cores']         as int?) ?? 4,
+        totalRamMb:    (raw['totalRamMb']    as int?) ?? 4096,
+        freeStorageGb: (raw['freeStorageGb'] as int?) ?? 32,
+      );
+    } on PlatformException {
+      return const DeviceInfo(cores: 4, totalRamMb: 4096, freeStorageGb: 32);
+    }
+  }
+
+  static Future<void> resetStorage() async {
+    await _channel.invokeMethod('resetStorage');
+  }
+
+  static Future<bool> pingSsh() async {
+    SSHClient? client;
+    try {
+      final socket = await SSHSocket.connect(
+        '127.0.0.1',
+        2222,
+        timeout: const Duration(seconds: 5),
+      );
+      client = SSHClient(
+        socket,
+        username: 'root',
+        onPasswordRequest: () => 'alpine',
+      );
+      await client.authenticated.timeout(const Duration(seconds: 8));
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      client?.close();
+    }
+  }
+}
+
+class DeviceInfo {
+  final int cores;
+  final int totalRamMb;
+  final int freeStorageGb;
+  const DeviceInfo({
+    required this.cores,
+    required this.totalRamMb,
+    required this.freeStorageGb,
+  });
 }
 
 class VmState extends ChangeNotifier {
@@ -29,23 +81,24 @@ class VmState extends ChangeNotifier {
   String? _errorMessage;
 
   Timer? _pollTimer;
+  Timer? _sshPingTimer;
 
   String get status => _status;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   bool get isRunning => _status == 'running';
+  bool get isBooting => _status == 'booting';
 
   Future<void> startVm() async {
-    if (_status == 'running' || _status == 'starting') return;
+    if (_status == 'running' || _status == 'booting' || _status == 'starting') return;
     _isLoading = true;
-    _status = 'starting';
+    _status = 'booting';
     _errorMessage = null;
     notifyListeners();
 
     try {
       await VmPlatform.startVm();
-      _status = 'running';
-      _startPolling();
+      _startSshPing();
     } catch (e) {
       _status = 'error';
       _errorMessage = e.toString();
@@ -56,10 +109,31 @@ class VmState extends ChangeNotifier {
     }
   }
 
+  void _startSshPing() {
+    _sshPingTimer?.cancel();
+    _sshPingTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+      if (_status != 'booting') {
+        _sshPingTimer?.cancel();
+        _sshPingTimer = null;
+        return;
+      }
+      final alive = await VmPlatform.pingSsh();
+      if (alive) {
+        _status = 'running';
+        _sshPingTimer?.cancel();
+        _sshPingTimer = null;
+        _startPolling();
+        notifyListeners();
+      }
+    });
+  }
+
   Future<void> stopVm() async {
     _isLoading = true;
     notifyListeners();
     _stopPolling();
+    _sshPingTimer?.cancel();
+    _sshPingTimer = null;
 
     try {
       await VmPlatform.stopVm();
@@ -91,7 +165,7 @@ class VmState extends ChangeNotifier {
   void _startPolling() {
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
-      if (_status != 'running' && _status != 'starting') {
+      if (_status != 'running') {
         _stopPolling();
         return;
       }
@@ -111,6 +185,7 @@ class VmState extends ChangeNotifier {
   @override
   void dispose() {
     _stopPolling();
+    _sshPingTimer?.cancel();
     super.dispose();
   }
 }

@@ -37,6 +37,10 @@ class VmPlatform {
     }
   }
 
+  static Future<void> resetStorage() async {
+    await _channel.invokeMethod('resetStorage');
+  }
+
   static Future<bool> pingSsh() async {
     SSHClient? client;
     try {

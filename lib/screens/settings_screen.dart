@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/vm_platform.dart';
 
@@ -11,16 +12,20 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  // Keys must match what VmManager.kt reads from FlutterSharedPreferences
-  static const _kVcpu = 'flutter.vcpu_count';
-  static const _kRam  = 'flutter.ram_mb';
-  static const _kDisk = 'flutter.disk_gb';
+  // shared_preferences v2+ automatically prepends "flutter." to every key,
+  // so use bare key names here — they are stored as "flutter.vcpu_count" etc.,
+  // which is what VmManager.kt reads from FlutterSharedPreferences.
+  static const _kVcpu = 'vcpu_count';
+  static const _kRam  = 'ram_mb';
+  static const _kDisk = 'disk_gb';
 
   DeviceInfo? _device;
   int? _vcpu;   // null = auto
   int? _ramMb;  // null = auto
   int? _diskGb; // null = auto
   bool _loaded = false;
+  bool _resetting = false;
+  bool _restarting = false;
 
   // ── Derived ranges from device info ────────────────────────────────────────
 
@@ -45,7 +50,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final total = _device?.totalRamMb ?? 4096;
     return max(512, total ~/ 4);
   }
-  int get _autoDiskGb => max(8, (_device?.freeStorageGb ?? 32) - 2);
+  int get _autoDiskGb => _maxDiskGb;
 
   // Effective displayed values (user setting or auto default)
   int get _effectiveVcpu   => _vcpu   ?? _autoVcpu;
@@ -102,10 +107,79 @@ class _SettingsScreenState extends State<SettingsScreen> {
     else await prefs.setInt(_kDisk, value);
   }
 
+  // ── Actions ─────────────────────────────────────────────────────────────────
+
+  Future<void> _restartVm(VmState vm) async {
+    setState(() => _restarting = true);
+    try {
+      await vm.stopVm();
+      await Future.delayed(const Duration(seconds: 1));
+      await vm.startVm();
+    } finally {
+      if (mounted) setState(() => _restarting = false);
+    }
+  }
+
+  Future<void> _resetStorage(VmState vm) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1D23),
+        title: const Text('Reset VM Storage?',
+            style: TextStyle(color: Colors.white)),
+        content: const Text(
+          'This stops the VM and deletes the virtual disk.\n\n'
+          'All installed packages and files will be lost. '
+          'The new disk will be created with your current Disk Cap setting.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFDC3545)),
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _resetting = true);
+    try {
+      await VmPlatform.resetStorage();
+      // resetStorage stops the VM on the native side; update state
+      await vm.refreshStatus();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Storage reset — start the VM to apply the new disk size'),
+            backgroundColor: Color(0xFF20C997),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Reset failed: $e'),
+              backgroundColor: const Color(0xFFDC3545)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _resetting = false);
+    }
+  }
+
   // ── Build ────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
+    final vm = context.watch<VmState>();
+    final vmRunning = vm.isRunning || vm.isBooting;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Settings'), centerTitle: false),
       body: !_loaded
@@ -113,6 +187,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
+
+                // ── VM running banner ─────────────────────────────────────────
+                if (vmRunning) ...[
+                  _RestartBanner(
+                    restarting: _restarting,
+                    onRestart: () => _restartVm(vm),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
                 _SectionHeader('VM Resources'),
                 const SizedBox(height: 8),
 
@@ -165,10 +249,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   title: 'Disk Cap',
                   isAuto: _diskGb == null,
                   valueLabel: _diskGb == null
-                      ? 'Auto — ${_autoDiskGb} GB of ${_maxDiskGb} GB free'
-                      : '${_effectiveDiskGb} GB virtual disk',
+                      ? 'Auto — $_autoDiskGb GB of ${_maxDiskGb} GB free'
+                      : '$_effectiveDiskGb GB virtual disk',
                   onClearAuto: () => _saveDisk(null),
-                  note: 'Disk changes take effect only after a VM data reset.',
                   child: _StepSlider(
                     value: _effectiveDiskGb.clamp(8, _maxDiskGb),
                     min: 8,
@@ -177,6 +260,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onChanged: (v) => _saveDisk(v),
                     labelFn: (v) => '$v GB',
                   ),
+                ),
+                const SizedBox(height: 8),
+                _ResetStorageButton(
+                  resetting: _resetting,
+                  onReset: () => _resetStorage(vm),
                 ),
 
                 const SizedBox(height: 24),
@@ -193,7 +281,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             'Next VM start'),
                         SizedBox(height: 8),
                         _ChangeRow(Icons.warning_amber_rounded, 'Disk Cap',
-                            'VM data reset (clears all installed packages)'),
+                            'After "Reset VM Storage" (clears all installed packages)'),
                       ],
                     ),
                   ),
@@ -208,6 +296,93 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (mb < 1024) return '${mb}MB';
     if (mb % 1024 == 0) return '${mb ~/ 1024}GB';
     return '${(mb / 1024).toStringAsFixed(1)}GB';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Banner shown when VM is running
+// ---------------------------------------------------------------------------
+
+class _RestartBanner extends StatelessWidget {
+  const _RestartBanner({required this.restarting, required this.onRestart});
+  final bool restarting;
+  final VoidCallback onRestart;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFC107).withOpacity(0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFFFC107).withOpacity(0.4)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline, color: Color(0xFFFFC107), size: 18),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              'VM is running — restart to apply changes',
+              style: TextStyle(color: Color(0xFFFFC107), fontSize: 13),
+            ),
+          ),
+          const SizedBox(width: 8),
+          restarting
+              ? const SizedBox(
+                  width: 18, height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2,
+                      color: Color(0xFFFFC107)))
+              : TextButton(
+                  onPressed: onRestart,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    foregroundColor: const Color(0xFFFFC107),
+                  ),
+                  child: const Text('Restart', style: TextStyle(fontSize: 12)),
+                ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Reset storage button
+// ---------------------------------------------------------------------------
+
+class _ResetStorageButton extends StatelessWidget {
+  const _ResetStorageButton({required this.resetting, required this.onReset});
+  final bool resetting;
+  final VoidCallback onReset;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: resetting
+          ? const Padding(
+              padding: EdgeInsets.symmetric(vertical: 6),
+              child: SizedBox(
+                width: 16, height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          : TextButton.icon(
+              onPressed: onReset,
+              icon: const Icon(Icons.delete_forever, size: 15,
+                  color: Color(0xFFDC3545)),
+              label: const Text('Reset VM Storage',
+                  style: TextStyle(color: Color(0xFFDC3545), fontSize: 12)),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+    );
   }
 }
 

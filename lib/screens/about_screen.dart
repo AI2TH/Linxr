@@ -99,7 +99,7 @@ class _AppInfoCard extends StatelessWidget {
                       ),
                     ),
                     child: const Text(
-                      'v1.0.0',
+                      'v1.1.5',
                       style: TextStyle(
                         fontSize: 11,
                         color: Color(0xFF0D6EFD),

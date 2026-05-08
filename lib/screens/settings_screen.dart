@@ -207,8 +207,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   title: 'vCPU Cores',
                   isAuto: _vcpu == null,
                   valueLabel: _vcpu == null
-                      ? 'Auto — $_autoVcpu of $_maxVcpu cores'
-                      : '$_effectiveVcpu of $_maxVcpu cores',
+                      ? 'Auto — $_autoVcpu vCPUs (device has $_maxVcpu cores)'
+                      : '$_effectiveVcpu vCPUs assigned (device has $_maxVcpu cores)',
                   onClearAuto: () => _saveVcpu(null),
                   child: _IntSlider(
                     value: _effectiveVcpu.clamp(1, _maxVcpu),
@@ -228,8 +228,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   title: 'RAM',
                   isAuto: _ramMb == null,
                   valueLabel: _ramMb == null
-                      ? 'Auto — ${_fmtMb(_autoRamMb)} of ${_fmtMb(_maxRamMb)}'
-                      : '${_fmtMb(_effectiveRamMb)} of ${_fmtMb(_maxRamMb)}',
+                      ? 'Auto — ${_fmtMb(_autoRamMb)} assigned to VM (device has ${_fmtMb(_maxRamMb)})'
+                      : '${_fmtMb(_effectiveRamMb)} assigned to VM (device has ${_fmtMb(_maxRamMb)})',
                   onClearAuto: () => _saveRam(null),
                   child: _StepSlider(
                     value: _effectiveRamMb.clamp(512, _maxRamMb),
@@ -249,8 +249,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   title: 'Disk Cap',
                   isAuto: _diskGb == null,
                   valueLabel: _diskGb == null
-                      ? 'Auto — $_autoDiskGb GB of ${_maxDiskGb} GB free'
-                      : '$_effectiveDiskGb GB virtual disk',
+                      ? 'Auto — $_autoDiskGb GB virtual disk (${_maxDiskGb} GB free on device)'
+                      : '$_effectiveDiskGb GB virtual disk (${_maxDiskGb} GB free on device)',
                   onClearAuto: () => _saveDisk(null),
                   child: _StepSlider(
                     value: _effectiveDiskGb.clamp(8, _maxDiskGb),

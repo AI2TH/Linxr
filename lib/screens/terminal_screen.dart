@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:xterm/xterm.dart';
 import '../services/vm_platform.dart';
@@ -50,6 +52,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
   final List<_Tab> _tabs = [];
   int _activeIdx = 0;
   int _nextId = 1;
+  String _lastVmStatus = '';
 
   static const _maxTabs = 5;
 
@@ -60,15 +63,109 @@ class _TerminalScreenState extends State<TerminalScreen> {
     super.initState();
     _tabs.add(_Tab('Shell ${_nextId++}'));
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final status = context.read<VmState>().status;
-      if (status == 'running') _scheduleConnect(_active, delaySeconds: 5);
+      final vmState = context.read<VmState>();
+      _lastVmStatus = vmState.status;
+      vmState.addListener(_onVmStateChanged);
+      if (vmState.status == 'running') _scheduleConnect(_active, delaySeconds: 5);
     });
   }
 
   @override
   void dispose() {
+    try { context.read<VmState>().removeListener(_onVmStateChanged); } catch (_) {}
     for (final t in _tabs) t.close();
     super.dispose();
+  }
+
+  // ── VM status listener ──────────────────────────────────────────────────────
+
+  void _onVmStateChanged() {
+    final status = context.read<VmState>().status;
+    if (_lastVmStatus == 'running' && status != 'running') {
+      _disconnectAll();
+    }
+    _lastVmStatus = status;
+  }
+
+  void _disconnectAll() {
+    for (final tab in _tabs) {
+      tab.retryTimer?.cancel();
+      tab.session?.stdin.close();
+      tab.client?.close();
+      tab.session = null;
+      tab.client = null;
+      if (tab.connState != _ConnState.idle) {
+        tab.terminal.write('\r\n[VM stopped — session closed]\r\n');
+      }
+      tab.connState = _ConnState.idle;
+      tab.retryCount = 0;
+    }
+    if (mounted) setState(() {});
+  }
+
+  // ── Clipboard ───────────────────────────────────────────────────────────────
+
+  Future<void> _paste() async {
+    if (_active.connState != _ConnState.connected) return;
+    final data = await Clipboard.getData('text/plain');
+    final text = data?.text;
+    if (text == null || text.isEmpty) return;
+    _active.session?.stdin.add(Uint8List.fromList(utf8.encode(text)));
+  }
+
+  void _sendKey(List<int> bytes) {
+    if (_active.connState != _ConnState.connected) return;
+    _active.session?.stdin.add(Uint8List.fromList(bytes));
+  }
+
+  Future<void> _copySelection() async {
+    final selection = _active.controller.selection;
+    if (selection == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Long-press and drag to select text first'),
+          duration: Duration(seconds: 2),
+        ));
+      }
+      return;
+    }
+    final text = _active.terminal.buffer.getText(selection);
+    if (text.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: text));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Copied'),
+        duration: Duration(seconds: 1),
+      ));
+    }
+  }
+
+  void _showClipboardMenu(TapDownDetails details, CellOffset offset) {
+    final RenderBox overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox;
+    showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        details.globalPosition & const Size(1, 1),
+        Offset.zero & overlay.size,
+      ),
+      color: const Color(0xFF1A1D23),
+      items: [
+        const PopupMenuItem(value: 'paste', child: Row(children: [
+          Icon(Icons.content_paste, size: 16, color: Colors.white70),
+          SizedBox(width: 10),
+          Text('Paste', style: TextStyle(color: Colors.white70)),
+        ])),
+        const PopupMenuItem(value: 'copy', child: Row(children: [
+          Icon(Icons.content_copy, size: 16, color: Colors.white70),
+          SizedBox(width: 10),
+          Text('Copy selection', style: TextStyle(color: Colors.white70)),
+        ])),
+      ],
+    ).then((v) {
+      if (v == 'paste') _paste();
+      if (v == 'copy') _copySelection();
+    });
   }
 
   // ── Tab management ──────────────────────────────────────────────────────────
@@ -78,7 +175,6 @@ class _TerminalScreenState extends State<TerminalScreen> {
     final tab = _Tab('Shell ${_nextId++}');
     _tabs.add(tab);
     setState(() => _activeIdx = _tabs.length - 1);
-    // Connect immediately — this tab is now active
     final status = context.read<VmState>().status;
     if (status == 'running') _scheduleConnect(tab);
   }
@@ -86,7 +182,6 @@ class _TerminalScreenState extends State<TerminalScreen> {
   void _selectTab(int i) {
     setState(() => _activeIdx = i);
     final tab = _tabs[i];
-    // Auto-connect if tab is idle and VM is running
     if (tab.connState == _ConnState.idle) {
       final status = context.read<VmState>().status;
       if (status == 'running') _scheduleConnect(tab);
@@ -153,8 +248,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
       tab.retryCount = 0;
       if (mounted) setState(() => tab.connState = _ConnState.connected);
     } on TimeoutException {
-      _retryOrError(tab,
-          'Timed out (${tab.retryCount + 1}/${_Tab._maxRetries})');
+      _retryOrError(tab, 'Timed out (${tab.retryCount + 1}/${_Tab._maxRetries})');
     } catch (e) {
       _retryOrError(tab, 'Failed: $e');
     }
@@ -167,7 +261,6 @@ class _TerminalScreenState extends State<TerminalScreen> {
     if (tab.retryCount < _Tab._maxRetries) {
       setState(() => tab.connState = _ConnState.idle);
       if (isActive) {
-        // Only active tab retries automatically — background tabs wait until selected
         tab.terminal.write('\r\n[$msg — retrying in 5s...]\r\n');
         _scheduleConnect(tab, delaySeconds: 5);
       } else {
@@ -204,13 +297,24 @@ class _TerminalScreenState extends State<TerminalScreen> {
   @override
   Widget build(BuildContext context) {
     final vmStatus = context.watch<VmState>().status;
+    final connected = _active.connState == _ConnState.connected;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Terminal'),
         actions: [
           _StatusChip(_active.connState),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
+          IconButton(
+            icon: const Icon(Icons.content_copy, size: 20),
+            tooltip: 'Copy selection',
+            onPressed: connected ? _copySelection : null,
+          ),
+          IconButton(
+            icon: const Icon(Icons.content_paste, size: 20),
+            tooltip: 'Paste',
+            onPressed: connected ? _paste : null,
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Reconnect',
@@ -257,10 +361,12 @@ class _TerminalScreenState extends State<TerminalScreen> {
                     autofocus: true,
                     backgroundOpacity: 1,
                     theme: _kTermTheme,
+                    onSecondaryTapDown: _showClipboardMenu,
                   ),
               ],
             ),
           ),
+          _KeyRow(onKey: _sendKey, enabled: _active.connState == _ConnState.connected),
         ],
       ),
     );
@@ -433,7 +539,77 @@ class _Banner extends StatelessWidget {
   }
 }
 
-// ─── Terminal theme (shared across all tabs) ──────────────────────────────────
+// ─── Extra key row (Tab, arrows, Ctrl sequences) ──────────────────────────────
+
+class _KeyRow extends StatelessWidget {
+  const _KeyRow({required this.onKey, required this.enabled});
+  final void Function(List<int> bytes) onKey;
+  final bool enabled;
+
+  static const _keys = <(String, List<int>)>[
+    ('Tab',  [0x09]),           // Tab — triggers shell autocomplete
+    ('Esc',  [0x1b]),           // Escape
+    ('↑',    [0x1b, 0x5b, 0x41]), // Arrow up — history prev
+    ('↓',    [0x1b, 0x5b, 0x42]), // Arrow down — history next
+    ('←',    [0x1b, 0x5b, 0x44]), // Arrow left
+    ('→',    [0x1b, 0x5b, 0x43]), // Arrow right
+    ('C-c',  [0x03]),           // Ctrl+C — interrupt
+    ('C-d',  [0x04]),           // Ctrl+D — EOF / logout
+    ('C-z',  [0x1a]),           // Ctrl+Z — suspend
+    ('C-l',  [0x0c]),           // Ctrl+L — clear screen
+    ('Home', [0x1b, 0x5b, 0x48]),
+    ('End',  [0x1b, 0x5b, 0x46]),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 40,
+      color: const Color(0xFF111827),
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+        itemCount: _keys.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 4),
+        itemBuilder: (_, i) {
+          final (label, bytes) = _keys[i];
+          final isTab = label == 'Tab';
+          return GestureDetector(
+            onTap: enabled ? () => onKey(bytes) : null,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                color: isTab
+                    ? const Color(0xFF0D6EFD).withOpacity(enabled ? 0.25 : 0.08)
+                    : Colors.white.withOpacity(enabled ? 0.07 : 0.03),
+                borderRadius: BorderRadius.circular(5),
+                border: Border.all(
+                  color: isTab
+                      ? const Color(0xFF0D6EFD).withOpacity(enabled ? 0.5 : 0.15)
+                      : Colors.white.withOpacity(enabled ? 0.12 : 0.05),
+                ),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontFamily: 'monospace',
+                  fontWeight: isTab ? FontWeight.bold : FontWeight.normal,
+                  color: enabled
+                      ? (isTab ? const Color(0xFF74B9FF) : Colors.white70)
+                      : Colors.white24,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ─── Terminal theme ───────────────────────────────────────────────────────────
 
 const _kTermTheme = TerminalTheme(
   cursor: Color(0xFF20C997),

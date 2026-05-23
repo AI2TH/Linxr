@@ -31,7 +31,7 @@ class VmManager(private val context: Context) {
         get() = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
 
     // Bump when base.qcow2.gz changes (forces re-extraction on next launch)
-    private val ASSETS_VERSION = "v20"
+    private val ASSETS_VERSION = "v25"
 
     // -------------------------------------------------------------------------
     // Public API
@@ -199,7 +199,7 @@ class VmManager(private val context: Context) {
             cmd += listOf("-append",
                 "console=ttyAMA0 root=/dev/vda rootfstype=ext4 rootflags=rw " +
                 "modules=virtio_blk,ext4 quiet " +
-                "cgroup_enable=memory swapaccount=1 cgroup_enable=cpuset")
+                "cgroup_no_v1=all")
         }
         return cmd
     }
@@ -237,9 +237,12 @@ class VmManager(private val context: Context) {
             Log.d(TAG, "Extracted + decompressed base.qcow2.gz")
         }
 
+        // Always re-extract kernel files so they match the modules in base.qcow2.
+        // Skipping this on "already exists" caused kernel/module version mismatches.
         listOf("vmlinuz-virt", "initramfs-virt").forEach { name ->
             val dest = File(vmDir, name)
-            if (!dest.exists()) extractAsset("vm/$name", dest)
+            dest.delete()
+            extractAsset("vm/$name", dest)
         }
 
         // Bootstrap script

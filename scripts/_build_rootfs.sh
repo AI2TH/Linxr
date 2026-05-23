@@ -117,7 +117,8 @@ EOF
 # ── Docker daemon config ──────────────────────────────────────────────────────
 cat > "${ROOTFS}/etc/docker/daemon.json" << 'EOF'
 {
-  "storage-driver": "fuse-overlayfs",
+  "storage-driver": "overlay2",
+  "exec-opts": ["native.cgroupdriver=cgroupfs"],
   "iptables": true,
   "ip-masq": true,
   "log-driver": "json-file",
@@ -146,9 +147,18 @@ echo "Kernel version: $KVER"
 # Alpine ships .ko.gz (gzip-compressed modules). kmod handles them natively.
 # List of modules needed for Docker bridge networking.
 DOCKER_MODULES="
+kernel/lib/libcrc32c.ko.gz
+kernel/net/ipv6/ipv6.ko.gz
+kernel/net/802/stp.ko.gz
+kernel/net/llc/llc.ko.gz
+kernel/net/ipv4/netfilter/nf_defrag_ipv4.ko.gz
+kernel/net/ipv6/netfilter/nf_defrag_ipv6.ko.gz
 kernel/net/netfilter/x_tables.ko.gz
 kernel/net/netfilter/nf_conntrack.ko.gz
 kernel/net/netfilter/nf_nat.ko.gz
+kernel/net/netfilter/xt_conntrack.ko.gz
+kernel/net/netfilter/xt_MASQUERADE.ko.gz
+kernel/net/netfilter/xt_addrtype.ko.gz
 kernel/net/ipv4/netfilter/ip_tables.ko.gz
 kernel/net/ipv4/netfilter/iptable_filter.ko.gz
 kernel/net/ipv4/netfilter/iptable_nat.ko.gz
@@ -208,9 +218,18 @@ start() {
     # Load kernel modules required for Docker bridge networking.
     # These are loadable .ko files in Alpine linux-virt (not built-in).
     ebegin "Loading Docker networking modules"
+    modprobe libcrc32c     2>/dev/null || true
+    modprobe ipv6          2>/dev/null || true
+    modprobe stp           2>/dev/null || true
+    modprobe llc           2>/dev/null || true
+    modprobe nf_defrag_ipv4 2>/dev/null || true
+    modprobe nf_defrag_ipv6 2>/dev/null || true
     modprobe x_tables      2>/dev/null || true
     modprobe nf_conntrack  2>/dev/null || true
     modprobe nf_nat        2>/dev/null || true
+    modprobe xt_conntrack  2>/dev/null || true
+    modprobe xt_MASQUERADE 2>/dev/null || true
+    modprobe xt_addrtype   2>/dev/null || true
     modprobe ip_tables     2>/dev/null || true
     modprobe iptable_filter 2>/dev/null || true
     modprobe iptable_nat   2>/dev/null || true

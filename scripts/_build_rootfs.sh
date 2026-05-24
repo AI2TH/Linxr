@@ -216,28 +216,17 @@ start() {
     [ -c /dev/net/tun ] || mknod -m 666 /dev/net/tun c 10 200
 
     # Load kernel modules required for Docker bridge networking.
-    # These are loadable .ko files in Alpine linux-virt (not built-in).
+    # Single modprobe -a call is much faster than 20 sequential calls under TCG.
     ebegin "Loading Docker networking modules"
-    modprobe libcrc32c     2>/dev/null || true
-    modprobe ipv6          2>/dev/null || true
-    modprobe stp           2>/dev/null || true
-    modprobe llc           2>/dev/null || true
-    modprobe nf_defrag_ipv4 2>/dev/null || true
-    modprobe nf_defrag_ipv6 2>/dev/null || true
-    modprobe x_tables      2>/dev/null || true
-    modprobe nf_conntrack  2>/dev/null || true
-    modprobe nf_nat        2>/dev/null || true
-    modprobe xt_conntrack  2>/dev/null || true
-    modprobe xt_MASQUERADE 2>/dev/null || true
-    modprobe xt_addrtype   2>/dev/null || true
-    modprobe ip_tables     2>/dev/null || true
-    modprobe iptable_filter 2>/dev/null || true
-    modprobe iptable_nat   2>/dev/null || true
-    modprobe bridge        2>/dev/null || true
-    modprobe br_netfilter  2>/dev/null || true
-    modprobe veth          2>/dev/null || true
-    modprobe fuse          2>/dev/null || true
-    modprobe overlay       2>/dev/null || true
+    modprobe -a \
+        libcrc32c ipv6 stp llc \
+        nf_defrag_ipv4 nf_defrag_ipv6 \
+        x_tables nf_conntrack nf_nat \
+        xt_conntrack xt_MASQUERADE xt_addrtype \
+        ip_tables iptable_filter iptable_nat \
+        bridge br_netfilter veth \
+        fuse overlay \
+        2>/dev/null || true
 
     # Apply bridge sysctl now that br_netfilter is loaded
     sysctl -w net.bridge.bridge-nf-call-iptables=1  2>/dev/null || true

@@ -31,7 +31,7 @@ class VmManager(private val context: Context) {
         get() = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
 
     // Bump when base.qcow2.gz changes (forces re-extraction on next launch)
-    private val ASSETS_VERSION = "v25"
+    private val ASSETS_VERSION = "v26"
 
     // -------------------------------------------------------------------------
     // Public API

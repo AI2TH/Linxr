@@ -472,8 +472,8 @@ class _StepSlider extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               _tickLabel(labelFn(min)),
-              _tickLabel(labelFn(min + (steps ~/ 2) * step)),
-              _tickLabel(labelFn(max)),
+              if (steps >= 2) _tickLabel(labelFn(min + (steps ~/ 2) * step)),
+              if (steps > 0) _tickLabel(labelFn(max)),
             ],
           ),
         ),

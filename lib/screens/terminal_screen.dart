@@ -38,7 +38,7 @@ class _Tab {
       if (connState != _ConnState.connected) return;
       try {
         // Send an empty write to probe liveness — triggers onDone if socket is dead
-        session?.stdin.add(const []);
+        session?.stdin.add(const <int>[]);
       } catch (_) {
         onDead();
       }

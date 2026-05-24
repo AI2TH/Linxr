@@ -23,6 +23,7 @@ class _Tab {
   SSHSession? session;
   _ConnState connState = _ConnState.idle;
   Timer? retryTimer;
+  Timer? keepAliveTimer;
   int retryCount = 0;
 
   static const _maxRetries = 24; // ~2 minutes
@@ -31,8 +32,27 @@ class _Tab {
       : terminal = Terminal(maxLines: 5000),
         controller = TerminalController();
 
+  void startKeepAlive(VoidCallback onDead) {
+    keepAliveTimer?.cancel();
+    keepAliveTimer = Timer.periodic(const Duration(seconds: 25), (_) {
+      if (connState != _ConnState.connected) return;
+      try {
+        // Send an empty write to probe liveness — triggers onDone if socket is dead
+        session?.stdin.add(const []);
+      } catch (_) {
+        onDead();
+      }
+    });
+  }
+
+  void stopKeepAlive() {
+    keepAliveTimer?.cancel();
+    keepAliveTimer = null;
+  }
+
   void close() {
     retryTimer?.cancel();
+    keepAliveTimer?.cancel();
     session?.stdin.close();
     client?.close();
     controller.dispose();
@@ -48,7 +68,7 @@ class TerminalScreen extends StatefulWidget {
   State<TerminalScreen> createState() => _TerminalScreenState();
 }
 
-class _TerminalScreenState extends State<TerminalScreen> {
+class _TerminalScreenState extends State<TerminalScreen> with WidgetsBindingObserver {
   final List<_Tab> _tabs = [];
   int _activeIdx = 0;
   int _nextId = 1;
@@ -61,6 +81,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _tabs.add(_Tab('Shell ${_nextId++}'));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final vmState = context.read<VmState>();
@@ -72,9 +93,26 @@ class _TerminalScreenState extends State<TerminalScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     try { context.read<VmState>().removeListener(_onVmStateChanged); } catch (_) {}
     for (final t in _tabs) t.close();
     super.dispose();
+  }
+
+  // ── App lifecycle: reconnect when returning to foreground ───────────────────
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !mounted) return;
+    final vmStatus = context.read<VmState>().status;
+    if (vmStatus != 'running') return;
+    for (final tab in _tabs) {
+      if (tab.connState == _ConnState.idle) {
+        tab.retryCount = 0;
+        _scheduleConnect(tab, delaySeconds: 1);
+      }
+    }
+    if (mounted) setState(() {});
   }
 
   // ── VM status listener ──────────────────────────────────────────────────────
@@ -83,6 +121,11 @@ class _TerminalScreenState extends State<TerminalScreen> {
     final status = context.read<VmState>().status;
     if (_lastVmStatus == 'running' && status != 'running') {
       _disconnectAll();
+    } else if (_lastVmStatus != 'running' && status == 'running') {
+      // VM just became ready — connect the active tab
+      if (_active.connState == _ConnState.idle) {
+        _scheduleConnect(_active, delaySeconds: 3);
+      }
     }
     _lastVmStatus = status;
   }
@@ -90,6 +133,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
   void _disconnectAll() {
     for (final tab in _tabs) {
       tab.retryTimer?.cancel();
+      tab.stopKeepAlive();
       tab.session?.stdin.close();
       tab.client?.close();
       tab.session = null;
@@ -246,6 +290,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
       };
 
       tab.retryCount = 0;
+      tab.startKeepAlive(() => _onSessionDone(tab));
       if (mounted) setState(() => tab.connState = _ConnState.connected);
     } on TimeoutException {
       _retryOrError(tab, 'Timed out (${tab.retryCount + 1}/${_Tab._maxRetries})');
@@ -274,15 +319,23 @@ class _TerminalScreenState extends State<TerminalScreen> {
   }
 
   void _onSessionDone(_Tab tab) {
-    if (mounted) {
-      tab.terminal.write('\r\n\r\n[Session closed]\r\n');
-      setState(() => tab.connState = _ConnState.idle);
+    tab.stopKeepAlive();
+    tab.session = null;
+    tab.client = null;
+    if (!mounted) return;
+    tab.terminal.write('\r\n\r\n[Session closed]\r\n');
+    setState(() => tab.connState = _ConnState.idle);
+    // Auto-reconnect if VM is still running
+    final vmStatus = context.read<VmState>().status;
+    if (vmStatus == 'running' && tab.retryCount < _Tab._maxRetries) {
+      _scheduleConnect(tab, delaySeconds: 5);
     }
   }
 
   void _reconnect() {
     final tab = _active;
     tab.retryTimer?.cancel();
+    tab.stopKeepAlive();
     tab.retryCount = 0;
     tab.session?.stdin.close();
     tab.client?.close();

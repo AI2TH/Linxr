@@ -47,14 +47,14 @@ class VmPlatform {
       final socket = await SSHSocket.connect(
         '127.0.0.1',
         2222,
-        timeout: const Duration(seconds: 5),
+        timeout: const Duration(seconds: 3),
       );
       client = SSHClient(
         socket,
         username: 'root',
         onPasswordRequest: () => 'alpine',
       );
-      await client.authenticated.timeout(const Duration(seconds: 8));
+      await client.authenticated.timeout(const Duration(seconds: 4));
       return true;
     } catch (_) {
       return false;
@@ -111,7 +111,7 @@ class VmState extends ChangeNotifier {
 
   void _startSshPing() {
     _sshPingTimer?.cancel();
-    _sshPingTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+    _sshPingTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
       if (_status != 'booting') {
         _sshPingTimer?.cancel();
         _sshPingTimer = null;

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
@@ -53,8 +54,23 @@ class _CompanyBranding extends StatelessWidget {
 
 // ── App info ──────────────────────────────────────────────────────────────────
 
-class _AppInfoCard extends StatelessWidget {
+class _AppInfoCard extends StatefulWidget {
   const _AppInfoCard();
+
+  @override
+  State<_AppInfoCard> createState() => _AppInfoCardState();
+}
+
+class _AppInfoCardState extends State<_AppInfoCard> {
+  String _version = '';
+
+  @override
+  void initState() {
+    super.initState();
+    PackageInfo.fromPlatform().then((info) {
+      if (mounted) setState(() => _version = info.version);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -89,24 +105,25 @@ class _AppInfoCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0D6EFD).withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(
-                        color: const Color(0xFF0D6EFD).withOpacity(0.4),
+                  if (_version.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0D6EFD).withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: const Color(0xFF0D6EFD).withOpacity(0.4),
+                        ),
+                      ),
+                      child: Text(
+                        'v$_version',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF0D6EFD),
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                    child: const Text(
-                      'v1.1.7',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Color(0xFF0D6EFD),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
                   const SizedBox(height: 8),
                   const Text(
                     'Bare Alpine Linux VM on Android — no root required. '
@@ -116,7 +133,7 @@ class _AppInfoCard extends StatelessWidget {
                   const SizedBox(height: 10),
                   _InfoRow(Icons.business, 'Developer', 'AI2TH'),
                   const SizedBox(height: 4),
-                  _InfoRow(Icons.memory, 'VM RAM', '1024 MB'),
+                  _InfoRow(Icons.memory, 'VM RAM', 'Configurable in Settings'),
                   const SizedBox(height: 4),
                   _InfoRow(Icons.terminal, 'SSH', 'root@localhost:2222  ·  pw: alpine'),
                 ],

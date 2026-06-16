@@ -49,7 +49,7 @@ vmConsole hardcodes ports 22 and 80 only. Users complained they couldn't expose 
 ```kotlin
 // Example dynamic hostfwd list:
 portForwards.forEach { rule ->
-    cmd += listOf("-netdev", "user,...,hostfwd=${rule.proto}::${rule.hostPort}-:${rule.guestPort}")
+    cmd += listOf("-netdev", "user,...,hostfwd=${rule.proto}:127.0.0.1:${rule.hostPort}-:${rule.guestPort}")
 }
 ```
 

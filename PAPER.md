@@ -139,7 +139,7 @@ libqemu.so
   -drive if=none,file=base.qcow2,id=base,format=qcow2,readonly=on
   -drive if=none,file=user.qcow2,id=user,format=qcow2
   -device virtio-blk-pci,drive=user
-  -netdev user,id=net0,hostfwd=tcp::2222-:22
+  -netdev user,id=net0,hostfwd=tcp:127.0.0.1:2222-:22
   -device virtio-net-pci,netdev=net0,romfile=
   -display none -serial stdio
   -kernel vmlinuz-virt -initrd initramfs-virt

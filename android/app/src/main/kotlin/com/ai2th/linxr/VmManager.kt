@@ -184,7 +184,7 @@ class VmManager(private val context: Context) {
         cmd += listOf("-drive", "if=none,file=$userImage,id=user,format=qcow2")
         cmd += listOf("-device", "virtio-blk-pci,drive=user")
         // SSH forward only: host 2222 → guest 22
-        cmd += listOf("-netdev", "user,id=net0,hostfwd=tcp::2222-:22")
+        cmd += listOf("-netdev", "user,id=net0,hostfwd=tcp:127.0.0.1:2222-:22")
         cmd += listOf("-device", "virtio-net-pci,netdev=net0,romfile=")
         // Virtio RNG speeds up guest entropy (faster crypto, faster SSH key gen at boot)
         cmd += listOf("-device", "virtio-rng-pci")

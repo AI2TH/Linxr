@@ -164,6 +164,32 @@ apk add curl git python3
 
 ---
 
+## Troubleshooting & FAQs
+
+### 1. `npm install` (or other heavy network operations) fails or drops connection inside the VM (Issue #19)
+Under heavy network operations (like `npm install`), the QEMU SLIRP (user-mode) network stack can drop packets or DNS queries due to high concurrency. Additionally, software CPU emulation (TCG) adds CPU latency which can cause connections to time out.
+* **Recommended Solutions**:
+  * Increase npm's download/fetch retry timeouts:
+    ```bash
+    npm config set fetch-retry-maxtimeout 120000
+    npm config set fetch-retry-mintimeout 20000
+    ```
+  * Use lighter package managers like `pnpm` or `yarn`, which are more resource-efficient and use fewer concurrent connections.
+  * Override the default SLIRP DNS resolver (`10.0.2.3`) inside the VM's `/etc/resolv.conf` with a public DNS (e.g. `nameserver 1.1.1.1` or `nameserver 8.8.8.8`).
+
+### 2. Can't upgrade the Linux kernel inside the VM (stuck at `6.6.x`, Issue #18)
+The VM's kernel is booted externally from host-side assets using the QEMU `-kernel` and `-initrd` flags. These assets are compiled and bundled inside the Android APK. Running `apk upgrade` inside the guest OS updates disk packages, but QEMU will continue booting the host-side kernel.
+* **Recommended Solution**:
+  * To upgrade the kernel, the project maintainer must update the kernel binaries in the repository source tree (`assets/vm/`) using `scripts/build_qcow2.sh` and recompile/release the APK.
+
+### 3. VNC / Graphical UI and GPU hardware acceleration (Issue #17)
+Currently, Linxr is configured for command-line access.
+* **Recommended Solutions**:
+  * **VNC Display**: You can install a headless desktop environment (e.g. XFCE) and VNC server (e.g. `x11vnc` or `tigervnc`) inside the Alpine VM, and connect to `localhost:5900` from Android using any external VNC client app.
+  * **GPU Acceleration**: Native QEMU hardware-accelerated virtualization (via VirGL/OpenGL bindings) is not supported due to Android's strict SELinux sandbox policies and lack of direct EGL context access inside standard app processes. Software rendering can be configured but has low FPS.
+
+---
+
 ## Project Structure
 
 ```

@@ -45,6 +45,131 @@ grep -q "^PasswordAuthentication yes" /etc/ssh/sshd_config \
     || echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
 
 # ---------------------------------------------------------------------------
+# SSH performance tuning for SLIRP/TCG environment
+# ---------------------------------------------------------------------------
+# UseDNS no:    Disables reverse DNS lookup on client IP.
+#               DEFAULT is "yes" — causes 2-5s delay per connection because
+#               the lookup goes through QEMU's single-threaded SLIRP DNS proxy.
+#               This is the SINGLE BIGGEST latency fix for terminal slowness.
+#
+# GSSAPIAuthentication no:  Disables Kerberos/GSSAPI auth negotiation.
+#               No GSSAPI libs on Alpine, so this just adds timeout delays.
+#
+# Compression no:  Disable SSH compression — all traffic is localhost, so
+#               compression just wastes emulated CPU cycles.
+#
+# ClientAliveInterval 15:   Sends keepalive every 15s to detect dead connections.
+#
+# MaxStartups 10:3:20:  Accept up to 10 unauthenticated connections before
+#               rate-limiting. Prevents drops when opening multiple tabs.
+#
+# LoginGraceTime 30:  Reduced from 120s — frees sshd resources faster.
+
+grep -q "^UseDNS" /etc/ssh/sshd_config \
+    && sed -i 's/^UseDNS.*/UseDNS no/' /etc/ssh/sshd_config \
+    || echo "UseDNS no" >> /etc/ssh/sshd_config
+
+grep -q "^GSSAPIAuthentication" /etc/ssh/sshd_config \
+    && sed -i 's/^GSSAPIAuthentication.*/GSSAPIAuthentication no/' /etc/ssh/sshd_config \
+    || echo "GSSAPIAuthentication no" >> /etc/ssh/sshd_config
+
+grep -q "^Compression" /etc/ssh/sshd_config \
+    || echo "Compression no" >> /etc/ssh/sshd_config
+
+grep -q "^ClientAliveInterval" /etc/ssh/sshd_config \
+    || echo "ClientAliveInterval 15" >> /etc/ssh/sshd_config
+
+grep -q "^MaxStartups" /etc/ssh/sshd_config \
+    || echo "MaxStartups 10:3:20" >> /etc/ssh/sshd_config
+
+grep -q "^LoginGraceTime" /etc/ssh/sshd_config \
+    || echo "LoginGraceTime 30" >> /etc/ssh/sshd_config
+
+echo "sshd performance tuning applied."
+
+# ---------------------------------------------------------------------------
+# Network hardening for SLIRP user-mode networking (Issue #19)
+# ---------------------------------------------------------------------------
+# QEMU's SLIRP stack is single-threaded and drops packets under high
+# concurrency (e.g. npm install opening 50+ parallel HTTP connections).
+# These sysctl settings increase kernel-level buffers and tune TCP to
+# be more resilient under software emulation (TCG) latency.
+echo "Tuning network stack for SLIRP compatibility..."
+
+# --- DNS resilience ---
+# Force Cloudflare + Google DNS as fallback in case QEMU's DHCP-advertised
+# DNS (set via -netdev dns=) doesn't take effect or user runs older QEMU.
+cat > /etc/resolv.conf <<'DNSEOF'
+nameserver 1.1.1.1
+nameserver 8.8.8.8
+options timeout:5 attempts:3 rotate
+DNSEOF
+
+# --- TCP buffer sizes ---
+# Increase default and max socket buffer sizes.
+# Alpine defaults (212992 bytes) are too small for bursty workloads
+# over the virtio-net + SLIRP path. 4MB max / 1MB default handles npm.
+sysctl -w net.core.rmem_max=4194304      2>/dev/null || true
+sysctl -w net.core.wmem_max=4194304      2>/dev/null || true
+sysctl -w net.core.rmem_default=1048576  2>/dev/null || true
+sysctl -w net.core.wmem_default=1048576  2>/dev/null || true
+
+# --- TCP auto-tuning range ---
+# min=4KB, default=1MB, max=4MB (per-connection buffers)
+sysctl -w net.ipv4.tcp_rmem="4096 1048576 4194304"  2>/dev/null || true
+sysctl -w net.ipv4.tcp_wmem="4096 1048576 4194304"  2>/dev/null || true
+
+# --- TCP timer tuning ---
+# Reduce FIN_WAIT2 timeout — reclaims SLIRP connection slots 4x faster.
+sysctl -w net.ipv4.tcp_fin_timeout=15          2>/dev/null || true
+
+# Enable TCP window scaling and timestamps for better throughput
+sysctl -w net.ipv4.tcp_window_scaling=1        2>/dev/null || true
+sysctl -w net.ipv4.tcp_timestamps=1            2>/dev/null || true
+
+# Lower keepalive — detect dead SLIRP connections faster
+sysctl -w net.ipv4.tcp_keepalive_time=60       2>/dev/null || true
+sysctl -w net.ipv4.tcp_keepalive_intvl=10      2>/dev/null || true
+sysctl -w net.ipv4.tcp_keepalive_probes=5      2>/dev/null || true
+
+# --- Connection tracking ---
+# Increase conntrack table. SLIRP maps every guest TCP connection to
+# a host socket; large npm installs can exhaust defaults.
+sysctl -w net.netfilter.nf_conntrack_max=16384 2>/dev/null || true
+
+# --- Persist for subsequent boots ---
+cat >> /etc/sysctl.conf <<'SYSEOF'
+# Linxr SLIRP network tuning
+net.core.rmem_max=4194304
+net.core.wmem_max=4194304
+net.core.rmem_default=1048576
+net.core.wmem_default=1048576
+net.ipv4.tcp_rmem=4096 1048576 4194304
+net.ipv4.tcp_wmem=4096 1048576 4194304
+net.ipv4.tcp_fin_timeout=15
+net.ipv4.tcp_window_scaling=1
+net.ipv4.tcp_timestamps=1
+net.ipv4.tcp_keepalive_time=60
+net.ipv4.tcp_keepalive_intvl=10
+net.ipv4.tcp_keepalive_probes=5
+SYSEOF
+
+echo "Network tuning applied."
+
+# ---------------------------------------------------------------------------
+# npm / Node.js retry configuration for SLIRP environments
+# ---------------------------------------------------------------------------
+# Even with TCP tuning, TCG's CPU overhead means npm's default 10-second
+# fetch timeout can still expire under load. Pre-configure npm to retry
+# more aggressively. Only runs if npm/Node.js is installed.
+if command -v npm >/dev/null 2>&1 || [ -d /usr/lib/node_modules ]; then
+    npm config set fetch-retry-maxtimeout 120000 2>/dev/null || true
+    npm config set fetch-retry-mintimeout 20000  2>/dev/null || true
+    npm config set fetch-retries 5               2>/dev/null || true
+    echo "npm retry config set for SLIRP networking."
+fi
+
+# ---------------------------------------------------------------------------
 # Install sudo
 # ---------------------------------------------------------------------------
 if ! command -v sudo >/dev/null 2>&1; then

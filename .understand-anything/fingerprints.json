@@ -1,0 +1,246 @@
+{
+  "version": "1.0.0",
+  "gitCommitHash": "a370605151437346ca67db1d6ae60064caca7543",
+  "generatedAt": "2026-05-25T06:31:08.516Z",
+  "files": {
+    "android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt": {
+      "filePath": "android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt",
+      "contentHash": "5a93dd43a4bd49d3d2efd61ccb41d0f611645ba2479df09975e1950311ade241",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 143,
+      "hasStructuralAnalysis": false
+    },
+    "android/app/src/main/kotlin/com/ai2th/linxr/AlpineApp.kt": {
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/AlpineApp.kt",
+      "contentHash": "5e13b89b640bdc284a8b82dcbda96e615fd4c03b0e6b4e92b9152a5d037eef5d",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 17,
+      "hasStructuralAnalysis": false
+    },
+    "android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt": {
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt",
+      "contentHash": "acaa8622659565bc42fbf2c028c9a1487fba217b5883c64daf1b9fcb6cf4ba7a",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 92,
+      "hasStructuralAnalysis": false
+    },
+    "android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt": {
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "contentHash": "3534411f9481411c20b5b686b7b99b2ba5039599dbcef680a976ef0ad3b6ae56",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 370,
+      "hasStructuralAnalysis": false
+    },
+    "android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt": {
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt",
+      "contentHash": "3b5ea874e1a09b4a235172cf923a1750085ed039123d29e633468e48f55c1d32",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 63,
+      "hasStructuralAnalysis": false
+    },
+    "lib/main.dart": {
+      "filePath": "lib/main.dart",
+      "contentHash": "a4b625e6640bb92b301b32de26d9f0b72acc092d83ba1f138751ad70ff83be99",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 295,
+      "hasStructuralAnalysis": false
+    },
+    "lib/screens/about_screen.dart": {
+      "filePath": "lib/screens/about_screen.dart",
+      "contentHash": "90828e465a816cefe95442d313ffc1299662273572c382a9bad00e1cc21518e6",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 316,
+      "hasStructuralAnalysis": false
+    },
+    "lib/screens/settings_screen.dart": {
+      "filePath": "lib/screens/settings_screen.dart",
+      "contentHash": "2eebada528e3c77724312f0d562328a0f036dbe9398b12c9ef3841379a26e7be",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 621,
+      "hasStructuralAnalysis": false
+    },
+    "lib/screens/terminal_screen.dart": {
+      "filePath": "lib/screens/terminal_screen.dart",
+      "contentHash": "6db98a770a9abaa2df20a2c9be3ef909deae852a17e15074e9c56e55f81c355a",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 692,
+      "hasStructuralAnalysis": false
+    },
+    "lib/services/vm_platform.dart": {
+      "filePath": "lib/services/vm_platform.dart",
+      "contentHash": "2ab8190d865aa010a470cca3fe89084dc4a64901f911206cc202f8a7c5f271e6",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 192,
+      "hasStructuralAnalysis": false
+    },
+    "scripts/_build_rootfs.sh": {
+      "filePath": "scripts/_build_rootfs.sh",
+      "contentHash": "8c67c2254665aba99deae2734cc0c93ed620b0f6c45c3d8aaec38315577ba561",
+      "functions": [
+        {
+          "name": "depend",
+          "params": [],
+          "exported": false,
+          "lineCount": 5
+        },
+        {
+          "name": "start",
+          "params": [],
+          "exported": false,
+          "lineCount": 31
+        },
+        {
+          "name": "depend",
+          "params": [],
+          "exported": false,
+          "lineCount": 4
+        },
+        {
+          "name": "start",
+          "params": [],
+          "exported": false,
+          "lineCount": 9
+        }
+      ],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 319,
+      "hasStructuralAnalysis": true
+    },
+    "scripts/build_aab.sh": {
+      "filePath": "scripts/build_aab.sh",
+      "contentHash": "cf64f3ad40d41626e65106522e5426d122b03b3fa803ecebf7943e2c1c1f73be",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 138,
+      "hasStructuralAnalysis": true
+    },
+    "scripts/build_apk.sh": {
+      "filePath": "scripts/build_apk.sh",
+      "contentHash": "2cbbe8e621074c4e512e935c82c2aa6c9bcd8267297d384e13b2de581e4e22b9",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 149,
+      "hasStructuralAnalysis": true
+    },
+    "scripts/build_qcow2.sh": {
+      "filePath": "scripts/build_qcow2.sh",
+      "contentHash": "b169aae7dda30bdac0898b329876f76bf66308190a672f4df90ab044926a1a35",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 40,
+      "hasStructuralAnalysis": true
+    },
+    "scripts/gen_icons.py": {
+      "filePath": "scripts/gen_icons.py",
+      "contentHash": "e589b2e74781d50846aec66f59dfcc5655edf764ce3643cc84eac48a27c6610f",
+      "functions": [
+        {
+          "name": "rounded_rect_mask",
+          "params": [
+            "size",
+            "radius"
+          ],
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "draw_icon",
+          "params": [
+            "size"
+          ],
+          "returnType": "Image.Image",
+          "exported": true,
+          "lineCount": 67
+        },
+        {
+          "name": "flatten",
+          "params": [
+            "icon",
+            "bg_color"
+          ],
+          "returnType": "Image.Image",
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "circle_mask",
+          "params": [
+            "size"
+          ],
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "save_all",
+          "params": [],
+          "exported": true,
+          "lineCount": 18
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "PIL",
+          "specifiers": [
+            "Image",
+            "ImageDraw",
+            "ImageFilter"
+          ]
+        }
+      ],
+      "exports": [
+        "rounded_rect_mask",
+        "draw_icon",
+        "flatten",
+        "circle_mask",
+        "save_all"
+      ],
+      "totalLines": 137,
+      "hasStructuralAnalysis": true
+    }
+  }
+}

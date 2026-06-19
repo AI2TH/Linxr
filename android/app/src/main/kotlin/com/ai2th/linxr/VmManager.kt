@@ -31,7 +31,7 @@ class VmManager(private val context: Context) {
         get() = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
 
     // Bump when base.qcow2.gz changes (forces re-extraction on next launch)
-    private val ASSETS_VERSION = "v15"
+    private val ASSETS_VERSION = "v26"
 
     // -------------------------------------------------------------------------
     // Public API
@@ -174,6 +174,10 @@ class VmManager(private val context: Context) {
             cmd += listOf("-cpu", "qemu64")
         }
 
+        // Multi-threaded TCG: one thread per vCPU — significantly faster boot and runtime
+        cmd += listOf("-accel", "tcg,thread=multi,tb-size=256")
+        cmd += listOf("-overcommit", "mem-lock=off")
+
         cmd += listOf("-smp", vcpu.toString())
         cmd += listOf("-m", ramMb.toString())
         cmd += listOf("-drive", "if=none,file=$baseImage,id=base,format=qcow2,readonly=on")
@@ -182,6 +186,8 @@ class VmManager(private val context: Context) {
         // SSH forward only: host 2222 → guest 22
         cmd += listOf("-netdev", "user,id=net0,hostfwd=tcp::2222-:22")
         cmd += listOf("-device", "virtio-net-pci,netdev=net0,romfile=")
+        // Virtio RNG speeds up guest entropy (faster crypto, faster SSH key gen at boot)
+        cmd += listOf("-device", "virtio-rng-pci")
         cmd += listOf("-display", "none")
         cmd += listOf("-serial", "stdio")
 
@@ -192,7 +198,8 @@ class VmManager(private val context: Context) {
             cmd += listOf("-initrd", initrd.absolutePath)
             cmd += listOf("-append",
                 "console=ttyAMA0 root=/dev/vda rootfstype=ext4 rootflags=rw " +
-                "modules=virtio_blk,ext4 quiet")
+                "modules=virtio_blk,ext4 quiet " +
+                "cgroup_no_v1=all")
         }
         return cmd
     }
@@ -230,9 +237,12 @@ class VmManager(private val context: Context) {
             Log.d(TAG, "Extracted + decompressed base.qcow2.gz")
         }
 
+        // Always re-extract kernel files so they match the modules in base.qcow2.
+        // Skipping this on "already exists" caused kernel/module version mismatches.
         listOf("vmlinuz-virt", "initramfs-virt").forEach { name ->
             val dest = File(vmDir, name)
-            if (!dest.exists()) extractAsset("vm/$name", dest)
+            dest.delete()
+            extractAsset("vm/$name", dest)
         }
 
         // Bootstrap script

@@ -178,9 +178,28 @@ Under heavy network operations (like `npm install`), the QEMU SLIRP (user-mode) 
   * Override the default SLIRP DNS resolver (`10.0.2.3`) inside the VM's `/etc/resolv.conf` with a public DNS (e.g. `nameserver 1.1.1.1` or `nameserver 8.8.8.8`).
 
 ### 2. Can't upgrade the Linux kernel inside the VM (stuck at `6.6.x`, Issue #18)
-The VM's kernel is booted externally from host-side assets using the QEMU `-kernel` and `-initrd` flags. These assets are compiled and bundled inside the Android APK. Running `apk upgrade` inside the guest OS updates disk packages, but QEMU will continue booting the host-side kernel.
-* **Recommended Solution**:
-  * To upgrade the kernel, the project maintainer must update the kernel binaries in the repository source tree (`assets/vm/`) using `scripts/build_qcow2.sh` and recompile/release the APK.
+
+The VM boots using QEMU's `-kernel` and `-initrd` flags, which load
+`vmlinuz-virt` and `initramfs-virt` from the APK's bundled assets — **not**
+from the guest's `/boot/` directory. This is by design:
+
+- The host-side kernel must match the modules compiled into `base.qcow2`.
+  A mismatch causes a kernel panic at boot.
+- Android's app sandbox prevents mounting the QCOW2 overlay to extract
+  a guest-side kernel before QEMU starts.
+
+**To upgrade the kernel**, the project maintainer must:
+
+1. Build a new Alpine rootfs with the desired kernel version using
+   `scripts/build_qcow2.sh`.
+2. Copy the matching `vmlinuz-virt` and `initramfs-virt` into
+   `android/app/src/main/assets/vm/`.
+3. Bump `ASSETS_VERSION` in `VmManager.kt` (currently `"v26"`).
+4. Build and release a new APK.
+
+**What users can do**: Run `apk upgrade` to update userland packages
+(OpenSSH, Python, etc.) — those changes persist across reboots.
+Only the kernel itself requires an APK update.
 
 ### 3. VNC / Graphical UI and GPU hardware acceleration (Issue #17)
 Currently, Linxr is configured for command-line access.

@@ -9,10 +9,12 @@ Linxr runs a full Alpine Linux environment inside a QEMU virtual machine on any 
 ## Features
 
 - **Full Linux shell** — Alpine Linux 3.19 with OpenRC init, OpenSSH, sudo, bash
-- **Built-in terminal** — SSH terminal tab with auto-reconnect
+- **Docker support** — full Docker Engine with overlay2 storage and bridge networking
+- **Multi-tab terminal** — up to 5 concurrent SSH sessions with auto-reconnect and keepalive
 - **External SSH access** — connect from any SSH client on the same device
 - **No root required** — QEMU runs as a normal Android app process
 - **Persistent storage** — a writable QCOW2 overlay preserves your changes across reboots
+- **Dynamic resources** — configure vCPU count, RAM, and disk size from the Settings screen
 - **Internet access** — SLIRP networking gives the VM full outbound internet via the host
 
 ---
@@ -44,8 +46,8 @@ Linxr runs a full Alpine Linux environment inside a QEMU virtual machine on any 
 
 1. Install the APK
 2. Open **Linxr** → tap **Start VM**
-3. Wait ~15 seconds for Alpine to boot
-4. Switch to the **Terminal** tab — it auto-connects
+3. Wait ~2–3 minutes for Alpine to boot (first run takes longer — assets are extracted on device)
+4. Switch to the **Terminal** tab — it auto-connects once SSH is ready
 5. Log in as `root` / `alpine`
 
 ### External SSH (optional)
@@ -117,6 +119,14 @@ bash scripts/build_apk.sh release   # release build (requires keystore)
 
 Output: `build/linxr-debug.apk` or `build/linxr-release.apk`
 
+### 2b — Build the AAB (Play Store)
+
+```bash
+bash scripts/build_aab.sh           # release AAB (default)
+```
+
+Output: `build/linxr-release.aab`
+
 ### 3 — Sideload
 
 ```bash
@@ -173,12 +183,14 @@ alpine/
 ├── lib/
 │   ├── main.dart               # app root, home screen
 │   ├── screens/
-│   │   ├── terminal_screen.dart  # SSH terminal with auto-retry
+│   │   ├── terminal_screen.dart  # SSH terminal, multi-tab, auto-reconnect
+│   │   ├── settings_screen.dart  # vCPU / RAM / disk sliders
 │   │   └── about_screen.dart     # company info, license, dependencies
 │   └── services/
 │       └── vm_platform.dart    # platform channel + VmState
 ├── scripts/
 │   ├── build_apk.sh            # Docker-based APK builder
+│   ├── build_aab.sh            # Docker-based AAB builder (Play Store)
 │   ├── build_qcow2.sh          # Alpine qcow2 builder (ARM64 Docker)
 │   ├── _build_rootfs.sh        # rootfs bootstrap (runs inside Docker)
 │   └── gen_icons.py            # generates all launcher icon sizes

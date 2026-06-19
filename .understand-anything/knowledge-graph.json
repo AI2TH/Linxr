@@ -1,0 +1,3942 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "name": "Linxr",
+    "languages": [
+      "dart",
+      "kotlin",
+      "bash",
+      "groovy",
+      "yaml",
+      "xml",
+      "python",
+      "html",
+      "markdown",
+      "dockerfile"
+    ],
+    "frameworks": [
+      "Flutter",
+      "Android",
+      "QEMU",
+      "Docker",
+      "dartssh2",
+      "xterm",
+      "OpenRC"
+    ],
+    "description": "Android app that runs a full Alpine Linux VM via QEMU without root access",
+    "analyzedAt": "2026-05-25T06:30:26.373047Z",
+    "gitCommitHash": "a370605151437346ca67db1d6ae60064caca7543"
+  },
+  "nodes": [
+    {
+      "id": "file:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt",
+      "type": "file",
+      "name": "VmResourceTest.kt",
+      "filePath": "android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt",
+      "summary": "Instrumented Android test that starts the VM, waits for SSH readiness (up to 12 min), connects via JSch, runs shell diagnostics (nproc, free, df, uname), attempts manual resize2fs if the disk is still small, and asserts disk size > 5 GB.",
+      "tags": [
+        "kotlin",
+        "android",
+        "test",
+        "instrumented",
+        "ssh",
+        "jsch",
+        "qemu",
+        "disk-resize"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "class:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest",
+      "type": "class",
+      "name": "VmResourceTest",
+      "filePath": "android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt",
+      "summary": "JUnit4 instrumented test class that validates VM resource allocation (CPU, RAM, disk) by SSH-ing into the running guest and executing diagnostic commands. Handles automatic disk resize if needed.",
+      "tags": [
+        "kotlin",
+        "junit4",
+        "instrumented-test",
+        "vm-resources",
+        "ssh"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest:startVm",
+      "type": "function",
+      "name": "startVm",
+      "filePath": "android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt",
+      "summary": "@Before setup method \u2014 calls vmManager.startVm() to boot the VM before each test.",
+      "tags": [
+        "junit4",
+        "before",
+        "setup"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest:stopVm",
+      "type": "function",
+      "name": "stopVm",
+      "filePath": "android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt",
+      "summary": "@After teardown method \u2014 calls vmManager.stopVm() after each test, swallowing exceptions.",
+      "tags": [
+        "junit4",
+        "after",
+        "teardown"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest:checkVmResources",
+      "type": "function",
+      "name": "checkVmResources",
+      "filePath": "android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt",
+      "summary": "Primary @Test (15 min timeout): waits for SSH, opens a JSch session, runs nproc/free/df/uname/alpine-release, optionally triggers manual resize2fs if disk < 5 GB, then asserts disk > 5 GB.",
+      "tags": [
+        "test",
+        "ssh",
+        "disk",
+        "cpu",
+        "ram",
+        "resize2fs"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest:waitForSsh",
+      "type": "function",
+      "name": "waitForSsh",
+      "filePath": "android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt",
+      "summary": "Polls TCP port 2222 on localhost every 5 s for up to 12 min until SSH is accepting connections, or throws AssertionError.",
+      "tags": [
+        "ssh",
+        "polling",
+        "networking"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest:openSession",
+      "type": "function",
+      "name": "openSession",
+      "filePath": "android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt",
+      "summary": "Creates and returns an authenticated JSch SSH session to root@127.0.0.1:2222 with password 'alpine', disabling strict host key checking.",
+      "tags": [
+        "ssh",
+        "jsch",
+        "authentication"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest:exec",
+      "type": "function",
+      "name": "exec",
+      "filePath": "android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt",
+      "summary": "Executes a single shell command over an existing JSch session using an exec channel and returns the captured stdout as a string.",
+      "tags": [
+        "ssh",
+        "jsch",
+        "exec"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:android/app/src/main/kotlin/com/ai2th/linxr/AlpineApp.kt",
+      "type": "file",
+      "name": "AlpineApp.kt",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/AlpineApp.kt",
+      "summary": "Android Application singleton that holds the single VmManager instance, ensuring it survives Activity recreations.",
+      "tags": [
+        "kotlin",
+        "android",
+        "application",
+        "singleton"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:android/app/src/main/kotlin/com/ai2th/linxr/AlpineApp.kt:AlpineApp",
+      "type": "class",
+      "name": "AlpineApp",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/AlpineApp.kt",
+      "summary": "Application subclass that instantiates VmManager in onCreate() and exposes it as a lateinit property to all components in the process.",
+      "tags": [
+        "kotlin",
+        "android",
+        "application",
+        "singleton",
+        "vm-lifecycle"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:android/app/src/main/kotlin/com/ai2th/linxr/AlpineApp.kt:AlpineApp:onCreate",
+      "type": "function",
+      "name": "onCreate",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/AlpineApp.kt",
+      "summary": "Overrides Application.onCreate() to create and assign the VmManager singleton.",
+      "tags": [
+        "lifecycle",
+        "initialization"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt",
+      "type": "file",
+      "name": "MainActivity.kt",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt",
+      "summary": "Flutter entry-point Activity that registers a MethodChannel 'com.ai2th.linxr/vm' to bridge Dart calls (startVm, stopVm, getVmStatus, getDeviceInfo, resetStorage) to VmManager on a single-thread executor, and manages VmService lifecycle.",
+      "tags": [
+        "kotlin",
+        "android",
+        "flutter",
+        "method-channel",
+        "bridge",
+        "main-activity"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "class:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt:MainActivity",
+      "type": "class",
+      "name": "MainActivity",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt",
+      "summary": "FlutterActivity subclass that sets up the MethodChannel handler routing Dart VM commands to VmManager, dispatching blocking calls onto a single-thread executor to avoid ANR.",
+      "tags": [
+        "kotlin",
+        "flutter-activity",
+        "method-channel",
+        "vm-bridge"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt:MainActivity:configureFlutterEngine",
+      "type": "function",
+      "name": "configureFlutterEngine",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt",
+      "summary": "Registers the MethodChannel and its call handler, dispatching startVm/stopVm/resetStorage on the executor thread and getVmStatus/getDeviceInfo synchronously.",
+      "tags": [
+        "flutter",
+        "method-channel",
+        "engine-config"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt:MainActivity:startVmService",
+      "type": "function",
+      "name": "startVmService",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt",
+      "summary": "Starts VmService as a foreground service via startForegroundService().",
+      "tags": [
+        "service",
+        "foreground",
+        "vm-lifecycle"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt:MainActivity:stopVmService",
+      "type": "function",
+      "name": "stopVmService",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt",
+      "summary": "Stops VmService by calling stopService().",
+      "tags": [
+        "service",
+        "vm-lifecycle"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "type": "file",
+      "name": "VmManager.kt",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "summary": "Core VM lifecycle manager: extracts assets (base.qcow2/kernel/initrd) from APK, builds and spawns the QEMU process via ProcessBuilder, manages overlay disk image creation via qemu-img, provides status reporting, and handles orphan-process cleanup.",
+      "tags": [
+        "kotlin",
+        "android",
+        "qemu",
+        "vm",
+        "lifecycle",
+        "asset-extraction",
+        "disk-image"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "class:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager",
+      "type": "class",
+      "name": "VmManager",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "summary": "Context-scoped manager class responsible for the full QEMU/Alpine VM lifecycle: asset versioning and extraction, qemu-img overlay creation, QEMU process spawning with dynamic vCPU/RAM settings, stdout draining, PID tracking for orphan cleanup, and storage reset.",
+      "tags": [
+        "kotlin",
+        "vm-lifecycle",
+        "qemu",
+        "process-management",
+        "asset-management",
+        "shared-preferences"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:startVm",
+      "type": "function",
+      "name": "startVm",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "summary": "Synchronized public method: kills any existing/orphan QEMU process, extracts assets if needed, resolves QEMU binary, reads vCPU/RAM from SharedPreferences, creates overlay image if necessary, builds and spawns the QEMU ProcessBuilder, saves PID file, and drains stdout on a daemon thread.",
+      "tags": [
+        "vm-start",
+        "qemu",
+        "process-builder",
+        "synchronized",
+        "assets"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:stopVm",
+      "type": "function",
+      "name": "stopVm",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "summary": "Synchronized public method: SIGTERMs the QEMU process, waits up to 5 s, force-kills if needed, nulls the process reference, clears isRunning, and deletes the PID file.",
+      "tags": [
+        "vm-stop",
+        "qemu",
+        "synchronized",
+        "process-kill"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:getStatus",
+      "type": "function",
+      "name": "getStatus",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "summary": "Returns 'running' if the QEMU process is alive (exitValue() throws), or 'stopped' if it has exited or was never started. Also cleans up stale process references.",
+      "tags": [
+        "vm-status",
+        "process-check"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:buildQemuCommand",
+      "type": "function",
+      "name": "buildQemuCommand",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "summary": "Builds the QEMU command-line list: machine type (virt/q35), CPU model, multi-threaded TCG acceleration, SMP/RAM, virtio-blk drives (base read-only + user overlay), SLIRP networking with SSH port-forward 2222\u219222, virtio-rng, no display, serial stdio, and optional direct kernel boot.",
+      "tags": [
+        "qemu",
+        "command-builder",
+        "virtio",
+        "networking",
+        "tcg",
+        "slirp"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:extractAssets",
+      "type": "function",
+      "name": "extractAssets",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "summary": "Clears old version markers, extracts base.qcow2 (with fallback gzip decompression), kernel/initrd, and bootstrap script from APK assets into app files directory, then writes a version marker file.",
+      "tags": [
+        "assets",
+        "extraction",
+        "gzip",
+        "qcow2",
+        "kernel"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:assetsReady",
+      "type": "function",
+      "name": "assetsReady",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "summary": "Checks for the versioned marker file and existence of QEMU binary, base.qcow2, vmlinuz-virt, and initramfs-virt to determine if asset extraction can be skipped.",
+      "tags": [
+        "assets",
+        "version-check"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:createUserImage",
+      "type": "function",
+      "name": "createUserImage",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "summary": "Runs qemu-img (libqemu_img.so) to create a sparse QCOW2 overlay backed by base.qcow2, sized either from SharedPreferences or dynamically based on available storage.",
+      "tags": [
+        "qemu-img",
+        "qcow2",
+        "overlay",
+        "disk"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:availableOverlaySizeGb",
+      "type": "function",
+      "name": "availableOverlaySizeGb",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "summary": "Calculates available storage via StatFs, subtracts 2 GB headroom, clamps minimum to 8 GB; used as default virtual disk size for the QCOW2 overlay.",
+      "tags": [
+        "storage",
+        "disk-sizing",
+        "statfs"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:dynamicVcpu",
+      "type": "function",
+      "name": "dynamicVcpu",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "summary": "Returns half the device's available processors, clamped to at least 1, as the default vCPU count.",
+      "tags": [
+        "cpu",
+        "dynamic-resources"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:dynamicRamMb",
+      "type": "function",
+      "name": "dynamicRamMb",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "summary": "Returns 25% of device total RAM in MB via ActivityManager, clamped to at least 512 MB, as the default RAM allocation.",
+      "tags": [
+        "ram",
+        "dynamic-resources",
+        "activity-manager"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:resetStorage",
+      "type": "function",
+      "name": "resetStorage",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "summary": "Deletes user.qcow2 only, leaving base.qcow2 intact; a fresh overlay is recreated on next VM start.",
+      "tags": [
+        "storage-reset",
+        "user-data"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:getDeviceInfo",
+      "type": "function",
+      "name": "getDeviceInfo",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "summary": "Returns a map with 'cores' (total CPU count), 'totalRamMb', and 'freeStorageGb' queried from the Android system, used by the Flutter Settings screen.",
+      "tags": [
+        "device-info",
+        "activity-manager",
+        "statfs"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:resolveQemuBinary",
+      "type": "function",
+      "name": "resolveQemuBinary",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "summary": "Returns a File pointing to libqemu.so in nativeLibraryDir, throwing IllegalStateException if absent.",
+      "tags": [
+        "qemu",
+        "binary-resolution",
+        "native-lib"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:killOrphanQemu",
+      "type": "function",
+      "name": "killOrphanQemu",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "summary": "Reads the PID from vm.pid file and kills the orphaned QEMU process (e.g. from a previous app session) using android.os.Process.killProcess, then sleeps 500 ms to let the port be released.",
+      "tags": [
+        "qemu",
+        "orphan-cleanup",
+        "pid-file"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:extractAsset",
+      "type": "function",
+      "name": "extractAsset",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "summary": "Copies a raw asset from the APK assets directory to a destination File using streams.",
+      "tags": [
+        "assets",
+        "file-io"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:extractAndDecompress",
+      "type": "function",
+      "name": "extractAndDecompress",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "summary": "Extracts and decompresses a gzip-compressed asset (e.g. base.qcow2.gz) from the APK to a destination File.",
+      "tags": [
+        "assets",
+        "gzip",
+        "decompression",
+        "file-io"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt",
+      "type": "file",
+      "name": "VmService.kt",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt",
+      "summary": "Android foreground Service that keeps the app process alive with a persistent notification while QEMU is running, preventing the OS from killing the VM under memory pressure.",
+      "tags": [
+        "kotlin",
+        "android",
+        "service",
+        "foreground",
+        "wakelock",
+        "notification"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt:VmService",
+      "type": "class",
+      "name": "VmService",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt",
+      "summary": "Foreground Service subclass that creates a persistent notification channel and notification ('VM is running \u2014 SSH on port 2222') via NotificationCompat, returns START_STICKY, and taps MainActivity via PendingIntent.",
+      "tags": [
+        "service",
+        "foreground",
+        "notification",
+        "start-sticky"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt:VmService:onStartCommand",
+      "type": "function",
+      "name": "onStartCommand",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt",
+      "summary": "Calls startForeground() with a persistent notification and returns START_STICKY to ensure the OS restarts the service if killed.",
+      "tags": [
+        "service-lifecycle",
+        "foreground",
+        "notification"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt:VmService:createNotificationChannel",
+      "type": "function",
+      "name": "createNotificationChannel",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt",
+      "summary": "Creates the 'linxr_channel' NotificationChannel with IMPORTANCE_LOW on Android O+.",
+      "tags": [
+        "notification",
+        "channel"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt:VmService:createNotification",
+      "type": "function",
+      "name": "createNotification",
+      "filePath": "android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt",
+      "summary": "Builds and returns a persistent NotificationCompat notification with title 'Linxr' and text 'VM is running \u2014 SSH on port 2222', tapping which opens MainActivity.",
+      "tags": [
+        "notification",
+        "pending-intent"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:lib/main.dart",
+      "type": "file",
+      "name": "main.dart",
+      "filePath": "lib/main.dart",
+      "summary": "App entry point. Bootstraps the Flutter app with a ChangeNotifierProvider wrapping VmState, defines AlpineApp (MaterialApp root with dark Material3 theme), MainScreen (4-tab BottomNavigationBar using IndexedStack for Home/Terminal/Settings/About), and the private _HomeScreen with _StatusCard, _SshInfoCard, and _ControlButton widgets.",
+      "tags": [
+        "dart",
+        "flutter",
+        "entry-point",
+        "navigation",
+        "home-screen",
+        "ui"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:lib/screens/about_screen.dart",
+      "type": "file",
+      "name": "about_screen.dart",
+      "filePath": "lib/screens/about_screen.dart",
+      "summary": "Static informational screen showing company branding (AI2TH logo), app metadata (name, version v1.1.7, description), MIT license text in a collapsible tile, and an expandable list of 8 open-source dependencies (Flutter, dartssh2, xterm, provider, QEMU, Alpine Linux, OpenSSH, cupertino_icons) with license badges.",
+      "tags": [
+        "dart",
+        "flutter",
+        "ui",
+        "about",
+        "static"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:lib/screens/settings_screen.dart",
+      "type": "file",
+      "name": "settings_screen.dart",
+      "filePath": "lib/screens/settings_screen.dart",
+      "summary": "Settings screen for dynamic VM resource allocation. Loads device hardware info via VmPlatform.getDeviceInfo() and persists vCPU, RAM (MB), and disk (GB) to SharedPreferences keys vcpu_count/ram_mb/disk_gb. Provides auto-mode defaults mirroring VmManager.kt logic, stepped slider widgets, a restart-VM banner when running, and a destructive Reset VM Storage action with confirmation dialog.",
+      "tags": [
+        "dart",
+        "flutter",
+        "settings",
+        "vm-config",
+        "shared-preferences",
+        "ui"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:lib/screens/terminal_screen.dart",
+      "type": "file",
+      "name": "terminal_screen.dart",
+      "filePath": "lib/screens/terminal_screen.dart",
+      "summary": "Multi-tab SSH terminal screen. Manages up to 5 concurrent _Tab instances each holding a dartssh2 SSHClient/SSHSession and an xterm Terminal. Implements full SSH connection lifecycle: connect to 127.0.0.1:2222, retry with 5s backoff (max 24 retries), keepalive probe every 25s, disconnect all on VM stop, reconnect on app foreground resume. Provides clipboard paste/copy, custom key row (Tab, arrows, Ctrl sequences), and a tab bar with per-tab connection dots.",
+      "tags": [
+        "dart",
+        "flutter",
+        "terminal",
+        "ssh",
+        "dartssh2",
+        "xterm",
+        "multi-tab",
+        "ui"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:lib/services/vm_platform.dart",
+      "type": "file",
+      "name": "vm_platform.dart",
+      "filePath": "lib/services/vm_platform.dart",
+      "summary": "Platform service layer and state management. VmPlatform is a static class bridging Dart to Kotlin via MethodChannel 'com.ai2th.linxr/vm' (startVm, stopVm, getVmStatus, getDeviceInfo, resetStorage, pingSsh). VmState is a ChangeNotifier owning the VM lifecycle state machine (stopped\u2192booting\u2192running), with a 3s SSH ping timer on boot transitioning to a 5s status-poll timer at runtime. DeviceInfo is an immutable data class for hardware info.",
+      "tags": [
+        "dart",
+        "flutter",
+        "service",
+        "method-channel",
+        "state-management",
+        "vm-state",
+        "change-notifier"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "class:AlpineApp",
+      "type": "class",
+      "name": "AlpineApp",
+      "filePath": "lib/main.dart",
+      "summary": "Root StatelessWidget. Configures MaterialApp with a dark Material3 theme (primary #0D6EFD blue, secondary #20C997 teal, scaffold background #0E1117) and sets MainScreen as home.",
+      "tags": [
+        "flutter",
+        "widget",
+        "app-root",
+        "theme"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:MainScreen",
+      "type": "class",
+      "name": "MainScreen",
+      "filePath": "lib/main.dart",
+      "summary": "StatefulWidget rendering the 4-destination NavigationBar (Home, Terminal, Settings, About) with IndexedStack body. Calls VmState.refreshStatus() on first frame.",
+      "tags": [
+        "flutter",
+        "widget",
+        "navigation",
+        "stateful"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:_MainScreenState",
+      "type": "class",
+      "name": "_MainScreenState",
+      "filePath": "lib/main.dart",
+      "summary": "State for MainScreen. Holds _selectedIndex and static _screens list. Triggers VmState.refreshStatus() via postFrameCallback on initState.",
+      "tags": [
+        "flutter",
+        "state",
+        "navigation"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:_HomeScreen",
+      "type": "class",
+      "name": "_HomeScreen",
+      "filePath": "lib/main.dart",
+      "summary": "Private StatelessWidget composing the Home tab body: _StatusCard, _SshInfoCard, and _ControlButton in a padded Column.",
+      "tags": [
+        "flutter",
+        "widget",
+        "home"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:_StatusCard",
+      "type": "class",
+      "name": "_StatusCard",
+      "filePath": "lib/main.dart",
+      "summary": "Displays VM status with icon and color from a switch on vm.status values: running (green check), booting/starting (yellow hourglass), error (red), stopped (grey). Watches VmState via context.watch.",
+      "tags": [
+        "flutter",
+        "widget",
+        "vm-status"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:_SshInfoCard",
+      "type": "class",
+      "name": "_SshInfoCard",
+      "filePath": "lib/main.dart",
+      "summary": "Shows SSH connection string 'ssh root@localhost -p 2222' styled in green when VM isRunning, grey otherwise.",
+      "tags": [
+        "flutter",
+        "widget",
+        "ssh-info"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:_ControlButton",
+      "type": "class",
+      "name": "_ControlButton",
+      "filePath": "lib/main.dart",
+      "summary": "Renders Start VM (blue) / Stop VM (red) FilledButton.icon based on VmState, or CircularProgressIndicator during loading/booting states.",
+      "tags": [
+        "flutter",
+        "widget",
+        "vm-control"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:AboutScreen",
+      "type": "class",
+      "name": "AboutScreen",
+      "filePath": "lib/screens/about_screen.dart",
+      "summary": "Top-level StatelessWidget for the About screen. Composes _CompanyBranding, _AppInfoCard, _LicenseCard, and _DependenciesCard in a ListView.",
+      "tags": [
+        "flutter",
+        "widget",
+        "about"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:_CompanyBranding",
+      "type": "class",
+      "name": "_CompanyBranding",
+      "filePath": "lib/screens/about_screen.dart",
+      "summary": "Renders ai2th_logo.png asset (260px) and the ai2th.github.io website URL.",
+      "tags": [
+        "flutter",
+        "widget",
+        "branding"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:_AppInfoCard",
+      "type": "class",
+      "name": "_AppInfoCard",
+      "filePath": "lib/screens/about_screen.dart",
+      "summary": "Card showing app icon (linxr_icon.png), version badge v1.1.7, description, developer (AI2TH), VM RAM (1024 MB), and SSH info row.",
+      "tags": [
+        "flutter",
+        "widget",
+        "app-info"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:_LicenseCard",
+      "type": "class",
+      "name": "_LicenseCard",
+      "filePath": "lib/screens/about_screen.dart",
+      "summary": "ExpansionTile card showing the full MIT License text for Copyright 2026 AI2TH.",
+      "tags": [
+        "flutter",
+        "widget",
+        "license"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:_DependenciesCard",
+      "type": "class",
+      "name": "_DependenciesCard",
+      "filePath": "lib/screens/about_screen.dart",
+      "summary": "ExpansionTile listing 8 open-source components with license badges. Uses _Dep data class and _DepTile widget per entry.",
+      "tags": [
+        "flutter",
+        "widget",
+        "dependencies"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:_Dep",
+      "type": "class",
+      "name": "_Dep",
+      "filePath": "lib/screens/about_screen.dart",
+      "summary": "Immutable data holder for a dependency: name, author, license, desc.",
+      "tags": [
+        "dart",
+        "data-class"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:_DepTile",
+      "type": "class",
+      "name": "_DepTile",
+      "filePath": "lib/screens/about_screen.dart",
+      "summary": "StatelessWidget rendering a single _Dep as a Row with a teal license badge and name/author/desc column.",
+      "tags": [
+        "flutter",
+        "widget"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:_InfoRow",
+      "type": "class",
+      "name": "_InfoRow",
+      "filePath": "lib/screens/about_screen.dart",
+      "summary": "Small icon + label + value row widget used inside _AppInfoCard.",
+      "tags": [
+        "flutter",
+        "widget"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:SettingsScreen",
+      "type": "class",
+      "name": "SettingsScreen",
+      "filePath": "lib/screens/settings_screen.dart",
+      "summary": "StatefulWidget entry point for the settings tab.",
+      "tags": [
+        "flutter",
+        "widget",
+        "settings",
+        "stateful"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:_SettingsScreenState",
+      "type": "class",
+      "name": "_SettingsScreenState",
+      "filePath": "lib/screens/settings_screen.dart",
+      "summary": "Core settings state. Loads DeviceInfo and SharedPreferences in parallel on initState. Derives auto-defaults for vCPU (cores/2), RAM (total/4), disk (freeStorage-2GB rounded to 8GB steps) mirroring VmManager.kt. Persists user changes via _saveVcpu/_saveRam/_saveDisk. Implements _restartVm (stop+1s+start) and _resetStorage (confirmation dialog + VmPlatform.resetStorage).",
+      "tags": [
+        "flutter",
+        "state",
+        "settings",
+        "shared-preferences",
+        "vm-config"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "class:_RestartBanner",
+      "type": "class",
+      "name": "_RestartBanner",
+      "filePath": "lib/screens/settings_screen.dart",
+      "summary": "Amber warning banner shown when VM is running; offers a Restart button to apply resource changes.",
+      "tags": [
+        "flutter",
+        "widget",
+        "settings"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:_ResetStorageButton",
+      "type": "class",
+      "name": "_ResetStorageButton",
+      "filePath": "lib/screens/settings_screen.dart",
+      "summary": "Red 'Reset VM Storage' TextButton.icon widget, shows spinner while resetting.",
+      "tags": [
+        "flutter",
+        "widget",
+        "settings",
+        "destructive"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:_IntSlider",
+      "type": "class",
+      "name": "_IntSlider",
+      "filePath": "lib/screens/settings_screen.dart",
+      "summary": "Integer-step Slider with min/max tick labels and plural-aware label suffix (e.g. '1 core' / '4 cores'). Used for vCPU setting.",
+      "tags": [
+        "flutter",
+        "widget",
+        "slider",
+        "settings"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:_StepSlider",
+      "type": "class",
+      "name": "_StepSlider",
+      "filePath": "lib/screens/settings_screen.dart",
+      "summary": "Stepped Slider (fixed step size, e.g. 512 MB increments) with a custom labelFn for display. Used for RAM and Disk settings.",
+      "tags": [
+        "flutter",
+        "widget",
+        "slider",
+        "settings"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:_SettingCard",
+      "type": "class",
+      "name": "_SettingCard",
+      "filePath": "lib/screens/settings_screen.dart",
+      "summary": "Card container for a settings row: icon, title, auto/manual toggle badge, value label, and a child widget (slider). Shows optional note text.",
+      "tags": [
+        "flutter",
+        "widget",
+        "settings"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:_SectionHeader",
+      "type": "class",
+      "name": "_SectionHeader",
+      "filePath": "lib/screens/settings_screen.dart",
+      "summary": "Uppercase section label with letter-spacing for settings list grouping.",
+      "tags": [
+        "flutter",
+        "widget",
+        "settings"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:_ChangeRow",
+      "type": "class",
+      "name": "_ChangeRow",
+      "filePath": "lib/screens/settings_screen.dart",
+      "summary": "Row showing when a settings change takes effect (e.g. 'vCPU & RAM: Next VM start').",
+      "tags": [
+        "flutter",
+        "widget",
+        "settings"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:TerminalScreen",
+      "type": "class",
+      "name": "TerminalScreen",
+      "filePath": "lib/screens/terminal_screen.dart",
+      "summary": "StatefulWidget entry point for the terminal tab.",
+      "tags": [
+        "flutter",
+        "widget",
+        "terminal",
+        "stateful"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:_TerminalScreenState",
+      "type": "class",
+      "name": "_TerminalScreenState",
+      "filePath": "lib/screens/terminal_screen.dart",
+      "summary": "State managing a list of _Tab objects for multi-tab SSH sessions. Implements WidgetsBindingObserver for app lifecycle. Listens to VmState changes to auto-connect/disconnect. Implements full SSH lifecycle: schedule, connect, retry with backoff, keepalive callback, onSessionDone handler, manual reconnect, tab management (new/select/close), clipboard paste/copy, and key row input.",
+      "tags": [
+        "flutter",
+        "state",
+        "terminal",
+        "ssh",
+        "lifecycle"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "class:_Tab",
+      "type": "class",
+      "name": "_Tab",
+      "filePath": "lib/screens/terminal_screen.dart",
+      "summary": "Per-tab data holder: label string, xterm Terminal (maxLines 5000) + TerminalController, SSHClient, SSHSession, _ConnState (idle/connecting/connected), retryCount, retryTimer, keepAliveTimer. startKeepAlive sends empty Uint8List to stdin every 25s as liveness probe. close() cancels all timers and disposes client/session/controller.",
+      "tags": [
+        "dart",
+        "terminal",
+        "ssh",
+        "tab",
+        "keepalive"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "class:_TabBar",
+      "type": "class",
+      "name": "_TabBar",
+      "filePath": "lib/screens/terminal_screen.dart",
+      "summary": "Horizontal scrollable tab strip with per-tab connection-state dot (green/yellow/grey), close buttons, and an add (+) button. Max 5 tabs.",
+      "tags": [
+        "flutter",
+        "widget",
+        "terminal",
+        "tabs"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:_StatusChip",
+      "type": "class",
+      "name": "_StatusChip",
+      "filePath": "lib/screens/terminal_screen.dart",
+      "summary": "AppBar Chip showing Connected/Connecting.../Disconnected state with matching color for the active tab.",
+      "tags": [
+        "flutter",
+        "widget",
+        "terminal"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:_Banner",
+      "type": "class",
+      "name": "_Banner",
+      "filePath": "lib/screens/terminal_screen.dart",
+      "summary": "Colored info/warning banner strip shown below the tab bar with icon, message, and optional action widget.",
+      "tags": [
+        "flutter",
+        "widget",
+        "terminal"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:_KeyRow",
+      "type": "class",
+      "name": "_KeyRow",
+      "filePath": "lib/screens/terminal_screen.dart",
+      "summary": "Horizontally scrollable row of 12 shortcut key buttons (Tab, Esc, arrows, Ctrl+C/D/Z/L, Home, End) that send raw byte sequences to the active SSH session's stdin.",
+      "tags": [
+        "flutter",
+        "widget",
+        "terminal",
+        "keyboard"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:lib/screens/terminal_screen.dart:_ConnState",
+      "type": "class",
+      "name": "_ConnState",
+      "filePath": "lib/screens/terminal_screen.dart",
+      "summary": "Enum with three SSH connection states for a terminal tab: idle (disconnected), connecting (SSH handshake in progress), connected (session active).",
+      "tags": [
+        "dart",
+        "enum",
+        "ssh",
+        "terminal"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:VmPlatform",
+      "type": "class",
+      "name": "VmPlatform",
+      "filePath": "lib/services/vm_platform.dart",
+      "summary": "Static utility class. Holds a MethodChannel('com.ai2th.linxr/vm') and exposes six static async methods: startVm, stopVm, getVmStatus, getDeviceInfo (returns DeviceInfo), resetStorage, pingSsh (direct SSH TCP probe bypassing MethodChannel).",
+      "tags": [
+        "dart",
+        "method-channel",
+        "native-bridge",
+        "static"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "class:DeviceInfo",
+      "type": "class",
+      "name": "DeviceInfo",
+      "filePath": "lib/services/vm_platform.dart",
+      "summary": "Const data class: cores (int), totalRamMb (int), freeStorageGb (int). Used by SettingsScreen to derive slider ranges and auto defaults.",
+      "tags": [
+        "dart",
+        "data-class",
+        "device-info"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:VmState",
+      "type": "class",
+      "name": "VmState",
+      "filePath": "lib/services/vm_platform.dart",
+      "summary": "ChangeNotifier owning the VM lifecycle state machine. States: stopped \u2192 booting (startVm) \u2192 running (SSH ping succeeds) \u2192 stopped (stopVm). Runs a 3s SSH ping timer during boot, then a 5s status poll when running. Exposes startVm, stopVm, refreshStatus, isRunning, isBooting, isLoading, errorMessage. Cancels all timers on dispose.",
+      "tags": [
+        "dart",
+        "state-management",
+        "change-notifier",
+        "vm-lifecycle",
+        "polling"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:lib/main.dart:main",
+      "type": "function",
+      "name": "main",
+      "filePath": "lib/main.dart",
+      "summary": "Dart entry point. Wraps AlpineApp in a ChangeNotifierProvider that instantiates and injects a VmState singleton.",
+      "tags": [
+        "entry-point",
+        "provider",
+        "dart"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:lib/services/vm_platform.dart:startVm",
+      "type": "function",
+      "name": "startVm",
+      "filePath": "lib/services/vm_platform.dart",
+      "summary": "Transitions VM to booting, calls VmPlatform.startVm() over MethodChannel, then calls _startSshPing. Sets error state on exception.",
+      "tags": [
+        "vm-lifecycle",
+        "async",
+        "method-channel"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:lib/services/vm_platform.dart:stopVm",
+      "type": "function",
+      "name": "stopVm",
+      "filePath": "lib/services/vm_platform.dart",
+      "summary": "Cancels polling and SSH ping timers, calls VmPlatform.stopVm() over MethodChannel, transitions state to stopped.",
+      "tags": [
+        "vm-lifecycle",
+        "async"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:lib/services/vm_platform.dart:_startSshPing",
+      "type": "function",
+      "name": "_startSshPing",
+      "filePath": "lib/services/vm_platform.dart",
+      "summary": "Starts a 3-second periodic Timer that calls VmPlatform.pingSsh(). When ping returns true, transitions status to 'running', cancels the ping timer, and starts the 5s status poll.",
+      "tags": [
+        "ssh",
+        "polling",
+        "boot-detection",
+        "timer"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:lib/services/vm_platform.dart:_startPolling",
+      "type": "function",
+      "name": "_startPolling",
+      "filePath": "lib/services/vm_platform.dart",
+      "summary": "Starts a 5-second periodic Timer calling VmPlatform.getVmStatus(). Notifies listeners when status changes. Self-cancels if status is no longer 'running'.",
+      "tags": [
+        "polling",
+        "timer",
+        "vm-status"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:lib/services/vm_platform.dart:refreshStatus",
+      "type": "function",
+      "name": "refreshStatus",
+      "filePath": "lib/services/vm_platform.dart",
+      "summary": "One-shot VmPlatform.getVmStatus() call. Starts polling if running, stops it otherwise. Called on app init and after resetStorage.",
+      "tags": [
+        "vm-status",
+        "async"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:lib/services/vm_platform.dart:pingSsh",
+      "type": "function",
+      "name": "pingSsh",
+      "filePath": "lib/services/vm_platform.dart",
+      "summary": "Opens a real dartssh2 SSHSocket to 127.0.0.1:2222 (3s TCP timeout), authenticates as root/alpine (4s auth timeout), returns true on success. Used by VmState._startSshPing to detect when the guest SSH daemon is ready.",
+      "tags": [
+        "ssh",
+        "probe",
+        "dartssh2",
+        "boot-detection"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:lib/services/vm_platform.dart:getDeviceInfo",
+      "type": "function",
+      "name": "getDeviceInfo",
+      "filePath": "lib/services/vm_platform.dart",
+      "summary": "Invokes getDeviceInfo MethodChannel, deserializes Map result into DeviceInfo. Falls back to defaults (4 cores, 4096 MB, 32 GB) on PlatformException.",
+      "tags": [
+        "method-channel",
+        "device-info",
+        "async"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:lib/services/vm_platform.dart:resetStorage",
+      "type": "function",
+      "name": "resetStorage",
+      "filePath": "lib/services/vm_platform.dart",
+      "summary": "Invokes 'resetStorage' MethodChannel method, triggering native deletion of user.qcow2 and VM shutdown.",
+      "tags": [
+        "method-channel",
+        "storage",
+        "destructive"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:lib/screens/settings_screen.dart:_load",
+      "type": "function",
+      "name": "_load",
+      "filePath": "lib/screens/settings_screen.dart",
+      "summary": "Called in initState. Fetches DeviceInfo and SharedPreferences in parallel via Future.wait, then populates device fields and saved vCPU/RAM/disk values (null if unset = auto mode).",
+      "tags": [
+        "async",
+        "settings",
+        "shared-preferences",
+        "device-info"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:lib/screens/settings_screen.dart:_restartVm",
+      "type": "function",
+      "name": "_restartVm",
+      "filePath": "lib/screens/settings_screen.dart",
+      "summary": "Stops VM, waits 1 second, starts VM. Allows applying new resource settings without manual power cycling. Sets _restarting flag for UI feedback.",
+      "tags": [
+        "vm-lifecycle",
+        "async",
+        "settings"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:lib/screens/settings_screen.dart:_resetStorage",
+      "type": "function",
+      "name": "_resetStorage",
+      "filePath": "lib/screens/settings_screen.dart",
+      "summary": "Shows AlertDialog with Cancel/Reset buttons, then calls VmPlatform.resetStorage() and vm.refreshStatus(). Shows success/error SnackBar. Sets _resetting flag for spinner.",
+      "tags": [
+        "storage",
+        "destructive",
+        "async",
+        "dialog"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:lib/screens/settings_screen.dart:_saveVcpu",
+      "type": "function",
+      "name": "_saveVcpu",
+      "filePath": "lib/screens/settings_screen.dart",
+      "summary": "Persists vCPU selection to SharedPreferences 'vcpu_count'; null removes key (auto mode).",
+      "tags": [
+        "settings",
+        "shared-preferences",
+        "async"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:lib/screens/settings_screen.dart:_saveRam",
+      "type": "function",
+      "name": "_saveRam",
+      "filePath": "lib/screens/settings_screen.dart",
+      "summary": "Persists RAM MB to SharedPreferences 'ram_mb'; null removes key (auto mode).",
+      "tags": [
+        "settings",
+        "shared-preferences",
+        "async"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:lib/screens/settings_screen.dart:_saveDisk",
+      "type": "function",
+      "name": "_saveDisk",
+      "filePath": "lib/screens/settings_screen.dart",
+      "summary": "Persists disk GB to SharedPreferences 'disk_gb'; null removes key (auto mode).",
+      "tags": [
+        "settings",
+        "shared-preferences",
+        "async"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:lib/screens/terminal_screen.dart:_connect",
+      "type": "function",
+      "name": "_connect",
+      "filePath": "lib/screens/terminal_screen.dart",
+      "summary": "Establishes SSH for a _Tab: SSHSocket.connect to 127.0.0.1:2222 (10s timeout), SSHClient with root/alpine creds, PTY shell (xterm-256color). Wires stdout/stderr to terminal.write, terminal.onOutput/onResize to session. Starts keepalive on success. Calls _retryOrError on TimeoutException or any error.",
+      "tags": [
+        "ssh",
+        "dartssh2",
+        "connection",
+        "async",
+        "pty"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:lib/screens/terminal_screen.dart:_onSessionDone",
+      "type": "function",
+      "name": "_onSessionDone",
+      "filePath": "lib/screens/terminal_screen.dart",
+      "summary": "SSH session close handler: stops keepalive, clears client/session refs, sets connState to idle, schedules auto-reconnect if VM still running.",
+      "tags": [
+        "ssh",
+        "session-lifecycle",
+        "reconnect"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:lib/screens/terminal_screen.dart:_retryOrError",
+      "type": "function",
+      "name": "_retryOrError",
+      "filePath": "lib/screens/terminal_screen.dart",
+      "summary": "Post-failure retry logic. Increments retryCount; schedules _connect with 5s delay for active tabs (up to _maxRetries=24); defers inactive tabs to next selection. Gives up and resets retryCount after max retries.",
+      "tags": [
+        "ssh",
+        "retry",
+        "backoff",
+        "error-handling"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:lib/screens/terminal_screen.dart:_scheduleConnect",
+      "type": "function",
+      "name": "_scheduleConnect",
+      "filePath": "lib/screens/terminal_screen.dart",
+      "summary": "Cancels any pending retryTimer on the tab and schedules _connect after a configurable delay (default 0s).",
+      "tags": [
+        "ssh",
+        "timer",
+        "connection"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:lib/screens/terminal_screen.dart:_disconnectAll",
+      "type": "function",
+      "name": "_disconnectAll",
+      "filePath": "lib/screens/terminal_screen.dart",
+      "summary": "Forcibly closes all tab sessions/clients, cancels timers, resets connState to idle. Writes '[VM stopped \u2014 session closed]' to each active terminal. Called when VM stops.",
+      "tags": [
+        "ssh",
+        "disconnect",
+        "vm-lifecycle"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:lib/screens/terminal_screen.dart:_onVmStateChanged",
+      "type": "function",
+      "name": "_onVmStateChanged",
+      "filePath": "lib/screens/terminal_screen.dart",
+      "summary": "VmState listener callback. running\u2192not-running: calls _disconnectAll. not-running\u2192running: schedules connect for active idle tab with 3s delay.",
+      "tags": [
+        "vm-state",
+        "listener",
+        "connection-lifecycle"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:lib/screens/terminal_screen.dart:didChangeAppLifecycleState",
+      "type": "function",
+      "name": "didChangeAppLifecycleState",
+      "filePath": "lib/screens/terminal_screen.dart",
+      "summary": "WidgetsBindingObserver callback. On AppLifecycleState.resumed with VM running, resets retryCount and schedules connect (1s delay) for any idle tabs.",
+      "tags": [
+        "lifecycle",
+        "flutter",
+        "reconnect"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:lib/screens/terminal_screen.dart:startKeepAlive",
+      "type": "function",
+      "name": "startKeepAlive",
+      "filePath": "lib/screens/terminal_screen.dart",
+      "summary": "Starts a 25-second periodic Timer that sends an empty Uint8List(0) write to session.stdin to probe socket liveness. Calls onDead callback (_onSessionDone) on write error.",
+      "tags": [
+        "ssh",
+        "keepalive",
+        "timer",
+        "probe"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:lib/screens/terminal_screen.dart:_reconnect",
+      "type": "function",
+      "name": "_reconnect",
+      "filePath": "lib/screens/terminal_screen.dart",
+      "summary": "Manual reconnect from AppBar button. Cancels timers, closes existing session/client, resets retryCount, writes '--- Reconnecting ---', immediately calls _connect.",
+      "tags": [
+        "ssh",
+        "reconnect",
+        "manual"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:lib/screens/terminal_screen.dart:_newTab",
+      "type": "function",
+      "name": "_newTab",
+      "filePath": "lib/screens/terminal_screen.dart",
+      "summary": "Creates a new _Tab (up to _maxTabs=5), appends to list, activates it, schedules SSH connect if VM is running.",
+      "tags": [
+        "tab-management",
+        "terminal"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:lib/screens/terminal_screen.dart:_paste",
+      "type": "function",
+      "name": "_paste",
+      "filePath": "lib/screens/terminal_screen.dart",
+      "summary": "Reads clipboard 'text/plain' and writes UTF-8 encoded bytes directly to the active session's stdin.",
+      "tags": [
+        "clipboard",
+        "terminal",
+        "input"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "concept:vm-state-machine",
+      "type": "concept",
+      "name": "VM State Machine",
+      "filePath": null,
+      "summary": "Four-state lifecycle machine implemented in VmState: stopped \u2192 booting (QEMU process spawned via VmPlatform.startVm) \u2192 running (SSH ping succeeds via VmPlatform.pingSsh) \u2192 stopped (VmPlatform.stopVm called or process exits). An 'error' transient sub-state captures start failures. Transitions notify all Provider listeners including UI widgets and the terminal screen.",
+      "tags": [
+        "architecture",
+        "state-machine",
+        "vm-lifecycle",
+        "concept"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "concept:ssh-keepalive-reconnect",
+      "type": "concept",
+      "name": "SSH Keepalive and Reconnect Pattern",
+      "filePath": null,
+      "summary": "Two-layer SSH liveness strategy: (1) _Tab.startKeepAlive sends an empty Uint8List write every 25s to detect dead sockets proactively; (2) _retryOrError / _onSessionDone implement 5s-interval retry with up to 24 attempts (~2 min total), with auto-reconnect triggered also by VM state change (\u2192running) and app foreground resume. Inactive tabs defer reconnect until selected.",
+      "tags": [
+        "architecture",
+        "ssh",
+        "keepalive",
+        "retry",
+        "pattern",
+        "concept"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "concept:method-channel-bridge",
+      "type": "concept",
+      "name": "Flutter-Kotlin MethodChannel Bridge",
+      "filePath": null,
+      "summary": "All VM control and device-info operations cross the Flutter/Kotlin boundary via a single MethodChannel named 'com.ai2th.linxr/vm'. VmPlatform is the sole Dart-side client; MainActivity.kt routes calls to VmManager on an executor thread. The pingSsh method is the only Dart-native VM operation (uses dartssh2 directly, bypassing the channel).",
+      "tags": [
+        "architecture",
+        "method-channel",
+        "native-bridge",
+        "concept"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "concept:shared-prefs-vm-config",
+      "type": "concept",
+      "name": "SharedPreferences VM Config Pattern",
+      "filePath": null,
+      "summary": "VM resource settings (vcpu_count, ram_mb, disk_gb) are written by Flutter's SharedPreferences (stored as 'flutter.vcpu_count' etc.) and read by Kotlin's FlutterSharedPreferences in VmManager.kt at QEMU launch time. Null/absent keys signal auto mode. Changes only take effect on the next VM start.",
+      "tags": [
+        "architecture",
+        "shared-preferences",
+        "vm-config",
+        "concept"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "config:.gitignore",
+      "type": "config",
+      "name": ".gitignore",
+      "filePath": ".gitignore",
+      "summary": "Git ignore rules excluding APK/AAB binaries (too large for git), Flutter artifacts (.dart_tool, .packages, pubspec.lock), Android build files (jniLibs, .gradle, keystore, key.properties), large VM binary assets (base.qcow2.gz, vmlinuz-virt, initramfs-virt), macOS .DS_Store files, IDE configs (.idea, .vscode), and Docker/guest build cache directories",
+      "tags": [
+        "git",
+        "config",
+        "build-artifacts",
+        "ignore-rules"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "document:CLAUDE.md",
+      "type": "document",
+      "name": "CLAUDE.md",
+      "filePath": "CLAUDE.md",
+      "summary": "AI assistant guidance document for the Linxr codebase. Covers project overview (QEMU-as-.so SELinux exec_type trick), build commands (Docker-based APK and qcow2 builds), three-layer architecture (Flutter UI, Kotlin Android layer, QEMU guest VM), key data flows (VM start, terminal connection, settings), important file locations, Android configuration (minSdk 26, compileSdk 35, arm64-v8a only), and known constraints (TCG overhead, pipe buffer management, hardcoded SSH credentials)",
+      "tags": [
+        "documentation",
+        "architecture",
+        "build",
+        "ai-assistant",
+        "claude"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "document:IMPROVE.md",
+      "type": "document",
+      "name": "IMPROVE.md",
+      "filePath": "IMPROVE.md",
+      "summary": "Feature roadmap and competitive analysis document comparing Linxr against vmConsole (removed from Play Store Sept 2022). Lists 11 improvement areas with implementation code snippets: host file sharing via 9P/VirtFS, port forwarding UI, settings screen (RAM/vCPU/font/theme), boot progress indicator, SSH key management, clipboard bridge via virtio-serial, QEMU 8.x upgrade, multi-tab terminal improvements, quick commands panel, user-selectable VM storage location, and Play Store presence. Includes priority matrix and feature comparison table.",
+      "tags": [
+        "documentation",
+        "roadmap",
+        "features",
+        "competitive-analysis",
+        "vmconsole"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "document:LICENSE",
+      "type": "document",
+      "name": "LICENSE",
+      "filePath": "LICENSE",
+      "summary": "MIT License for the Linxr project, copyright 2026 AI2TH. Grants permission to use, copy, modify, merge, publish, distribute, sublicense, and sell copies of the software without restriction.",
+      "tags": [
+        "license",
+        "mit",
+        "legal",
+        "open-source"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "document:PAPER.md",
+      "type": "document",
+      "name": "PAPER.md",
+      "filePath": "PAPER.md",
+      "summary": "Academic paper (v2.0, April 2026) presenting Linxr. Covers: abstract with exec_type SELinux technique, introduction and motivations vs. rooting, related work (Condroid, AVF, Termux, UserLAnd, Linux Deploy), three-layer system architecture with ASCII diagrams, security analysis (exec_type trick, attack surface, privacy comparison), use cases (developer workflows, security research, education), empirical evaluation via Firebase Test Lab (251/251 successful interactions on Android 11-16), boot time benchmarks (~12s cold boot), CPU performance (~3x TCG overhead), memory/storage/network throughput data, limitations, and future work (AVF integration, para-virtualised networking, GPU acceleration). Includes appendices for build instructions and full project structure.",
+      "tags": [
+        "documentation",
+        "research",
+        "paper",
+        "architecture",
+        "security",
+        "evaluation",
+        "qemu",
+        "selinux"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "document:README.md",
+      "type": "document",
+      "name": "README.md",
+      "filePath": "README.md",
+      "summary": "Primary project README for Linxr. Features list (full Linux shell, Docker support, multi-tab terminal, no root required, persistent QCOW2 storage, dynamic resources, internet access), screenshot gallery, requirements table (Android 8.0+, arm64-v8a, ~250 MB storage), quick start guide, architecture diagram, disk layout table, SLIRP port forwarding table, build instructions (qcow2 + APK + AAB), default credentials, VM networking config, full project structure tree, open-source components table, MIT license text, and AI2TH company info.",
+      "tags": [
+        "documentation",
+        "readme",
+        "quickstart",
+        "architecture",
+        "build",
+        "features"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "config:pubspec.yaml",
+      "type": "config",
+      "name": "pubspec.yaml",
+      "filePath": "pubspec.yaml",
+      "summary": "Flutter project manifest for linxr v2.0.0+22 (build 22). Dart SDK >=3.0.0 <4.0.0. Runtime dependencies: flutter SDK, provider ^6.1.1 (state management), dartssh2 ^2.8.2 (SSH client), xterm ^4.0.0 (terminal emulator widget), cupertino_icons ^1.0.2, shared_preferences ^2.2.0 (VM settings persistence). Dev dependencies: flutter_test, flutter_lints ^3.0.0, flutter_launcher_icons ^0.13.1. Flutter assets: ai2th_logo.png, linxr_icon.png.",
+      "tags": [
+        "flutter",
+        "config",
+        "dependencies",
+        "dart",
+        "manifest"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:android/app/src/main/assets/vm/vmlinuz-virt",
+      "type": "file",
+      "name": "vmlinuz-virt",
+      "filePath": "android/app/src/main/assets/vm/vmlinuz-virt",
+      "summary": "Linux 6.6 kernel binary (virt profile) for Alpine Linux VM \u2014 booted by QEMU via -kernel flag with console=ttyAMA0. Targets the virtio-optimised virt machine type used by QEMU aarch64.",
+      "tags": [
+        "kernel",
+        "linux",
+        "vm",
+        "asset",
+        "binary",
+        "aarch64"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:android/app/src/main/assets/vm/initramfs-virt",
+      "type": "file",
+      "name": "initramfs-virt",
+      "filePath": "android/app/src/main/assets/vm/initramfs-virt",
+      "summary": "Alpine Linux initial RAM filesystem (initramfs) for the virt profile \u2014 contains early userspace init that mounts the root filesystem from the virtio-blk disk image (user.qcow2 overlay).",
+      "tags": [
+        "initramfs",
+        "linux",
+        "vm",
+        "asset",
+        "binary",
+        "early-userspace"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:android/app/src/main/assets/vm/.gitkeep",
+      "type": "file",
+      "name": ".gitkeep",
+      "filePath": "android/app/src/main/assets/vm/.gitkeep",
+      "summary": "Empty placeholder file that ensures the vm/ asset directory is tracked by git even when binary VM assets are not committed to the repository.",
+      "tags": [
+        "placeholder",
+        "git",
+        "asset-dir"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:android/build.gradle",
+      "type": "file",
+      "name": "build.gradle",
+      "filePath": "android/build.gradle",
+      "summary": "Root Android Gradle build script. Declares Kotlin 1.9.0 and Android Gradle Plugin 8.1.0 as classpath dependencies, configures Google + Maven Central repositories for all subprojects, redirects build output to the Flutter-standard ../build directory, and registers a 'clean' task.",
+      "tags": [
+        "gradle",
+        "build-config",
+        "android",
+        "kotlin",
+        "agp",
+        "root-project"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:android/gradle.properties",
+      "type": "file",
+      "name": "gradle.properties",
+      "filePath": "android/gradle.properties",
+      "summary": "Gradle JVM and build flags tuned for CI/Docker execution: 4 GB max heap, daemon disabled (org.gradle.daemon=false), parallel builds disabled, VFS watch disabled, Kotlin compiler runs in-process. AndroidX and Jetifier are enabled.",
+      "tags": [
+        "gradle",
+        "properties",
+        "build-config",
+        "android",
+        "androidx",
+        "jetifier",
+        "ci"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:android/key.properties.template",
+      "type": "file",
+      "name": "key.properties.template",
+      "filePath": "android/key.properties.template",
+      "summary": "Template for the release signing key.properties file. Specifies four required fields: storePassword, keyPassword, keyAlias (upload), and storeFile (upload-keystore.jks). The real key.properties is git-ignored; developers copy this template and fill in credentials.",
+      "tags": [
+        "signing",
+        "keystore",
+        "release",
+        "template",
+        "config",
+        "security"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:android/settings.gradle",
+      "type": "file",
+      "name": "settings.gradle",
+      "filePath": "android/settings.gradle",
+      "summary": "Android/Flutter Gradle settings file. Resolves flutter.sdk from local.properties, includes the Flutter tools Gradle plugin via includeBuild, declares flutter-plugin-loader, AGP 8.1.0 and Kotlin Android plugins, and includes the ':app' subproject.",
+      "tags": [
+        "gradle",
+        "settings",
+        "flutter",
+        "android",
+        "plugin-management",
+        "build-config"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:scripts/_build_rootfs.sh",
+      "type": "file",
+      "language": "bash",
+      "fileCategory": "script",
+      "filePath": "scripts/_build_rootfs.sh",
+      "summary": "Runs inside a linux/arm64 Alpine Docker container. Bootstraps a minimal Alpine Linux rootfs: installs openssh, sudo, docker, fuse-overlayfs, iptables-legacy, kmod; creates device nodes (/dev/null, /dev/tty, /dev/vda, /dev/net/tun, /dev/fuse); configures OpenRC runlevels (sysinit/boot/default/shutdown); sets static networking (SLIRP: 10.0.2.15/24, gateway 10.0.2.2, DNS 10.0.2.3); writes sysctl for IP forwarding and bridge netfilter; writes Docker daemon.json with overlay2 storage driver and cgroupfs driver; copies linux-virt kernel modules (.ko.gz) for Docker bridge networking (bridge, br_netfilter, veth, ip_tables, nf_conntrack, overlay, fuse, etc.) and runs depmod; embeds an OpenRC 'cgroups' service that mounts cgroup2 and loads all Docker kernel modules with a single batched modprobe -a call (faster than sequential under TCG); embeds a 'diskexpand' service that runs resize2fs on first boot; configures SSH (PermitRootLogin yes, PasswordAuthentication yes, UsePAM no), sets root:alpine password via chpasswd; builds a 2 GB ext4 image with mke2fs -d, converts to qcow2, gzip-compresses to /out/base.qcow2.gz; exports vmlinuz-virt and initramfs-virt.",
+      "tags": [
+        "alpine-linux",
+        "rootfs",
+        "docker",
+        "kernel-modules",
+        "qemu",
+        "openssh",
+        "openrc",
+        "qcow2",
+        "arm64",
+        "bridge-networking",
+        "cgroups",
+        "diskexpand"
+      ],
+      "complexity": "moderate",
+      "name": "_build_rootfs.sh"
+    },
+    {
+      "id": "file:scripts/build_aab.sh",
+      "type": "file",
+      "language": "bash",
+      "fileCategory": "script",
+      "filePath": "scripts/build_aab.sh",
+      "summary": "Docker-based AAB (Android App Bundle) builder for Google Play Store. Accepts optional build type argument (default: release). Lazily builds the 'linxr-builder' Docker image from docker/Dockerfile.build if not already present (linux/amd64). Runs a container that scaffolds a fresh Flutter project in /tmp/build, overlays all workspace sources (lib/, assets/, kotlin/, res/, jniLibs/, AndroidManifest.xml, build.gradle, etc.), pins Gradle wrapper to 8.3, runs flutter pub get, generates launcher icons via dart run flutter_launcher_icons, builds with flutter build appbundle, and copies the result to /out/linxr-{type}.aab. Copies debug.keystore and optionally key.properties/upload-keystore.jks for release signing.",
+      "tags": [
+        "build",
+        "aab",
+        "docker",
+        "flutter",
+        "android",
+        "play-store",
+        "gradle",
+        "release"
+      ],
+      "complexity": "moderate",
+      "name": "build_aab.sh"
+    },
+    {
+      "id": "file:scripts/build_apk.sh",
+      "type": "file",
+      "language": "bash",
+      "fileCategory": "script",
+      "filePath": "scripts/build_apk.sh",
+      "summary": "Docker-based APK builder. Accepts optional build type argument (default: debug). Mirrors build_aab.sh structure but invokes 'flutter build apk'. Additionally builds the androidTest APK via Gradle (app:assembleDebugAndroidTest) for Firebase Test Lab / instrumentation testing. Outputs linxr-{type}.apk and linxr-androidTest.apk to build/. Uses the linxr-builder Docker image (built from docker/Dockerfile.build on linux/amd64).",
+      "tags": [
+        "build",
+        "apk",
+        "docker",
+        "flutter",
+        "android",
+        "debug",
+        "testing",
+        "gradle",
+        "instrumentation"
+      ],
+      "complexity": "moderate",
+      "name": "build_apk.sh"
+    },
+    {
+      "id": "file:scripts/build_qcow2.sh",
+      "type": "file",
+      "language": "bash",
+      "fileCategory": "script",
+      "filePath": "scripts/build_qcow2.sh",
+      "summary": "Top-level driver that builds the Alpine Linux base disk image. Runs an alpine:3.19 Docker container on linux/arm64, mounts scripts/_build_rootfs.sh as /build.sh (read-only) and android/app/src/main/assets/vm/ as /out, then executes sh /build.sh. Output base.qcow2.gz is placed directly into the app's VM assets directory ready for APK inclusion.",
+      "tags": [
+        "qcow2",
+        "alpine-linux",
+        "arm64",
+        "docker",
+        "assets",
+        "disk-image",
+        "build"
+      ],
+      "complexity": "moderate",
+      "name": "build_qcow2.sh"
+    },
+    {
+      "id": "file:scripts/export_feature_graphic.sh",
+      "type": "file",
+      "language": "bash",
+      "fileCategory": "script",
+      "filePath": "scripts/export_feature_graphic.sh",
+      "summary": "Converts feature_graphic.html to a 1024x500 PNG using Chrome in headless mode (--screenshot flag, --window-size=1024,500). Requires Chrome/Chromium at the macOS default Applications path. Outputs feature_graphic.png alongside the HTML source for Play Store submission.",
+      "tags": [
+        "marketing",
+        "play-store",
+        "feature-graphic",
+        "chrome-headless",
+        "png",
+        "screenshot"
+      ],
+      "complexity": "moderate",
+      "name": "export_feature_graphic.sh"
+    },
+    {
+      "id": "file:scripts/feature_graphic.html",
+      "type": "file",
+      "language": "html",
+      "fileCategory": "markup",
+      "filePath": "scripts/feature_graphic.html",
+      "summary": "Play Store feature graphic source (1024x500 px, dark-themed). Shows a simulated SSH terminal window connecting to the Alpine VM, the Linxr app name with 'A' icon box, tagline 'Run a full Linux VM on your Android phone. No root required.', and feature pills: Alpine Linux, SSH Terminal, Persistent. Uses CSS gradient background (#0E1117 to #1A1D23), grid overlay, blue/teal accent bars, blinking cursor animation. Rendered to PNG by export_feature_graphic.sh.",
+      "tags": [
+        "marketing",
+        "play-store",
+        "feature-graphic",
+        "html",
+        "dark-theme",
+        "terminal-mockup"
+      ],
+      "complexity": "moderate",
+      "name": "feature_graphic.html"
+    },
+    {
+      "id": "file:scripts/gen_icons.py",
+      "type": "file",
+      "language": "python",
+      "fileCategory": "script",
+      "filePath": "scripts/gen_icons.py",
+      "summary": "Generates Linxr launcher icons for all Android mipmap densities (mdpi 48px through xxxhdpi 192px) and a 512px Play Store icon using Pillow. Draws: dark navy rounded-rect background, teal mountain polyline with subtle inner fill, green '>_' CLI prompt with GaussianBlur glow layer using 4x SSAA then LANCZOS downsample. Saves ic_launcher.png (flat RGB) and ic_launcher_round.png (circular mask) into android/app/src/main/res/mipmap-*/. Writes build/linxr_icon_512.png.",
+      "tags": [
+        "icons",
+        "android",
+        "launcher",
+        "pillow",
+        "mipmap",
+        "play-store",
+        "python",
+        "assets"
+      ],
+      "complexity": "moderate",
+      "name": "gen_icons.py"
+    },
+    {
+      "id": "file:scripts/gen_keystore.sh",
+      "type": "file",
+      "language": "bash",
+      "fileCategory": "script",
+      "filePath": "scripts/gen_keystore.sh",
+      "summary": "Interactive one-shot script to generate a Google Play Store upload keystore at android/app/upload-keystore.jks. Prompts for alias (default: upload), store/key passwords, and organization name. Runs keytool -genkey with RSA-2048, 10000-day validity. Writes android/key.properties (storePassword, keyPassword, keyAlias, storeFile=upload-keystore.jks). Explicitly warns these files must never be committed to git.",
+      "tags": [
+        "keystore",
+        "signing",
+        "play-store",
+        "keytool",
+        "security",
+        "release",
+        "jks"
+      ],
+      "complexity": "moderate",
+      "name": "gen_keystore.sh"
+    },
+    {
+      "id": "file:.claude/settings.local.json",
+      "type": "file",
+      "language": "json",
+      "fileCategory": "config",
+      "filePath": ".claude/settings.local.json",
+      "summary": "Claude Code local permission allowlist. Grants Claude Code the ability to run specific Bash commands without prompting: Docker build/run/exec/kill/rmi/image, ADB connect/logcat, SSH/ssh-keygen, colima (VM runtime for Docker on macOS), keytool (keystore management), flutter --version, sshpass, gh api/release/issue, Firebase gsutil, pnpm build, node, various project-specific git commands, Python one-liners, and specific curl/unzip operations for extracting QEMU binaries and kernel files from built APKs. Also grants WebFetch access to msc.skoltech.ru and box.skoltech.ru. Read access to /private/tmp/**.",
+      "tags": [
+        "claude-code",
+        "config",
+        "permissions",
+        "developer-tools",
+        "docker",
+        "adb",
+        "ssh",
+        "security"
+      ],
+      "complexity": "moderate",
+      "name": "settings.local.json"
+    },
+    {
+      "id": "file:android/app/build.gradle",
+      "type": "file",
+      "language": "groovy",
+      "fileCategory": "config",
+      "filePath": "android/app/build.gradle",
+      "summary": "Android app Gradle build config. Applies com.android.application, kotlin-android, and dev.flutter.flutter-gradle-plugin. Sets namespace/applicationId 'com.ai2th.linxr', compileSdk 35, minSdk 26, targetSdk 35. Loads flutter versionCode/versionName from local.properties. Configures aaptOptions to skip compression of .gz and .virt assets (preserves qcow2.gz, vmlinuz, initramfs from aapt2 re-compression). Sets useLegacyPackaging=true for jniLibs so QEMU .so files are extracted to disk and executable via ProcessBuilder. Configures debug signing with debug.keystore (alias=debug, pass=android) and release signing from key.properties or falling back to debug.keystore. No minify/shrink. Dependencies: kotlin-stdlib, core-ktx 1.12.0, test runner, and JSch 0.1.55 for androidTest.",
+      "tags": [
+        "gradle",
+        "android",
+        "build-config",
+        "signing",
+        "jni",
+        "kotlin",
+        "flutter",
+        "qcow2",
+        "packaging"
+      ],
+      "complexity": "moderate",
+      "name": "build.gradle"
+    },
+    {
+      "id": "file:android/app/debug.keystore",
+      "type": "file",
+      "language": null,
+      "fileCategory": "data",
+      "filePath": "android/app/debug.keystore",
+      "summary": "Java KeyStore (JKS) file used for debug APK signing and as the release signing fallback when key.properties is absent. Alias: debug, store/key password: android, algorithm: RSA 2048-bit, validity: 10000 days. SHA1 fingerprint: D7:6E:...:74:8E (see project memory). Recovered from Trash during development. Must not be used for Play Store production uploads \u2014 a separate upload-keystore.jks is generated by gen_keystore.sh for that purpose.",
+      "tags": [
+        "keystore",
+        "signing",
+        "debug",
+        "jks",
+        "android",
+        "security",
+        "binary"
+      ],
+      "complexity": "moderate",
+      "name": "debug.keystore"
+    },
+    {
+      "id": "file:android/app/src/main/AndroidManifest.xml",
+      "type": "file",
+      "language": "xml",
+      "fileCategory": "config",
+      "filePath": "android/app/src/main/AndroidManifest.xml",
+      "summary": "Android application manifest. Declares permissions: INTERNET (SSH networking), FOREGROUND_SERVICE, FOREGROUND_SERVICE_DATA_SYNC (VmService type), POST_NOTIFICATIONS (foreground service notification), WAKE_LOCK (keep QEMU alive). Application: label=Linxr, name=.AlpineApp (Application singleton), networkSecurityConfig=@xml/network_security_config. Single activity: .MainActivity, launchMode=singleTop, Flutter embedding v2 meta-data. Service: .VmService, foregroundServiceType=dataSync, not exported.",
+      "tags": [
+        "android",
+        "manifest",
+        "permissions",
+        "services",
+        "activity",
+        "flutter",
+        "foreground-service",
+        "wake-lock"
+      ],
+      "complexity": "moderate",
+      "name": "AndroidManifest.xml"
+    },
+    {
+      "id": "file:android/app/src/main/assets/bootstrap/init_bootstrap.sh",
+      "type": "file",
+      "language": "bash",
+      "fileCategory": "script",
+      "filePath": "android/app/src/main/assets/bootstrap/init_bootstrap.sh",
+      "summary": "Bootstrap script bundled as an Android asset and run on first VM boot inside the QEMU Alpine Linux guest. Performs: (1) filesystem expansion via resize2fs /dev/vda; (2) sets root password to 'alpine' via chpasswd; (3) installs openssh if missing and generates SSH host keys if absent; (4) configures sshd_config for PermitRootLogin yes and PasswordAuthentication yes; (5) installs sudo if missing and grants wheel group NOPASSWD; (6) starts /usr/sbin/sshd and verifies it is listening. Complementary to the _build_rootfs.sh SSH configuration \u2014 provides a runtime safety net if the baked-in config is insufficient.",
+      "tags": [
+        "bootstrap",
+        "vm",
+        "ssh",
+        "alpine-linux",
+        "first-boot",
+        "password",
+        "qemu",
+        "asset"
+      ],
+      "complexity": "moderate",
+      "name": "init_bootstrap.sh"
+    },
+    {
+      "id": "file:android/app/src/main/res/xml/network_security_config.xml",
+      "type": "file",
+      "language": "xml",
+      "fileCategory": "config",
+      "filePath": "android/app/src/main/res/xml/network_security_config.xml",
+      "summary": "Android Network Security Configuration. Allows cleartext (HTTP/non-TLS) traffic specifically to 127.0.0.1 (localhost), without includeSubdomains. This exemption is required because the SSH connection to the QEMU VM is made over plain TCP to 127.0.0.1:2222, which Android 9+ would otherwise block as cleartext by default.",
+      "tags": [
+        "android",
+        "network-security",
+        "cleartext",
+        "localhost",
+        "ssh",
+        "qemu",
+        "config"
+      ],
+      "complexity": "moderate",
+      "name": "network_security_config.xml"
+    },
+    {
+      "id": "file:docker/Dockerfile.build",
+      "type": "file",
+      "language": "dockerfile",
+      "fileCategory": "infra",
+      "filePath": "docker/Dockerfile.build",
+      "summary": "Multi-stage builder image based on ubuntu:22.04 (linux/amd64). Installs OpenJDK 17 headless and basic build utilities. Downloads and installs Android SDK command-line tools (commandlinetools-linux-11076708), accepts licenses, and installs: platform-tools, android-34, android-35, build-tools 33.0.1 and 34.0.0. Installs Flutter 3.22.2 from the stable release channel (flutter_linux_3.22.2-stable.tar.xz). Pre-warms Gradle 8.3 by creating a throwaway Flutter project, patching gradle-wrapper.properties, and running ./gradlew --version. Sets WORKDIR to /workspace. No CMD \u2014 entry point supplied by build_apk.sh and build_aab.sh at runtime via docker run bash -c '...'.",
+      "tags": [
+        "docker",
+        "build-environment",
+        "flutter",
+        "android-sdk",
+        "gradle",
+        "ubuntu",
+        "jdk",
+        "amd64",
+        "infra"
+      ],
+      "complexity": "moderate",
+      "name": "Dockerfile.build"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt",
+      "target": "file:android/app/src/main/kotlin/com/ai2th/linxr/AlpineApp.kt",
+      "type": "imports",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "file:android/app/src/main/kotlin/com/ai2th/linxr/AlpineApp.kt",
+      "target": "file:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "type": "imports",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "file:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt",
+      "target": "file:android/app/src/main/kotlin/com/ai2th/linxr/AlpineApp.kt",
+      "type": "imports",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "file:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt",
+      "target": "file:android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt",
+      "type": "imports",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "file:android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt",
+      "target": "file:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt",
+      "type": "imports",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "file:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt",
+      "target": "class:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest",
+      "target": "function:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest:startVm",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest",
+      "target": "function:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest:stopVm",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest",
+      "target": "function:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest:checkVmResources",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest",
+      "target": "function:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest:waitForSsh",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest",
+      "target": "function:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest:openSession",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest",
+      "target": "function:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest:exec",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:android/app/src/main/kotlin/com/ai2th/linxr/AlpineApp.kt",
+      "target": "class:android/app/src/main/kotlin/com/ai2th/linxr/AlpineApp.kt:AlpineApp",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/main/kotlin/com/ai2th/linxr/AlpineApp.kt:AlpineApp",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/AlpineApp.kt:AlpineApp:onCreate",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt",
+      "target": "class:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt:MainActivity",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt:MainActivity",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt:MainActivity:configureFlutterEngine",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt:MainActivity",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt:MainActivity:startVmService",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt:MainActivity",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt:MainActivity:stopVmService",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "target": "class:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:startVm",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:stopVm",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:getStatus",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:buildQemuCommand",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:extractAssets",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:assetsReady",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:createUserImage",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:availableOverlaySizeGb",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:dynamicVcpu",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:dynamicRamMb",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:resetStorage",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:getDeviceInfo",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:resolveQemuBinary",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:killOrphanQemu",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:extractAsset",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:extractAndDecompress",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt",
+      "target": "class:android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt:VmService",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt:VmService",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt:VmService:onStartCommand",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt:VmService",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt:VmService:createNotificationChannel",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt:VmService",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt:VmService:createNotification",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/main/kotlin/com/ai2th/linxr/AlpineApp.kt:AlpineApp:onCreate",
+      "target": "class:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager",
+      "type": "calls",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt:MainActivity:configureFlutterEngine",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:startVm",
+      "type": "calls",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt:MainActivity:configureFlutterEngine",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:stopVm",
+      "type": "calls",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt:MainActivity:configureFlutterEngine",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:getStatus",
+      "type": "calls",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt:MainActivity:configureFlutterEngine",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:getDeviceInfo",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt:MainActivity:configureFlutterEngine",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:resetStorage",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt:MainActivity:configureFlutterEngine",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt:MainActivity:startVmService",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt:MainActivity:configureFlutterEngine",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt:MainActivity:stopVmService",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:startVm",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:stopVm",
+      "type": "calls",
+      "weight": 0.6,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:startVm",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:killOrphanQemu",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:startVm",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:assetsReady",
+      "type": "calls",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:startVm",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:extractAssets",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:startVm",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:resolveQemuBinary",
+      "type": "calls",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:startVm",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:createUserImage",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:startVm",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:buildQemuCommand",
+      "type": "calls",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:startVm",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:dynamicVcpu",
+      "type": "calls",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:startVm",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:dynamicRamMb",
+      "type": "calls",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:extractAssets",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:extractAsset",
+      "type": "calls",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:extractAssets",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:extractAndDecompress",
+      "type": "calls",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:assetsReady",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:resolveQemuBinary",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:createUserImage",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:availableOverlaySizeGb",
+      "type": "calls",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt:VmService:onStartCommand",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt:VmService:createNotification",
+      "type": "calls",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt:VmService:createNotification",
+      "target": "class:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt:MainActivity",
+      "type": "calls",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest:startVm",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:startVm",
+      "type": "calls",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest:stopVm",
+      "target": "function:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt:VmManager:stopVm",
+      "type": "calls",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest:checkVmResources",
+      "target": "function:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest:waitForSsh",
+      "type": "calls",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest:checkVmResources",
+      "target": "function:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest:openSession",
+      "type": "calls",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "function:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest:checkVmResources",
+      "target": "function:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt:VmResourceTest:exec",
+      "type": "calls",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/main.dart",
+      "target": "file:lib/screens/terminal_screen.dart",
+      "type": "imports",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/main.dart",
+      "target": "file:lib/screens/settings_screen.dart",
+      "type": "imports",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/main.dart",
+      "target": "file:lib/screens/about_screen.dart",
+      "type": "imports",
+      "weight": 0.6,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/main.dart",
+      "target": "file:lib/services/vm_platform.dart",
+      "type": "imports",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/screens/settings_screen.dart",
+      "target": "file:lib/services/vm_platform.dart",
+      "type": "imports",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/screens/terminal_screen.dart",
+      "target": "file:lib/services/vm_platform.dart",
+      "type": "imports",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/main.dart",
+      "target": "class:AlpineApp",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/main.dart",
+      "target": "class:MainScreen",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/main.dart",
+      "target": "class:_HomeScreen",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/main.dart",
+      "target": "class:_StatusCard",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/main.dart",
+      "target": "class:_SshInfoCard",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/main.dart",
+      "target": "class:_ControlButton",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/main.dart",
+      "target": "function:lib/main.dart:main",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/screens/about_screen.dart",
+      "target": "class:AboutScreen",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/screens/about_screen.dart",
+      "target": "class:_CompanyBranding",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/screens/about_screen.dart",
+      "target": "class:_AppInfoCard",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/screens/about_screen.dart",
+      "target": "class:_LicenseCard",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/screens/about_screen.dart",
+      "target": "class:_DependenciesCard",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/screens/about_screen.dart",
+      "target": "class:_Dep",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/screens/about_screen.dart",
+      "target": "class:_DepTile",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/screens/about_screen.dart",
+      "target": "class:_InfoRow",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/screens/settings_screen.dart",
+      "target": "class:SettingsScreen",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/screens/settings_screen.dart",
+      "target": "class:_RestartBanner",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/screens/settings_screen.dart",
+      "target": "class:_ResetStorageButton",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/screens/settings_screen.dart",
+      "target": "class:_IntSlider",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/screens/settings_screen.dart",
+      "target": "class:_StepSlider",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/screens/settings_screen.dart",
+      "target": "class:_SettingCard",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/screens/settings_screen.dart",
+      "target": "class:_SectionHeader",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/screens/settings_screen.dart",
+      "target": "class:_ChangeRow",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/screens/terminal_screen.dart",
+      "target": "class:TerminalScreen",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/screens/terminal_screen.dart",
+      "target": "class:_Tab",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/screens/terminal_screen.dart",
+      "target": "class:_TabBar",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/screens/terminal_screen.dart",
+      "target": "class:_StatusChip",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/screens/terminal_screen.dart",
+      "target": "class:_Banner",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/screens/terminal_screen.dart",
+      "target": "class:_KeyRow",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/screens/terminal_screen.dart",
+      "target": "class:lib/screens/terminal_screen.dart:_ConnState",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/services/vm_platform.dart",
+      "target": "class:VmPlatform",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/services/vm_platform.dart",
+      "target": "class:DeviceInfo",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "file:lib/services/vm_platform.dart",
+      "target": "class:VmState",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:TerminalScreen",
+      "target": "class:_TerminalScreenState",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:MainScreen",
+      "target": "class:_MainScreenState",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:SettingsScreen",
+      "target": "class:_SettingsScreenState",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:_Tab",
+      "target": "function:lib/screens/terminal_screen.dart:startKeepAlive",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:VmState",
+      "target": "function:lib/services/vm_platform.dart:startVm",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:VmState",
+      "target": "function:lib/services/vm_platform.dart:stopVm",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:VmState",
+      "target": "function:lib/services/vm_platform.dart:_startSshPing",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:VmState",
+      "target": "function:lib/services/vm_platform.dart:_startPolling",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:VmState",
+      "target": "function:lib/services/vm_platform.dart:refreshStatus",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:VmPlatform",
+      "target": "function:lib/services/vm_platform.dart:pingSsh",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:VmPlatform",
+      "target": "function:lib/services/vm_platform.dart:getDeviceInfo",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:VmPlatform",
+      "target": "function:lib/services/vm_platform.dart:resetStorage",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:_SettingsScreenState",
+      "target": "function:lib/screens/settings_screen.dart:_load",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:_SettingsScreenState",
+      "target": "function:lib/screens/settings_screen.dart:_restartVm",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:_SettingsScreenState",
+      "target": "function:lib/screens/settings_screen.dart:_resetStorage",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:_SettingsScreenState",
+      "target": "function:lib/screens/settings_screen.dart:_saveVcpu",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:_SettingsScreenState",
+      "target": "function:lib/screens/settings_screen.dart:_saveRam",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:_SettingsScreenState",
+      "target": "function:lib/screens/settings_screen.dart:_saveDisk",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:_TerminalScreenState",
+      "target": "function:lib/screens/terminal_screen.dart:_connect",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:_TerminalScreenState",
+      "target": "function:lib/screens/terminal_screen.dart:_onSessionDone",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:_TerminalScreenState",
+      "target": "function:lib/screens/terminal_screen.dart:_retryOrError",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:_TerminalScreenState",
+      "target": "function:lib/screens/terminal_screen.dart:_scheduleConnect",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:_TerminalScreenState",
+      "target": "function:lib/screens/terminal_screen.dart:_disconnectAll",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:_TerminalScreenState",
+      "target": "function:lib/screens/terminal_screen.dart:_onVmStateChanged",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:_TerminalScreenState",
+      "target": "function:lib/screens/terminal_screen.dart:didChangeAppLifecycleState",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:_TerminalScreenState",
+      "target": "function:lib/screens/terminal_screen.dart:_reconnect",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:_TerminalScreenState",
+      "target": "function:lib/screens/terminal_screen.dart:_newTab",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:_TerminalScreenState",
+      "target": "function:lib/screens/terminal_screen.dart:_paste",
+      "type": "contains",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/main.dart:main",
+      "target": "class:VmState",
+      "type": "calls",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "class:_MainScreenState",
+      "target": "function:lib/services/vm_platform.dart:refreshStatus",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "class:_ControlButton",
+      "target": "function:lib/services/vm_platform.dart:startVm",
+      "type": "calls",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "class:_ControlButton",
+      "target": "function:lib/services/vm_platform.dart:stopVm",
+      "type": "calls",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/services/vm_platform.dart:startVm",
+      "target": "function:lib/services/vm_platform.dart:pingSsh",
+      "type": "calls",
+      "weight": 0.5,
+      "note": "indirect: startVm \u2192 _startSshPing \u2192 pingSsh",
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/services/vm_platform.dart:startVm",
+      "target": "function:lib/services/vm_platform.dart:_startSshPing",
+      "type": "calls",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/services/vm_platform.dart:_startSshPing",
+      "target": "function:lib/services/vm_platform.dart:pingSsh",
+      "type": "calls",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/services/vm_platform.dart:_startSshPing",
+      "target": "function:lib/services/vm_platform.dart:_startPolling",
+      "type": "calls",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/services/vm_platform.dart:refreshStatus",
+      "target": "function:lib/services/vm_platform.dart:_startPolling",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/services/vm_platform.dart:stopVm",
+      "target": "function:lib/services/vm_platform.dart:resetStorage",
+      "type": "calls",
+      "weight": 0.5,
+      "note": "no direct call; stopVm calls VmPlatform.stopVm",
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/screens/settings_screen.dart:_load",
+      "target": "function:lib/services/vm_platform.dart:getDeviceInfo",
+      "type": "calls",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/screens/settings_screen.dart:_restartVm",
+      "target": "function:lib/services/vm_platform.dart:stopVm",
+      "type": "calls",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/screens/settings_screen.dart:_restartVm",
+      "target": "function:lib/services/vm_platform.dart:startVm",
+      "type": "calls",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/screens/settings_screen.dart:_resetStorage",
+      "target": "function:lib/services/vm_platform.dart:resetStorage",
+      "type": "calls",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/screens/settings_screen.dart:_resetStorage",
+      "target": "function:lib/services/vm_platform.dart:refreshStatus",
+      "type": "calls",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/screens/terminal_screen.dart:_connect",
+      "target": "function:lib/screens/terminal_screen.dart:startKeepAlive",
+      "type": "calls",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/screens/terminal_screen.dart:_connect",
+      "target": "function:lib/screens/terminal_screen.dart:_retryOrError",
+      "type": "calls",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/screens/terminal_screen.dart:_retryOrError",
+      "target": "function:lib/screens/terminal_screen.dart:_scheduleConnect",
+      "type": "calls",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/screens/terminal_screen.dart:_scheduleConnect",
+      "target": "function:lib/screens/terminal_screen.dart:_connect",
+      "type": "calls",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/screens/terminal_screen.dart:_onSessionDone",
+      "target": "function:lib/screens/terminal_screen.dart:_scheduleConnect",
+      "type": "calls",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/screens/terminal_screen.dart:_onVmStateChanged",
+      "target": "function:lib/screens/terminal_screen.dart:_disconnectAll",
+      "type": "calls",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/screens/terminal_screen.dart:_onVmStateChanged",
+      "target": "function:lib/screens/terminal_screen.dart:_scheduleConnect",
+      "type": "calls",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/screens/terminal_screen.dart:didChangeAppLifecycleState",
+      "target": "function:lib/screens/terminal_screen.dart:_scheduleConnect",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/screens/terminal_screen.dart:_reconnect",
+      "target": "function:lib/screens/terminal_screen.dart:_connect",
+      "type": "calls",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/screens/terminal_screen.dart:_newTab",
+      "target": "function:lib/screens/terminal_screen.dart:_scheduleConnect",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "class:VmState",
+      "target": "concept:vm-state-machine",
+      "type": "related",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/services/vm_platform.dart:_startSshPing",
+      "target": "concept:vm-state-machine",
+      "type": "related",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/services/vm_platform.dart:pingSsh",
+      "target": "concept:vm-state-machine",
+      "type": "related",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "class:_Tab",
+      "target": "concept:ssh-keepalive-reconnect",
+      "type": "related",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:_TerminalScreenState",
+      "target": "concept:ssh-keepalive-reconnect",
+      "type": "related",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/screens/terminal_screen.dart:startKeepAlive",
+      "target": "concept:ssh-keepalive-reconnect",
+      "type": "related",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/screens/terminal_screen.dart:_retryOrError",
+      "target": "concept:ssh-keepalive-reconnect",
+      "type": "related",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/screens/terminal_screen.dart:_onSessionDone",
+      "target": "concept:ssh-keepalive-reconnect",
+      "type": "related",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "class:VmPlatform",
+      "target": "concept:method-channel-bridge",
+      "type": "related",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "class:_SettingsScreenState",
+      "target": "concept:shared-prefs-vm-config",
+      "type": "related",
+      "weight": 1.0,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/screens/settings_screen.dart:_saveVcpu",
+      "target": "concept:shared-prefs-vm-config",
+      "type": "related",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/screens/settings_screen.dart:_saveRam",
+      "target": "concept:shared-prefs-vm-config",
+      "type": "related",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "function:lib/screens/settings_screen.dart:_saveDisk",
+      "target": "concept:shared-prefs-vm-config",
+      "type": "related",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "concept:vm-state-machine",
+      "target": "concept:ssh-keepalive-reconnect",
+      "type": "related",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "concept:method-channel-bridge",
+      "target": "concept:vm-state-machine",
+      "type": "related",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "concept:shared-prefs-vm-config",
+      "target": "concept:method-channel-bridge",
+      "type": "related",
+      "weight": 0.6,
+      "direction": "forward"
+    },
+    {
+      "source": "document:CLAUDE.md",
+      "target": "file:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "type": "documents",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "document:CLAUDE.md",
+      "target": "file:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt",
+      "type": "documents",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "document:CLAUDE.md",
+      "target": "file:android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt",
+      "type": "documents",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "document:CLAUDE.md",
+      "target": "file:android/app/src/main/kotlin/com/ai2th/linxr/AlpineApp.kt",
+      "type": "documents",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "document:CLAUDE.md",
+      "target": "file:lib/services/vm_platform.dart",
+      "type": "documents",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "document:CLAUDE.md",
+      "target": "file:lib/screens/terminal_screen.dart",
+      "type": "documents",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "document:CLAUDE.md",
+      "target": "file:lib/main.dart",
+      "type": "documents",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "document:CLAUDE.md",
+      "target": "file:scripts/build_apk.sh",
+      "type": "documents",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "document:CLAUDE.md",
+      "target": "file:scripts/build_qcow2.sh",
+      "type": "documents",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "document:CLAUDE.md",
+      "target": "file:scripts/_build_rootfs.sh",
+      "type": "documents",
+      "weight": 0.6,
+      "direction": "forward"
+    },
+    {
+      "source": "document:README.md",
+      "target": "file:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "type": "documents",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "document:README.md",
+      "target": "file:android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt",
+      "type": "documents",
+      "weight": 0.6,
+      "direction": "forward"
+    },
+    {
+      "source": "document:README.md",
+      "target": "file:lib/main.dart",
+      "type": "documents",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "document:README.md",
+      "target": "file:lib/screens/terminal_screen.dart",
+      "type": "documents",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "document:README.md",
+      "target": "file:lib/screens/settings_screen.dart",
+      "type": "documents",
+      "weight": 0.6,
+      "direction": "forward"
+    },
+    {
+      "source": "document:README.md",
+      "target": "file:lib/screens/about_screen.dart",
+      "type": "documents",
+      "weight": 0.6,
+      "direction": "forward"
+    },
+    {
+      "source": "document:README.md",
+      "target": "file:lib/services/vm_platform.dart",
+      "type": "documents",
+      "weight": 0.6,
+      "direction": "forward"
+    },
+    {
+      "source": "document:README.md",
+      "target": "file:scripts/build_apk.sh",
+      "type": "documents",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "document:README.md",
+      "target": "file:scripts/build_qcow2.sh",
+      "type": "documents",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "document:README.md",
+      "target": "file:scripts/build_aab.sh",
+      "type": "documents",
+      "weight": 0.6,
+      "direction": "forward"
+    },
+    {
+      "source": "document:README.md",
+      "target": "config:pubspec.yaml",
+      "type": "related",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "document:README.md",
+      "target": "document:LICENSE",
+      "type": "related",
+      "weight": 0.6,
+      "direction": "forward"
+    },
+    {
+      "source": "document:PAPER.md",
+      "target": "file:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "type": "documents",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "document:PAPER.md",
+      "target": "file:android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt",
+      "type": "documents",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "document:PAPER.md",
+      "target": "file:android/app/src/main/kotlin/com/ai2th/linxr/AlpineApp.kt",
+      "type": "documents",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "document:PAPER.md",
+      "target": "file:lib/screens/terminal_screen.dart",
+      "type": "documents",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "document:PAPER.md",
+      "target": "file:lib/services/vm_platform.dart",
+      "type": "documents",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "document:PAPER.md",
+      "target": "file:scripts/build_apk.sh",
+      "type": "documents",
+      "weight": 0.6,
+      "direction": "forward"
+    },
+    {
+      "source": "document:PAPER.md",
+      "target": "file:scripts/build_qcow2.sh",
+      "type": "documents",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "document:PAPER.md",
+      "target": "file:scripts/_build_rootfs.sh",
+      "type": "documents",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "document:PAPER.md",
+      "target": "document:README.md",
+      "type": "related",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "document:PAPER.md",
+      "target": "document:CLAUDE.md",
+      "type": "related",
+      "weight": 0.6,
+      "direction": "forward"
+    },
+    {
+      "source": "document:IMPROVE.md",
+      "target": "file:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "type": "documents",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "document:IMPROVE.md",
+      "target": "file:lib/screens/settings_screen.dart",
+      "type": "documents",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "document:IMPROVE.md",
+      "target": "file:lib/screens/terminal_screen.dart",
+      "type": "documents",
+      "weight": 0.6,
+      "direction": "forward"
+    },
+    {
+      "source": "document:IMPROVE.md",
+      "target": "document:README.md",
+      "type": "related",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "document:IMPROVE.md",
+      "target": "document:PAPER.md",
+      "type": "related",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "config:pubspec.yaml",
+      "target": "file:lib/main.dart",
+      "type": "configures",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "config:pubspec.yaml",
+      "target": "file:lib/screens/terminal_screen.dart",
+      "type": "configures",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "config:pubspec.yaml",
+      "target": "file:lib/screens/settings_screen.dart",
+      "type": "configures",
+      "weight": 0.6,
+      "direction": "forward"
+    },
+    {
+      "source": "config:pubspec.yaml",
+      "target": "file:lib/screens/about_screen.dart",
+      "type": "configures",
+      "weight": 0.6,
+      "direction": "forward"
+    },
+    {
+      "source": "config:pubspec.yaml",
+      "target": "file:lib/services/vm_platform.dart",
+      "type": "configures",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "config:.gitignore",
+      "target": "file:scripts/build_apk.sh",
+      "type": "related",
+      "weight": 0.4,
+      "direction": "forward"
+    },
+    {
+      "source": "config:.gitignore",
+      "target": "file:scripts/build_qcow2.sh",
+      "type": "related",
+      "weight": 0.4,
+      "direction": "forward"
+    },
+    {
+      "source": "config:.gitignore",
+      "target": "config:pubspec.yaml",
+      "type": "related",
+      "weight": 0.4,
+      "direction": "forward"
+    },
+    {
+      "source": "document:CLAUDE.md",
+      "target": "document:README.md",
+      "type": "related",
+      "weight": 0.6,
+      "direction": "forward"
+    },
+    {
+      "source": "document:LICENSE",
+      "target": "document:PAPER.md",
+      "type": "related",
+      "weight": 0.4,
+      "direction": "forward"
+    },
+    {
+      "source": "file:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "target": "file:android/app/src/main/assets/vm/vmlinuz-virt",
+      "type": "depends_on",
+      "label": "passes to QEMU -kernel flag at VM start",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "file:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+      "target": "file:android/app/src/main/assets/vm/initramfs-virt",
+      "type": "depends_on",
+      "label": "passes to QEMU -initrd flag at VM start",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "file:android/app/src/main/assets/vm/vmlinuz-virt",
+      "target": "file:android/app/src/main/assets/vm/initramfs-virt",
+      "type": "related",
+      "label": "kernel boots with this initramfs as early userspace",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "file:android/build.gradle",
+      "target": "file:android/app/build.gradle",
+      "type": "configures",
+      "label": "root build script configures :app subproject build",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "file:android/settings.gradle",
+      "target": "file:android/app/build.gradle",
+      "type": "configures",
+      "label": "includes :app subproject and loads Flutter + AGP plugins",
+      "weight": 0.9,
+      "direction": "forward"
+    },
+    {
+      "source": "file:android/gradle.properties",
+      "target": "file:android/build.gradle",
+      "type": "configures",
+      "label": "supplies JVM args, daemon, parallel and AndroidX flags to root build",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "file:android/gradle.properties",
+      "target": "file:android/app/build.gradle",
+      "type": "configures",
+      "label": "AndroidX/Jetifier flags consumed by app build script",
+      "weight": 0.6,
+      "direction": "forward"
+    },
+    {
+      "source": "file:android/key.properties.template",
+      "target": "file:android/app/build.gradle",
+      "type": "related",
+      "label": "template for key.properties used by release signing config in app build script",
+      "weight": 0.6,
+      "direction": "forward"
+    },
+    {
+      "source": "file:android/settings.gradle",
+      "target": "file:android/build.gradle",
+      "type": "related",
+      "label": "settings evaluated before root build script; shares plugin versions",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "file:scripts/build_apk.sh",
+      "target": "file:android/build.gradle",
+      "type": "depends_on",
+      "label": "Docker build script invokes Gradle which reads this file",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "file:scripts/build_qcow2.sh",
+      "target": "file:scripts/_build_rootfs.sh",
+      "description": "build_qcow2.sh mounts _build_rootfs.sh as /build.sh into an alpine:3.19 arm64 Docker container and executes it to produce base.qcow2.gz, vmlinuz-virt, and initramfs-virt",
+      "direction": "forward",
+      "type": "triggers",
+      "weight": 0.7
+    },
+    {
+      "source": "file:scripts/build_apk.sh",
+      "target": "file:docker/Dockerfile.build",
+      "description": "Lazily builds the linxr-builder Docker image from docker/Dockerfile.build on first run (linux/amd64)",
+      "direction": "forward",
+      "type": "depends_on",
+      "weight": 0.7
+    },
+    {
+      "source": "file:scripts/build_aab.sh",
+      "target": "file:docker/Dockerfile.build",
+      "description": "Lazily builds the linxr-builder Docker image from docker/Dockerfile.build on first run (linux/amd64)",
+      "direction": "forward",
+      "type": "depends_on",
+      "weight": 0.7
+    },
+    {
+      "source": "file:scripts/build_apk.sh",
+      "target": "file:android/app/build.gradle",
+      "description": "Copies android/app/build.gradle into the Docker /tmp/build workspace during APK build",
+      "direction": "forward",
+      "type": "deploys",
+      "weight": 0.7
+    },
+    {
+      "source": "file:scripts/build_aab.sh",
+      "target": "file:android/app/build.gradle",
+      "description": "Copies android/app/build.gradle into the Docker /tmp/build workspace during AAB build",
+      "direction": "forward",
+      "type": "deploys",
+      "weight": 0.7
+    },
+    {
+      "source": "file:scripts/build_apk.sh",
+      "target": "file:android/app/src/main/AndroidManifest.xml",
+      "description": "Copies AndroidManifest.xml into the Docker build workspace",
+      "direction": "forward",
+      "type": "deploys",
+      "weight": 0.7
+    },
+    {
+      "source": "file:scripts/build_aab.sh",
+      "target": "file:android/app/src/main/AndroidManifest.xml",
+      "description": "Copies AndroidManifest.xml into the Docker build workspace",
+      "direction": "forward",
+      "type": "deploys",
+      "weight": 0.7
+    },
+    {
+      "source": "file:scripts/build_apk.sh",
+      "target": "file:android/app/debug.keystore",
+      "description": "Copies debug.keystore into the Docker build workspace for APK debug signing",
+      "direction": "forward",
+      "type": "depends_on",
+      "weight": 0.7
+    },
+    {
+      "source": "file:scripts/build_aab.sh",
+      "target": "file:android/app/debug.keystore",
+      "description": "Copies debug.keystore into the Docker build workspace; falls back to it for release if key.properties absent",
+      "direction": "forward",
+      "type": "depends_on",
+      "weight": 0.7
+    },
+    {
+      "source": "file:scripts/export_feature_graphic.sh",
+      "target": "file:scripts/feature_graphic.html",
+      "description": "Renders feature_graphic.html to feature_graphic.png at 1024x500 via Chrome headless --screenshot",
+      "direction": "forward",
+      "type": "triggers",
+      "weight": 0.7
+    },
+    {
+      "source": "file:scripts/gen_keystore.sh",
+      "target": "file:android/app/build.gradle",
+      "description": "Generates upload-keystore.jks and key.properties whose fields are consumed by the release signingConfig in build.gradle",
+      "direction": "forward",
+      "type": "related",
+      "weight": 0.7
+    },
+    {
+      "source": "file:docker/Dockerfile.build",
+      "target": "file:scripts/build_apk.sh",
+      "description": "build_apk.sh builds the linxr-builder image from this Dockerfile on first run",
+      "direction": "forward",
+      "type": "depends_on",
+      "weight": 0.7
+    },
+    {
+      "source": "file:docker/Dockerfile.build",
+      "target": "file:scripts/build_aab.sh",
+      "description": "build_aab.sh builds the linxr-builder image from this Dockerfile on first run",
+      "direction": "forward",
+      "type": "depends_on",
+      "weight": 0.7
+    },
+    {
+      "source": "file:android/app/build.gradle",
+      "target": "file:android/app/debug.keystore",
+      "description": "signingConfigs.debug and release fallback both reference debug.keystore with alias=debug, password=android",
+      "direction": "forward",
+      "type": "related",
+      "weight": 0.7
+    },
+    {
+      "source": "file:android/app/src/main/AndroidManifest.xml",
+      "target": "file:android/app/src/main/res/xml/network_security_config.xml",
+      "description": "References @xml/network_security_config via android:networkSecurityConfig on the <application> tag",
+      "direction": "forward",
+      "type": "related",
+      "weight": 0.7
+    },
+    {
+      "source": "file:.claude/settings.local.json",
+      "target": "file:scripts/build_apk.sh",
+      "description": "Grants permission for docker run/build/exec commands used by build_apk.sh",
+      "direction": "forward",
+      "type": "configures",
+      "weight": 0.7
+    },
+    {
+      "source": "file:.claude/settings.local.json",
+      "target": "file:scripts/build_qcow2.sh",
+      "description": "Grants permission for docker run/build commands used by build_qcow2.sh",
+      "direction": "forward",
+      "type": "configures",
+      "weight": 0.7
+    },
+    {
+      "source": "file:scripts/build_qcow2.sh",
+      "target": "file:scripts/_build_rootfs.sh",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    }
+  ],
+  "layers": [
+    {
+      "id": "layer:flutter-ui",
+      "name": "Flutter UI",
+      "description": "Dart UI screens and state management: home screen, terminal (multi-tab SSH), settings, about, and the VmState ChangeNotifier platform bridge",
+      "nodeIds": [
+        "file:lib/main.dart",
+        "file:lib/screens/about_screen.dart",
+        "file:lib/screens/settings_screen.dart",
+        "file:lib/screens/terminal_screen.dart",
+        "file:lib/services/vm_platform.dart",
+        "config:pubspec.yaml"
+      ]
+    },
+    {
+      "id": "layer:android-kotlin",
+      "name": "Android Kotlin",
+      "description": "Kotlin Android layer: VmManager (QEMU lifecycle + asset extraction), MainActivity (MethodChannel bridge), VmService (foreground service + wakelock), AlpineApp (process singleton), and the instrumented test suite",
+      "nodeIds": [
+        "file:android/app/src/main/kotlin/com/ai2th/linxr/AlpineApp.kt",
+        "file:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt",
+        "file:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+        "file:android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt",
+        "file:android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt"
+      ]
+    },
+    {
+      "id": "layer:vm-guest-os",
+      "name": "VM & Guest OS",
+      "description": "VM binary assets (kernel, initramfs), bootstrap script (sets root:alpine, configures SSH), Android app config (AndroidManifest, network security config, debug keystore, key.properties template), and the vm asset directory placeholder",
+      "nodeIds": [
+        "file:android/app/src/main/assets/vm/vmlinuz-virt",
+        "file:android/app/src/main/assets/vm/initramfs-virt",
+        "file:android/app/src/main/assets/vm/.gitkeep",
+        "file:android/app/src/main/assets/bootstrap/init_bootstrap.sh",
+        "file:android/app/src/main/AndroidManifest.xml",
+        "file:android/app/src/main/res/xml/network_security_config.xml",
+        "file:android/app/debug.keystore",
+        "file:android/key.properties.template"
+      ]
+    },
+    {
+      "id": "layer:build-infrastructure",
+      "name": "Build & Infrastructure",
+      "description": "Build scripts (APK, AAB, qcow2 image, rootfs bootstrap), Dockerfile, Gradle configs, utility and asset-generation scripts, Claude Code settings, and project documentation",
+      "nodeIds": [
+        "file:scripts/build_apk.sh",
+        "file:scripts/build_aab.sh",
+        "file:scripts/build_qcow2.sh",
+        "file:scripts/_build_rootfs.sh",
+        "file:scripts/export_feature_graphic.sh",
+        "file:scripts/feature_graphic.html",
+        "file:scripts/gen_icons.py",
+        "file:scripts/gen_keystore.sh",
+        "file:docker/Dockerfile.build",
+        "file:android/build.gradle",
+        "file:android/gradle.properties",
+        "file:android/settings.gradle",
+        "file:android/app/build.gradle",
+        "file:.claude/settings.local.json",
+        "config:.gitignore",
+        "document:CLAUDE.md",
+        "document:IMPROVE.md",
+        "document:LICENSE",
+        "document:PAPER.md",
+        "document:README.md"
+      ]
+    }
+  ],
+  "tour": [
+    {
+      "order": 1,
+      "title": "Project Overview",
+      "description": "Start with the README to understand what Linxr does: run a full Alpine Linux VM on any Android device without root, using QEMU packaged as a native .so file.",
+      "nodeIds": [
+        "document:README.md"
+      ]
+    },
+    {
+      "order": 2,
+      "title": "App Entry Point & Navigation",
+      "description": "lib/main.dart bootstraps the Flutter app with a ChangeNotifierProvider(VmState) and sets up the 4-tab bottom navigation (Home, Terminal, Settings, About). This is where the app lifecycle begins.",
+      "nodeIds": [
+        "file:lib/main.dart"
+      ]
+    },
+    {
+      "order": 3,
+      "title": "VM State & Platform Bridge",
+      "description": "vm_platform.dart contains VmState (ChangeNotifier) which manages the VM status machine: stopped \u2192 booting \u2192 running. It pings SSH every 3s during boot and exposes startVm/stopVm via MethodChannel to the Kotlin layer.",
+      "nodeIds": [
+        "file:lib/services/vm_platform.dart"
+      ]
+    },
+    {
+      "order": 4,
+      "title": "QEMU Lifecycle \u2014 VmManager",
+      "description": "The heart of the app. VmManager.kt handles asset extraction (decompresses base.qcow2.gz), creates the writable user.qcow2 overlay, builds the QEMU command (TCG multi-thread, virtio-blk, SLIRP NAT, port 2222\u219222), and launches it via ProcessBuilder.",
+      "nodeIds": [
+        "file:android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt",
+        "file:android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt"
+      ]
+    },
+    {
+      "order": 5,
+      "title": "Multi-Tab SSH Terminal",
+      "description": "terminal_screen.dart manages up to 5 concurrent SSH sessions using dartssh2 + xterm. Features: auto-reconnect on app resume (WidgetsBindingObserver), 25s keepalive probe, exponential backoff retry (24 attempts \u2248 2 min), and per-tab connection state machine.",
+      "nodeIds": [
+        "file:lib/screens/terminal_screen.dart"
+      ]
+    },
+    {
+      "order": 6,
+      "title": "Alpine Image Build Pipeline",
+      "description": "The rootfs is built entirely in Docker: build_qcow2.sh launches an arm64 Alpine container, _build_rootfs.sh installs packages (Docker, OpenSSH, bash), bakes kernel modules via modprobe -a, and produces base.qcow2.gz + vmlinuz + initramfs for bundling into the APK.",
+      "nodeIds": [
+        "file:scripts/build_qcow2.sh",
+        "file:scripts/_build_rootfs.sh",
+        "file:docker/Dockerfile.build"
+      ]
+    }
+  ]
+}

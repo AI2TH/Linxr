@@ -10,12 +10,12 @@ IMAGE_SIZE=2G
 echo "--- Installing build tools ---"
 apk add --no-cache e2fsprogs qemu-img
 
-# ── Bootstrap rootfs ─────────────────────────────────────────────────────────
+# â”€â”€ Bootstrap rootfs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 echo "--- Bootstrapping Alpine rootfs ---"
 mkdir -p "${ROOTFS}/etc/apk/keys"
 cp /etc/apk/keys/* "${ROOTFS}/etc/apk/keys/"
 cp /etc/apk/repositories "${ROOTFS}/etc/apk/"
-# docker and fuse-overlayfs are in community — ensure it's enabled
+# docker and fuse-overlayfs are in community â€” ensure it's enabled
 grep -q 'community' "${ROOTFS}/etc/apk/repositories" || \
     echo "https://dl-cdn.alpinelinux.org/alpine/v3.19/community" >> "${ROOTFS}/etc/apk/repositories"
 # host container also needs community for the --root apk calls
@@ -38,7 +38,7 @@ apk --root "${ROOTFS}" --initdb --no-cache add \
     ip6tables \
     kmod
 
-# ── Directory skeleton ────────────────────────────────────────────────────────
+# â”€â”€ Directory skeleton â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 mkdir -p "${ROOTFS}/proc" \
          "${ROOTFS}/sys" \
          "${ROOTFS}/sys/fs/cgroup" \
@@ -60,7 +60,7 @@ mknod -m 660 "${ROOTFS}/dev/vda"     b 252 0 2>/dev/null || true
 mknod -m 666 "${ROOTFS}/dev/net/tun" c 10 200 2>/dev/null || true
 mknod -m 666 "${ROOTFS}/dev/fuse"    c 10 229 2>/dev/null || true
 
-# ── OpenRC runlevels ─────────────────────────────────────────────────────────
+# â”€â”€ OpenRC runlevels â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 echo "--- Configuring OpenRC ---"
 mkdir -p "${ROOTFS}/etc/runlevels/sysinit" \
          "${ROOTFS}/etc/runlevels/boot" \
@@ -84,7 +84,7 @@ for svc in killprocs mount-ro savecache; do
         ln -sf /etc/init.d/${svc} "${ROOTFS}/etc/runlevels/shutdown/${svc}" 2>/dev/null || true
 done
 
-# ── Networking ───────────────────────────────────────────────────────────────
+# â”€â”€ Networking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 printf 'auto lo\niface lo inet loopback\n\nauto eth0\niface eth0 inet static\n    address 10.0.2.15\n    netmask 255.255.255.0\n    gateway 10.0.2.2\n' \
     > "${ROOTFS}/etc/network/interfaces"
 
@@ -97,14 +97,14 @@ echo "linxr" > "${ROOTFS}/etc/hostname"
 printf '/dev/vda\t/\text4\trw,relatime\t0 1\ntmpfs\t/tmp\ttmpfs\tdefaults\t0 0\n' \
     > "${ROOTFS}/etc/fstab"
 
-# ── iptables-legacy (virt kernel has no nf_tables; Alpine iptables defaults to nft) ──
+# â”€â”€ iptables-legacy (virt kernel has no nf_tables; Alpine iptables defaults to nft) â”€â”€
 # Symlink in both /sbin and /usr/sbin so dockerd finds it regardless of PATH
 ln -sf /sbin/iptables-legacy  "${ROOTFS}/sbin/iptables"    2>/dev/null || true
 ln -sf /sbin/ip6tables-legacy "${ROOTFS}/sbin/ip6tables"   2>/dev/null || true
 ln -sf /sbin/iptables-legacy  "${ROOTFS}/usr/sbin/iptables"  2>/dev/null || true
 ln -sf /sbin/ip6tables-legacy "${ROOTFS}/usr/sbin/ip6tables" 2>/dev/null || true
 
-# ── sysctl ────────────────────────────────────────────────────────────────────
+# â”€â”€ sysctl â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 cat >> "${ROOTFS}/etc/sysctl.conf" << 'EOF'
 net.ipv4.ip_forward=1
 net.ipv4.conf.all.forwarding=1
@@ -114,7 +114,7 @@ fs.inotify.max_user_instances=256
 fs.inotify.max_user_watches=65536
 EOF
 
-# ── Docker daemon config ──────────────────────────────────────────────────────
+# â”€â”€ Docker daemon config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 cat > "${ROOTFS}/etc/docker/daemon.json" << 'EOF'
 {
   "storage-driver": "overlay2",
@@ -129,11 +129,11 @@ cat > "${ROOTFS}/etc/docker/daemon.json" << 'EOF'
 }
 EOF
 
-# ── subuid/subgid for rootless containers ─────────────────────────────────────
+# â”€â”€ subuid/subgid for rootless containers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 echo 'root:100000:65536' >> "${ROOTFS}/etc/subuid"
 echo 'root:100000:65536' >> "${ROOTFS}/etc/subgid"
 
-# ── Kernel modules for Docker bridge networking ───────────────────────────────
+# â”€â”€ Kernel modules for Docker bridge networking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Alpine linux-virt ships ip_tables, bridge, br_netfilter, veth etc. as loadable
 # .ko files (not built-in). Docker requires them at runtime. Copy the actual .ko
 # files from the build container's linux-virt installation into the rootfs so
@@ -177,7 +177,7 @@ for MOD_PATH in $DOCKER_MODULES; do
         cp "$SRC" "$DST"
         echo "  copied: $MOD_PATH"
     else
-        echo "  WARNING: $SRC not found — skipping"
+        echo "  WARNING: $SRC not found â€” skipping"
     fi
 done
 
@@ -192,7 +192,7 @@ done
 depmod -b "${ROOTFS}" "$KVER"
 echo "--- Kernel modules ready (KVER=$KVER) ---"
 
-# ── cgroup2 + device nodes + modprobe OpenRC service ─────────────────────────
+# â”€â”€ cgroup2 + device nodes + modprobe OpenRC service â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Runs in sysinit after mdev so /dev is populated.
 # Also loads the Docker networking kernel modules before dockerd starts.
 cat > "${ROOTFS}/etc/init.d/cgroups" << 'EOF'
@@ -210,7 +210,7 @@ start() {
         > /sys/fs/cgroup/cgroup.subtree_control 2>/dev/null || true
 
     # /dev/fuse and /dev/net/tun are required by Docker and containers.
-    # mdev populates /dev at sysinit but doesn't create these — do it here.
+    # mdev populates /dev at sysinit but doesn't create these â€” do it here.
     [ -c /dev/fuse ] || mknod -m 666 /dev/fuse c 10 229
     mkdir -p /dev/net
     [ -c /dev/net/tun ] || mknod -m 666 /dev/net/tun c 10 200
@@ -238,7 +238,7 @@ EOF
 chmod +x "${ROOTFS}/etc/init.d/cgroups"
 ln -sf /etc/init.d/cgroups "${ROOTFS}/etc/runlevels/sysinit/cgroups"
 
-# ── diskexpand OpenRC service — resize2fs runs before sshd ───────────────────
+# â”€â”€ diskexpand OpenRC service â€” resize2fs runs before sshd â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # This runs in the boot runlevel (completes before default/sshd starts).
 # It expands the ext4 filesystem to fill whatever virtual disk size was set
 # when user.qcow2 was created (e.g. 8 GB, 50 GB).
@@ -262,7 +262,7 @@ EOF
 chmod +x "${ROOTFS}/etc/init.d/diskexpand"
 ln -sf /etc/init.d/diskexpand "${ROOTFS}/etc/runlevels/boot/diskexpand"
 
-# ── inittab — ttyAMA0 console ─────────────────────────────────────────────────
+# â”€â”€ inittab â€” ttyAMA0 console â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 cat > "${ROOTFS}/etc/inittab" << 'EOF'
 ::sysinit:/sbin/openrc sysinit
 ::sysinit:/sbin/openrc boot
@@ -272,11 +272,11 @@ ttyAMA0::respawn:/sbin/getty -L ttyAMA0 115200 vt100
 ::shutdown:/sbin/openrc shutdown
 EOF
 
-# ── SSH ───────────────────────────────────────────────────────────────────────
+# â”€â”€ SSH â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 echo "--- Configuring SSH ---"
 chroot "${ROOTFS}" ssh-keygen -A
 
-# Use sed to override any existing (uncommented) directives — first match wins
+# Use sed to override any existing (uncommented) directives â€” first match wins
 # in sshd_config, so we can't just append when lines already exist.
 sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/'       "${ROOTFS}/etc/ssh/sshd_config"
 sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' "${ROOTFS}/etc/ssh/sshd_config"
@@ -286,16 +286,16 @@ grep -q '^PermitRootLogin'       "${ROOTFS}/etc/ssh/sshd_config" || echo 'Permit
 grep -q '^PasswordAuthentication' "${ROOTFS}/etc/ssh/sshd_config" || echo 'PasswordAuthentication yes' >> "${ROOTFS}/etc/ssh/sshd_config"
 grep -q '^UsePAM'                "${ROOTFS}/etc/ssh/sshd_config" || echo 'UsePAM no'                >> "${ROOTFS}/etc/ssh/sshd_config"
 
-# ── Credentials ───────────────────────────────────────────────────────────────
+# â”€â”€ Credentials â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 echo "root:alpine" | chroot "${ROOTFS}" chpasswd
 
-# ── sudo ─────────────────────────────────────────────────────────────────────
+# â”€â”€ sudo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 printf '%%wheel ALL=(ALL) NOPASSWD: ALL\n' >> "${ROOTFS}/etc/sudoers"
 printf 'root ALL=(ALL) NOPASSWD: ALL\n'    >  "${ROOTFS}/etc/sudoers.d/root"
 chmod 440 "${ROOTFS}/etc/sudoers"
 chmod 440 "${ROOTFS}/etc/sudoers.d/root"
 
-# ── Build ext4 image (no loop mount needed) ───────────────────────────────────
+# â”€â”€ Build ext4 image (no loop mount needed) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 echo "--- Creating ${IMAGE_SIZE} ext4 image ---"
 mke2fs -t ext4 -d "${ROOTFS}" -L linxr /out/base.ext4 "${IMAGE_SIZE}"
 
@@ -307,7 +307,7 @@ echo "--- Compressing ---"
 gzip -9 -c /out/base.qcow2 > /out/base.qcow2.gz
 rm -f /out/base.qcow2
 
-# Export kernel and initrd — must match the kernel version used for the modules
+# Export kernel and initrd â€” must match the kernel version used for the modules
 echo "--- Exporting kernel and initrd (${KVER}) ---"
 cp /boot/vmlinuz-virt    /out/vmlinuz-virt
 cp /boot/initramfs-virt  /out/initramfs-virt

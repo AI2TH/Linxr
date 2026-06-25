@@ -249,10 +249,18 @@ class _TerminalScreenState extends State<TerminalScreen> with WidgetsBindingObse
 
   // ── SSH connection ──────────────────────────────────────────────────────────
 
-  void _scheduleConnect(_Tab tab, {int delaySeconds = 0}) {
+  /// Exponential backoff: 500ms * 2^attempt, capped at 60s.
+  Duration _reconnectDelay(int attempt) {
+    final ms = 500 * (1 << attempt);
+    return Duration(milliseconds: ms > 60000 ? 60000 : ms);
+  }
+
+  void _scheduleConnect(_Tab tab, {int? delaySeconds}) {
     tab.retryTimer?.cancel();
+    final delay = delaySeconds ??
+        (tab.retryCount > 0 ? _reconnectDelay(tab.retryCount - 1).inSeconds : 0);
     tab.retryTimer =
-        Timer(Duration(seconds: delaySeconds), () => _connect(tab));
+        Timer(Duration(seconds: delay), () => _connect(tab));
   }
 
   Future<void> _connect(_Tab tab) async {
@@ -314,8 +322,8 @@ class _TerminalScreenState extends State<TerminalScreen> with WidgetsBindingObse
     if (tab.retryCount < _Tab._maxRetries) {
       setState(() => tab.connState = _ConnState.idle);
       if (isActive) {
-        tab.terminal.write('\r\n[$msg — retrying in 5s...]\r\n');
-        _scheduleConnect(tab, delaySeconds: 5);
+        tab.terminal.write('\r\n[$msg — retrying... (${tab.retryCount}/${_Tab._maxRetries})]\r\n');
+        _scheduleConnect(tab);
       } else {
         tab.terminal.write('\r\n[$msg — will retry when tab is selected]\r\n');
       }
@@ -337,10 +345,10 @@ class _TerminalScreenState extends State<TerminalScreen> with WidgetsBindingObse
     if (!mounted) return;
     tab.terminal.write('\r\n\r\n[Session closed]\r\n');
     setState(() => tab.connState = _ConnState.idle);
-    // Auto-reconnect if VM is still running
+    // Auto-reconnect if VM is still running — exponential backoff
     final vmStatus = context.read<VmState>().status;
     if (vmStatus == 'running' && tab.retryCount < _Tab._maxRetries) {
-      _scheduleConnect(tab, delaySeconds: 5);
+      _scheduleConnect(tab);
     }
   }
 
@@ -349,11 +357,11 @@ class _TerminalScreenState extends State<TerminalScreen> with WidgetsBindingObse
     tab.retryTimer?.cancel();
     tab.stopKeepAlive();
     tab.retryCount = 0;
+    tab.connState = _ConnState.idle;
     tab.session?.stdin.close();
     tab.client?.close();
     tab.session = null;
     tab.client = null;
-    tab.connState = _ConnState.idle;
     tab.terminal.write('\r\n--- Reconnecting ---\r\n');
     _connect(tab);
   }

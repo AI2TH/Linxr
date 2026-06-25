@@ -208,7 +208,7 @@ class VmManager(private val context: Context) {
 
         cmd += listOf("-smp", vcpu.toString())
         cmd += listOf("-m", ramMb.toString())
-        cmd += listOf("-drive", "if=none,file=$userImage,id=user,format=qcow2,cache=unsafe,file.locking=off")
+        cmd += listOf("-drive", "if=none,file=$userImage,id=user,format=qcow2,cache=writethrough,file.locking=off")
 
         if (isArm) {
             cmd += listOf("-device", "virtio-blk-device,drive=user")

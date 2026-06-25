@@ -138,6 +138,15 @@ class VmManager(private val context: Context) {
         val pid = pidFile.readText().trim().toIntOrNull()
         pidFile.delete()
         if (pid == null) return
+        // Verify PID still belongs to QEMU before killing — PIDs are recycled on Android.
+        // Killing the wrong process (e.g. the app's own launcher) is catastrophic.
+        val cmdlineFile = File("/proc/$pid/cmdline")
+        if (!cmdlineFile.exists()) return
+        val cmdline = cmdlineFile.readText().replace('\u0000', ' ')
+        if (!cmdline.contains("qemu", ignoreCase = true)) {
+            Log.w(TAG, "PID $pid is not QEMU (cmdline: $cmdline) — skipping kill")
+            return
+        }
         try {
             android.os.Process.killProcess(pid)
             Log.d(TAG, "Killed orphan QEMU PID $pid")

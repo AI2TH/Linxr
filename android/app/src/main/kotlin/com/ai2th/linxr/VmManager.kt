@@ -316,10 +316,18 @@ class VmManager(private val context: Context) {
             environment()["LD_LIBRARY_PATH"] = nativeLibDir.absolutePath
             environment()["BERBERIS_GUEST_LD_LIBRARY_PATH"] = nativeLibDir.absolutePath
         }.start()
+        // Drain stderr on a background thread before waitFor() to prevent
+        // deadlock when qemu-img writes > ~64KB to stderr (pipe buffer fills).
+        val stderrBuffer = StringBuilder()
+        val drainer = Thread {
+            try {
+                stderrBuffer.append(proc.errorStream.bufferedReader().readText())
+            } catch (_: Exception) { }
+        }.apply { start() }
         val exitCode = proc.waitFor()
+        drainer.join(5000) // wait up to 5s for stderr drain to complete
         if (exitCode != 0) {
-            val err = proc.errorStream.bufferedReader().readText()
-            throw RuntimeException("qemu-img create failed (exit $exitCode): $err")
+            throw RuntimeException("qemu-img create failed (exit $exitCode): $stderrBuffer")
         }
         Log.d(TAG, "Created user.qcow2 at $userImagePath")
     }

@@ -70,6 +70,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       VmPlatform.getDeviceInfo(),
       SharedPreferences.getInstance(),
     ]);
+    if (!mounted) return;
     final device = results[0] as DeviceInfo;
     final prefs  = results[1] as SharedPreferences;
     setState(() {

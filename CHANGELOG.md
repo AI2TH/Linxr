@@ -248,4 +248,19 @@ reasoning for every change is in
 - **Commit:** `9306d3d` (replaces M12's `bab1047` implementation)
 - **Summary:** M12 used `registerForActivityResult` (requires `androidx.activity:activity-ktx:1.7.x`; in 1.8.0 the top-level extension was removed). Replaced with the older `ActivityCompat.requestPermissions()` + `onRequestPermissionsResult()` API, which uses the already-declared `androidx.core:core-ktx:1.12.0`. No new dependency needed. Compile now succeeds.
 
+#### NEW-5. `firebase_test_linxr.sh` DEVICE default uses `:` separator (gcloud rejects)
+- **Files:** `test_script_and_creds/firebase_scripts/firebase_test_linxr.sh` (line 69 + help text)
+- **Commit:** `dc1b5b1` (in `test_script_and_creds` repo, separate from Linxr tree)
+- **Summary:** gcloud's `--device` flag expects `key=value` pairs; the script's default used `model:Pixel4,...` (colon), so gcloud rejected it with `Bad syntax for dict arg: [model:Pixel4]`. Default changed to `model=Pixel2.arm,version=30,...` (equals separator) with a rationale comment explaining FTL's device-id whitelist.
+
+#### NEW-6. `firebase_test_linxr.sh` DEVICE default uses `Pixel4` which is not a valid FTL device model
+- **Files:** `test_script_and_creds/firebase_scripts/firebase_test_linxr.sh` (line 69)
+- **Commit:** `dc1b5b1` (same commit as NEW-5; both fixes share one line)
+- **Summary:** Even with the separator fixed, gcloud rejected `Pixel4` with `'Pixel4' is not a valid model`. FTL's whitelist is `Pixel2.arm`, `redfin`, `blueline`, `bluejay`, `akita`, `blazer`, `caiman`, `comet`, `felix`, `cheetah`. Switched to `Pixel2.arm` (virtual arm64, API 26-33) which matches Linxr's `arm64-v8a` ABI and the convention used by the four other alpine-targeted scripts in the same directory.
+
+#### NEW-7. GCP project `alpine-8b916` has no billing account — FTL cannot provision results bucket
+- **Files:** (no source change) — GCP project-level configuration
+- **Commit:** UNFIXED (infrastructure constraint; not fixable from build host)
+- **Summary:** With NEW-5/NEW-6 corrected, FTL submission progressed to bucket creation then failed: `Permission denied while creating bucket [alpine-8b916_firebase_test_results]. Is billing enabled for project: [alpine-8b916]?`. The service account has `roles/editor` (sufficient for FTL); the blocker is the project-level billing account linkage. **Action required:** project owner must link a billing account in Cloud Console → Billing → Link a billing account. Once linked, re-run `./firebase_test_linxr.sh`. This is an operational task, not a code fix.
+
 [Unreleased]: https://github.com/ai2th/linxr/compare/HEAD...bugs

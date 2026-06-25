@@ -558,6 +558,44 @@ Replaced `registerForActivityResult` with the older `ActivityCompat.requestPermi
 
 **Resolution:** `9306d3d` — replaced `registerForActivityResult` with `ActivityCompat.requestPermissions` + added `onRequestPermissionsResult` override; works on all SDK levels including 13+; no new dependency required.
 
+### NEW-5. `firebase_test_linxr.sh` DEVICE default uses `:` separator (gcloud rejects)
+
+**Severity:** NEW BUG (script bug surfaced by the FTL E2E run on 2026-06-25)
+
+**Description**
+`test_script_and_creds/firebase_scripts/firebase_test_linxr.sh:69` defaults `DEVICE` to `model:Pixel4,version:30,locale:en,orientation:portrait`. The `--device` flag in `gcloud firebase test android run` expects `key=value` pairs (colon is rejected as `Bad syntax for dict arg`). The very first FTL submission attempt failed with: `argument --device: Bad syntax for dict arg: [model:Pixel4]`.
+
+**Fix**
+In `firebase_test_linxr.sh`, change the default to `model=Pixel2.arm,version=30,locale=en,orientation=portrait`. The separator fix and the device-model fix (NEW-6) are in the same commit because they were discovered together and share the same line.
+
+**Resolution:** `dc1b5b1` (committed in `test_script_and_creds` repo, separate from the Linxr tree) — DEVICE default changed from `model:Pixel4,...` to `model=Pixel2.arm,...`; both `:` separators swapped for `=`; rationale comment added explaining FTL's device-id whitelist. Re-running `gcloud firebase test android run --device=...` now accepts the value.
+
+### NEW-6. `firebase_test_linxr.sh` DEVICE default uses `Pixel4` which is not a valid FTL device model
+
+**Severity:** NEW BUG (script bug surfaced by the FTL E2E run on 2026-06-25)
+
+**Description**
+Even after fixing the colon/equals separator (NEW-5), `gcloud firebase test android run` rejects `Pixel4` with `'Pixel4' is not a valid model`. Firebase Test Lab's whitelisted device IDs are: `Pixel2.arm` (virtual, API 26-33), `redfin` (Pixel 5, physical), `blueline` (Pixel 3), `bluejay` (Pixel 6a), `akita` (Pixel 8a), `blazer` (Pixel 10 Pro), `caiman` (Pixel 9 Pro), `comet` (Pixel 9 Pro Fold), `felix` (Pixel Fold), `cheetah` (Pixel 7 Pro). The four other alpine-targeted scripts in `firebase_scripts/` already use `Pixel2.arm` (matches `firebase_check_vm.sh`, `firebase_stability_alpine.sh`, etc.).
+
+**Fix**
+Switch the default to `Pixel2.arm` (API 30). Pixel2.arm is a virtual arm64 device which matches Linxr's `arm64-v8a` ABI.
+
+**Resolution:** `dc1b5b1` (same commit as NEW-5, in `test_script_and_creds` repo) — DEVICE default now `model=Pixel2.arm,version=30,locale=en,orientation=portrait`; matches the convention used by all four other alpine-targeted scripts in the same directory.
+
+### NEW-7. GCP project `alpine-8b916` has no billing account — FTL cannot create results bucket
+
+**Severity:** NEW BUG (infrastructure constraint; cannot be fixed from the build host)
+
+**Description**
+With NEW-5 + NEW-6 fixed, the Robo smoke-test gcloud submission progressed all the way to creating the results bucket and then failed: `Permission denied while creating bucket [alpine-8b916_firebase_test_results]. Is billing enabled for project: [alpine-8b916]?`. Firebase Test Lab requires an active billing account on the host project to provision the GCS results bucket for matrix artifacts (logs, screenshots, videos, XML results).
+
+This is **NOT a permission issue** on the service account — `id-alpine@alpine-8b916.iam.gserviceaccount.com` has `roles/editor` which is sufficient for FTL submissions. The blocker is that the GCP project itself has no linked billing account. The Cloud Console's **Billing → Link a billing account** action must be performed by a project owner before any FTL run can succeed.
+
+**Fix / Resolution**
+None from this build host. This entry documents the constraint for downstream operators. **Action item:** enable billing for `alpine-8b916` in Cloud Console → Billing → Link a billing account, then re-run `./firebase_test_linxr.sh`. Documented in `bug-report/E2E_TEST_RESULTS.md` Conclusion section.
+
+**Resolution:** UNFIXED — requires human action in Cloud Console (project owner must link a billing account). Cannot be resolved by code changes.
+
 ---
 
 ### Architecture Deviations from CLAUDE.md
@@ -632,3 +670,6 @@ Replaced `registerForActivityResult` with the older `ActivityCompat.requestPermi
 | L15 | 🟢 | Scripts | `\r\n` line endings on some scripts — `bad interpreter` on Linux |
 | NEW-1 | 🟢 | Dart | L3 `withValues(alpha:)` — Flutter 3.22.2 builder image lacks the API |
 | NEW-4 | 🟢 | Kotlin | M12 used removed `registerForActivityResult` extension; rewrite with ActivityCompat |
+| NEW-5 | 🟢 | Scripts | `firebase_test_linxr.sh` DEVICE default uses `:` separator instead of `=` (gcloud rejects) |
+| NEW-6 | 🟢 | Scripts | `firebase_test_linxr.sh` DEVICE default uses `Pixel4` which is not a valid FTL device model |
+| NEW-7 | 🟢 | Infra | GCP project `alpine-8b916` has no billing account; FTL cannot provision results bucket |

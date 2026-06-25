@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:xterm/xterm.dart';
 import '../services/vm_platform.dart';
 import '../theme.dart';
+import '../constants.dart';
 
 // ─── Connection state ─────────────────────────────────────────────────────────
 
@@ -262,14 +263,14 @@ class _TerminalScreenState extends State<TerminalScreen> with WidgetsBindingObse
     tab.terminal.write('\r\nConnecting to Linxr...\r\n');
 
     try {
-      final socket = await SSHSocket.connect('127.0.0.1', 2222)
+      final socket = await SSHSocket.connect(SshDefaults.host, SshDefaults.port)
           .timeout(const Duration(seconds: 10));
       if (!mounted) return;
 
       tab.client = SSHClient(
         socket,
-        username: 'root',
-        onPasswordRequest: () => 'alpine',
+        username: SshDefaults.username,
+        onPasswordRequest: () => SshDefaults.password,
       );
 
       tab.session = await tab.client!.shell(

@@ -140,7 +140,7 @@ reasoning for every change is in
   `ActivityResultContracts.RequestPermission()` on Android 13+; foreground
   service notification now appears correctly.
 
-### Fixed — Low Severity / Code Quality (15 fixes)
+### Fixed — Low Severity / Code Quality (15 fixes + 2 NEW regressions: L3 + M12)
 
 #### L1. Hardcoded Color(0xFF...) literals throughout codebase
 - **Files:** `lib/theme/app_colors.dart` (new), `lib/main.dart`, `lib/screens/*.dart`
@@ -237,5 +237,15 @@ reasoning for every change is in
 - **Summary:** Verify all shell scripts use LF line endings; no CRLF files
   found in current codebase; shebang `/bin/bash\r` would cause "bad interpreter"
   errors on Linux/macOS if CRLF were present.
+
+#### NEW-1. (Regression from L3) Flutter 3.22.2 builder lacks `Color.withValues`
+- **Files:** `lib/main.dart`, `lib/screens/about_screen.dart`, `lib/screens/settings_screen.dart`, `lib/screens/terminal_screen.dart`
+- **Commit:** `c8a62e5` (reverts L3's `bc03aa0`; also fixes 8 leftover `withValues` from L1's `a1cc55f`)
+- **Summary:** Docker builder image `linxr-builder` is pinned to Flutter 3.22.2 but `Color.withValues(alpha:)` was introduced in Flutter 3.27. L3 + L1 produced 17 compile errors. This reverts to `withOpacity()` (still supported, just deprecated). When the Docker image is upgraded to Flutter 3.27+, re-apply L3.
+
+#### NEW-4. (Regression from M12) Rewrite POST_NOTIFICATIONS using `ActivityCompat.requestPermissions`
+- **Files:** `android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt`
+- **Commit:** `9306d3d` (replaces M12's `bab1047` implementation)
+- **Summary:** M12 used `registerForActivityResult` (requires `androidx.activity:activity-ktx:1.7.x`; in 1.8.0 the top-level extension was removed). Replaced with the older `ActivityCompat.requestPermissions()` + `onRequestPermissionsResult()` API, which uses the already-declared `androidx.core:core-ktx:1.12.0`. No new dependency needed. Compile now succeeds.
 
 [Unreleased]: https://github.com/ai2th/linxr/compare/HEAD...bugs

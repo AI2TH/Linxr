@@ -1506,3 +1506,77 @@ Some scripts (gen_keystore.sh, gen_icons.py, export_feature_graphic.sh) had `\r\
 All shell scripts verified to use LF (`\n`) line endings. No CRLF conversion was needed as the scripts were already clean. Verification confirms the issue does not occur.
 
 Commit: `b22b95d`
+
+### NEW-1
+
+**Files**
+- `lib/main.dart` (2 sites), `lib/screens/about_screen.dart` (5 sites), `lib/screens/settings_screen.dart` (4 sites), `lib/screens/terminal_screen.dart` (6 sites)
+
+**Before**
+```dart
+indicatorColor: AppColors.primary.withValues(alpha: 0.2),
+```
+
+**After**
+```dart
+indicatorColor: AppColors.primary.withOpacity(0.2),
+```
+
+**Why broken**
+L3 (bc03aa0) replaced withOpacity with withValues assuming Flutter 3.27+. Docker image linxr-builder has Flutter 3.22.2; withValues needs 3.27+. L1 (a1cc55f) also introduced 8 withValues calls. 17 sites total across 4 files.
+
+**Why fixed**
+Reverted L3 (9 sites) + fixed L1 leftovers (8 sites) = 17 withOpacity restorations. withOpacity is deprecated but functional in 3.22.2.
+
+Commit: `c8a62e5`
+
+### NEW-4
+
+**Files**
+- `android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt`
+
+**Before** (introduced by M12 commit `bba3a84`)
+```kotlin
+import androidx.activity.result.contract.ActivityResultContracts
+// ...
+private val requestNotificationPermission = registerForActivityResult(
+    ActivityResultContracts.RequestPermission()
+) { granted -> Log.i(TAG, "POST_NOTIFICATIONS granted=$granted") }
+// In onCreate:
+if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+    if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+        requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+}
+```
+
+**After** (this fix)
+```kotlin
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+// ...
+private val REQUEST_POST_NOTIFICATIONS = 1001
+// In onCreate:
+if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+    if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+        PackageManager.PERMISSION_GRANTED) {
+        ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_POST_NOTIFICATIONS)
+    }
+}
+// New override:
+override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+    super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    if (requestCode == REQUEST_POST_NOTIFICATIONS) {
+        val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+        Log.i(TAG, "POST_NOTIFICATIONS granted=$granted")
+    }
+}
+```
+
+**Why broken (NEW BUG)**
+M12 (`bba3a84`) used `registerForActivityResult(ActivityResultContracts.RequestPermission())` for POST_NOTIFICATIONS on Android 13+. This API requires `androidx.activity:activity-ktx:1.7.x` as a top-level extension. The original M12 commit did NOT declare this dependency. Subsequent attempts to add the dep (NEW-2, discarded) failed because in `activity-ktx:1.8.0` the top-level extension function was removed.
+
+**Why fixed**
+Replaced `registerForActivityResult` with the older but rock-solid `ActivityCompat.requestPermissions()` + `onRequestPermissionsResult()` API. This API is provided by `androidx.core:core-ktx:1.12.0` (already declared in build.gradle) — no new dependency needed. Works on all SDK levels including 13+.
+
+Commit: `9306d3d`

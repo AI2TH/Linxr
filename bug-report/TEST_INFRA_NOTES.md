@@ -398,12 +398,14 @@ Signer #1 key size (bits): 2048
 - Expected SHA-256: `7D:AB:CB:2B:70:50:97:A5:C1:F4:4E:A8:1F:6C:3F:B2:2B:26:2D:DB:A2:3B:0E:63:20:87:EE:99:0C:74:D8:8D` — **MATCH**
 
 ### Notes / caveats
-- The new APK is signed with **APK Signature Scheme v2 only** (no V1 JAR signing, no V3/V3.1/V4).
-  This is consistent with how Flutter/AGP debug builds are configured; it is sufficient for
-  Firebase Test Lab. The spec's V1 verification path (extract `META-INF/CERT.RSA`) does not
-  apply to V2-only APKs — verification was instead performed using `apksigner` from
+- The new APK is signed with **APK Signature Scheme v2 + v3** (no V1 JAR signing, no V3.1/V4).
+  This is consistent with how Flutter/AGP debug builds are configured; v2 + v3 is sufficient
+  for Firebase Test Lab (which targets Android ≥ 7.0 — all of which require v2 or higher).
+  The spec's V1 verification path (extract `META-INF/CERT.RSA`) does not apply to v2+v3-only
+  APKs — verification was instead performed using `apksigner` from
   `/opt/android-sdk/build-tools/35.0.0/apksigner` inside the `linxr-builder` Docker image,
-  which reads the cert from the APK Signing Block.
+  which reads the cert from the APK Signing Block. The V3 marker `0xAFAFAFAF` is present
+  inside the signing block, confirming v3 signing.
 - The `android/app/debug.keystore` path is in `.gitignore` (line 17) but was force-added
   (`git add -f`) so the keystore is tracked, ensuring reproducible builds and CI parity.
 - Pre-existing untracked files (`.kimchi/`, `android/gradlew*`, `docker/`, `bug-report/*.md`,

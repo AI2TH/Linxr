@@ -1580,3 +1580,165 @@ M12 (`bba3a84`) used `registerForActivityResult(ActivityResultContracts.RequestP
 Replaced `registerForActivityResult` with the older but rock-solid `ActivityCompat.requestPermissions()` + `onRequestPermissionsResult()` API. This API is provided by `androidx.core:core-ktx:1.12.0` (already declared in build.gradle) — no new dependency needed. Works on all SDK levels including 13+.
 
 Commit: `9306d3d`
+
+### NEW-5 + NEW-6 (single fix commit in sibling repo)
+
+**Files**
+
+- `test_script_and_creds/firebase_scripts/firebase_test_linxr.sh` — line 69 (DEVICE default) and the help-text block immediately above it (~lines 30-45)
+- *Note:* this file lives in the sibling `test_script_and_creds` git repository, not in the Linxr tree. The fix commit `dc1b5b1` was made there on `master`. Documented here because the bug was surfaced by the FTL E2E run against the Linxr APK.
+
+**Before**
+
+```bash
+# Line ~69: DEVICE default — uses `:` separator inside a key=value list, AND
+# references a device ID that is not in the FTL whitelist:
+DEVICE="${1:-model:Pixel4,version:30,locale:en,orientation=portrait}"
+
+# Help-text (around lines 30-45) used the same colon form when describing
+# the DEVICE arg to the user.
+```
+
+**After**
+
+```bash
+# Line ~69: DEVICE default — switched to `=` separator (required by gcloud's
+# --device flag) and to Pixel2.arm (the only FTL whitelisted device that
+# matches Linxr's arm64-v8a ABI). The four other alpine-targeted scripts
+# in this directory (firebase_test_alpine.sh, firebase_stability_alpine.sh,
+# firebase_check_vm.sh, firebase_test_bible.sh) already use this value.
+DEVICE="${1:-model=Pixel2.arm,version=30,locale=en,orientation=portrait}"
+
+# Help-text (around lines 30-45) was updated to print the new form so the
+# docs match the actual default. A rationale comment was added above line 69
+# explaining the FTL device-id whitelist.
+```
+
+**Why broken (NEW-5)**
+
+gcloud's `--device` flag for `firebase test android run` parses its value as
+a dictionary of `key=value` pairs joined by commas. Colons are NOT a
+permitted separator. The first submission attempt failed immediately with:
+
+```
+ERROR: (gcloud.firebase.test.android.run) argument --device: Bad syntax
+for dict arg: [model:Pixel4]. Please see `gcloud topic flags-file` or
+`gcloud topic escaping` for information on providing list or dictionary
+flag values with special characters.
+```
+
+The wrapper script exited before any FTL API call was made — no matrix was
+created, no GCS bucket was even attempted.
+
+**Why broken (NEW-6)**
+
+Even after manually correcting the colon to `=` in a one-off retry, gcloud
+rejected the device model:
+
+```
+ERROR: (gcloud.firebase.test.android.run) 'Pixel4' is not a valid model
+```
+
+Firebase Test Lab maintains a closed whitelist of device IDs. `Pixel4` is
+not on it. The whitelist at the time of this run was: `Pixel2.arm`,
+`redfin` (Pixel 5), `blueline` (Pixel 3), `bluejay` (Pixel 6a), `akita`
+(Pixel 8a), `blazer` (Pixel 10 Pro), `caiman` (Pixel 9 Pro), `comet`
+(Pixel 9 Pro Fold), `felix` (Pixel Fold), `cheetah` (Pixel 7 Pro).
+
+The right choice for Linxr is `Pixel2.arm`: it is the only virtual
+arm64 device in the whitelist (Linxr's QEMU-based `VmManager` is built
+for `arm64-v8a` and is not validated for x86_64), it supports API
+26-33, and it is the device used by all four existing alpine-targeted
+scripts in the same directory — keeping the convention consistent.
+
+**Why fixed**
+
+Replacing the colon with `=` satisfies gcloud's `--device` parser, and
+swapping `Pixel4` for `Pixel2.arm` puts the value on the FTL whitelist.
+The wrapper now reaches the bucket-creation step on its own. The rationale
+comment added above the DEVICE line documents the whitelist constraint
+so future maintainers do not revert to a Pixel phone model. Because the
+two changes share one line and were discovered together, they are in a
+single commit (`dc1b5b1`) on the sibling repo's `master` branch.
+
+Commit: `dc1b5b1` (in `test_script_and_creds`, not in the Linxr tree)
+
+---
+
+### NEW-7
+
+**Files**
+
+- (no source-code change) — infrastructure configuration on GCP project `alpine-8b916`
+- Documented here so that the constraint is visible to the orchestrator and to anyone running the wrapper script after this entry is committed.
+
+**Before**
+
+```text
+# In Cloud Console: GCP project alpine-8b916 has no billing account linked.
+# The service account id-alpine@alpine-8b916.iam.gserviceaccount.com has
+# roles/editor, which is sufficient for FTL submissions. However, FTL
+# creates a GCS bucket (gs://alpine-8b916_firebase_test_results) for matrix
+# artifacts on first run, and bucket creation requires an active billing
+# account on the host project.
+```
+
+**After**
+
+```text
+# No change to the project from this build host. Required human action:
+#   1. Open https://console.cloud.google.com/billing/linkedaccount?project=alpine-8b916
+#   2. Click "Link a billing account" and select an active billing account.
+#   3. Re-run ./firebase_test_linxr.sh — FTL will then be able to create
+#      the results bucket and submit the matrix.
+#
+# The service account's roles/editor binding is unchanged and remains
+# sufficient; this is purely a project-level billing-account linkage.
+```
+
+**Why broken (NEW-7)**
+
+With NEW-5 + NEW-6 fixed, the wrapper progressed all the way through
+gcloud's argument parsing and reached the bucket-creation step. The
+exact error returned was:
+
+```
+Creating results bucket [gs://alpine-8b916_firebase_test_results] in
+project [alpine-8b916].
+ERROR: (gcloud.firebase.test.android.run) Permission denied while
+creating bucket [alpine-8b916_firebase_test_results]. Is billing enabled
+for project: [alpine-8b916]?
+```
+
+This is not an IAM problem. The service account
+`id-alpine@alpine-8b916.iam.gserviceaccount.com` has `roles/editor`,
+which is more than sufficient for `firebase test android run` (the
+minimum required role is `Firebase Test Lab Admin`). The blocker is the
+project-level configuration: GCP project `alpine-8b916` has no billing
+account linked in the Cloud Console's Billing page. Bucket creation
+requires a billable project because FTL stores matrix artifacts
+(screenshots, videos, logcat dumps, XML results) in a GCS bucket that
+incurs storage and egress charges.
+
+The project is not dead — `gcloud services list --enabled` showed that
+many APIs are enabled (firebase, testing, toolresults, etc.). Only the
+billing linkage is missing.
+
+**Why fixed (resolution is out of scope for this build host)**
+
+This entry documents the constraint and the required human action;
+it does not produce a code fix. The action is:
+
+1. A project owner for `alpine-8b916` must open Cloud Console →
+   Billing → Link a billing account and select an active billing
+   account from the same billing organization.
+2. Once linked, re-run `./firebase_test_linxr.sh` from
+   `test_script_and_creds/firebase_scripts/`. The wrapper will reach
+   FTL and create a matrix.
+
+The Linxr tree has no code change for NEW-7; the docs-only commit
+captures the error verbatim and the resolution path so the next person
+who runs the wrapper does not have to rediscover the constraint.
+
+Commit: UNFIXED (infrastructure blocker; resolved by human action in
+Cloud Console, not by code change)

@@ -330,6 +330,8 @@ class _TerminalScreenState extends State<TerminalScreen> with WidgetsBindingObse
     tab.stopKeepAlive();
     tab._stdoutSub?.cancel();
     tab._stderrSub?.cancel();
+    tab.session?.close();
+    tab.client?.close();
     tab.session = null;
     tab.client = null;
     if (!mounted) return;

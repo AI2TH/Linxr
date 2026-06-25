@@ -43,11 +43,12 @@ class MainActivity : FlutterActivity() {
                         }
                     }
 
-                    "getVmStatus" -> {
+                    "getVmStatus" -> executor.execute {
                         try {
-                            result.success(vmManager.getStatus())
+                            val status = vmManager.getStatus()
+                            if (!isFinishing) runOnUiThread { result.success(status) }
                         } catch (e: Exception) {
-                            result.success("unknown")
+                            if (!isFinishing) runOnUiThread { result.success("unknown") }
                         }
                     }
 

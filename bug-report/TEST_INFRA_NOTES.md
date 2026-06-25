@@ -357,3 +357,54 @@ For step 4 (run instrumentation `VmResourceTest`):
 cd /mnt/c/Users/kevin/OneDrive/Documents/kalvin/test_script_and_creds/firebase_scripts
 ./firebase_check_vm.sh alpine-8b916 Pixel2.arm 31
 ```
+
+---
+
+## Step 3 — APK re-signed with `creds/linxr-debug.keystore`
+
+**Date:** 2026-06-25T12:36:00Z
+**Commit:** `a4460a7d11d9f7d3b2509b70484a132580657da4` (on `bugs`)
+**Branch:** `bugs` (HEAD is `a4460a7`, parent `800e837`)
+
+### Action
+- Source: `/mnt/c/Users/kevin/OneDrive/Documents/kalvin/test_script_and_creds/creds/linxr-debug.keystore`
+  (SHA-256 of file: `1c572b038d29f6b9ce7600f573480fc0d91ec3a743b4c92672e38b0214f5c257`)
+- Destination: `/mnt/c/Users/kevin/OneDrive/Documents/kalvin/Linxr/android/app/debug.keystore`
+  (SHA-256 of file: `1c572b038d29f6b9ce7600f573480fc0d91ec3a743b4c92672e38b0214f5c257` — identical)
+- `build.gradle` already had the correct `signingConfigs.debug` block referencing `file("debug.keystore")`,
+  so no `build.gradle` changes were required.
+
+### Build
+- Script: `bash scripts/build_apk.sh debug`
+- Output log: `/tmp/build_apk_signed.log`
+- Final line: `Build complete: build/linxr-debug.apk`
+- Build duration: ~7 min (Gradle assembleDebug ~6.5 min, assembleDebugAndroidTest ~1.3 min;
+  Flutter SDK and Android SDK platforms installed on first run)
+- Old APK size: 192,446,874 bytes (signed with Flutter's auto-generated debug keystore — wrong cert)
+- **New APK size: 192,446,874 bytes** (same size — content unchanged, only signing key different)
+
+### Verified signature (apksigner)
+```
+Verifies
+Verified using v1 scheme (JAR signing): false
+Verified using v2 scheme (APK Signature Scheme v2): true
+Signer #1 certificate DN: CN=Docker VM Debug, OU=Debug, O=Docker VM, L=Unknown, ST=Unknown, C=US
+Signer #1 certificate SHA-256 digest: 7dabcb2b705097a5c1f44ea81f6c3fb22b262ddba23b0e632087ee990c74d88d
+Signer #1 certificate SHA-1 digest:   d76e668eb9e14f470c161ce3239eedb04ba0748e
+Signer #1 key algorithm: RSA
+Signer #1 key size (bits): 2048
+```
+- Expected SHA-1:   `D7:6E:66:8E:B9:E1:4F:47:0C:16:1C:E3:23:9E:ED:B0:4B:A0:74:8E` — **MATCH**
+- Expected SHA-256: `7D:AB:CB:2B:70:50:97:A5:C1:F4:4E:A8:1F:6C:3F:B2:2B:26:2D:DB:A2:3B:0E:63:20:87:EE:99:0C:74:D8:8D` — **MATCH**
+
+### Notes / caveats
+- The new APK is signed with **APK Signature Scheme v2 only** (no V1 JAR signing, no V3/V3.1/V4).
+  This is consistent with how Flutter/AGP debug builds are configured; it is sufficient for
+  Firebase Test Lab. The spec's V1 verification path (extract `META-INF/CERT.RSA`) does not
+  apply to V2-only APKs — verification was instead performed using `apksigner` from
+  `/opt/android-sdk/build-tools/35.0.0/apksigner` inside the `linxr-builder` Docker image,
+  which reads the cert from the APK Signing Block.
+- The `android/app/debug.keystore` path is in `.gitignore` (line 17) but was force-added
+  (`git add -f`) so the keystore is tracked, ensuring reproducible builds and CI parity.
+- Pre-existing untracked files (`.kimchi/`, `android/gradlew*`, `docker/`, `bug-report/*.md`,
+  `build/.cxx/`, etc.) were intentionally NOT included in the commit, per step constraints.

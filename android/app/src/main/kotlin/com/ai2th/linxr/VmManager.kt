@@ -100,12 +100,11 @@ class VmManager(private val context: Context) {
 
         // Persist PID so we can kill this QEMU if the app restarts before stopVm()
         // Use reflection: Process.pid() is Java 9+ but source compat is Java 8
-        try {
-            val pid = (vmProcess!!.javaClass.getMethod("pid").invoke(vmProcess!!) as Long).toInt()
-            if (pid > 0) File(filesDir, "vm.pid").writeText(pid.toString())
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not save vm.pid: ${e.message}")
-        }
+        vmProcess?.javaClass?.getMethod("pid")?.invoke(vmProcess)
+            ?.let { pid ->
+                val pidInt = (pid as Long).toInt()
+                if (pidInt > 0) File(filesDir, "vm.pid").writeText(pidInt.toString())
+            } ?: run { Log.w(TAG, "vmProcess is null, cannot save vm.pid") }
 
         isRunning = true
 

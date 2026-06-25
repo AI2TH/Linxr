@@ -275,15 +275,15 @@ class _TerminalScreenState extends State<TerminalScreen> with WidgetsBindingObse
       );
 
       tab.session!.stdout.listen(
-        (data) => tab.terminal.write(String.fromCharCodes(data)),
+        (data) => tab.terminal.write(utf8.decode(data, allowMalformed: true)),
         onDone: () => _onSessionDone(tab),
       );
       tab.session!.stderr.listen(
-        (data) => tab.terminal.write(String.fromCharCodes(data)),
+        (data) => tab.terminal.write(utf8.decode(data, allowMalformed: true)),
       );
 
       tab.terminal.onOutput = (data) {
-        tab.session?.stdin.add(Uint8List.fromList(data.codeUnits));
+        tab.session?.stdin.add(Uint8List.fromList(utf8.encode(data)));
       };
       tab.terminal.onResize = (w, h, pw, ph) {
         tab.session?.resizeTerminal(w, h);

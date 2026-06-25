@@ -441,7 +441,7 @@ The `|| true` means a **failed APK build** is silently ignored. The script conti
 
 **Resolution:** `d1ba8d8` — quoted "${OUTPUT_DIR}" in echo and $(du -sh ...) commands; script works correctly on paths with spaces (e.g. OneDrive/Documents).
 
-**Resolution:** `bba3a84` — onCreate() requests POST_NOTIFICATIONS permission via ActivityResultContracts on Android 13+; foreground service notification now appears correctly.
+**Resolution:** `bba3a84` (M12 fix) — added `registerForActivityResult(ActivityResultContracts.RequestPermission())` in MainActivity.kt for POST_NOTIFICATIONS on Android 13+; **broken until NEW-4** — original implementation needed `androidx.activity:activity-ktx` which wasn't declared, and the top-level extension was removed in 1.8.0. **Replaced by `9306d3d` (NEW-4)** with the older `ActivityCompat.requestPermissions()` + `onRequestPermissionsResult()` API (no new dependency).
 
 ---
 
@@ -529,6 +529,35 @@ The `|| true` means a **failed APK build** is silently ignored. The script conti
 
 **Fix:** Verify all scripts/*.sh use LF line endings.
 **Resolution:** `b22b95d` — grep confirmed no CRLF in scripts; scripts already use LF; bad interpreter error not applicable.
+
+---
+
+### NEW-1. (Regression from L3) `Color.withValues(alpha:)` not available in Flutter 3.22.2
+
+**Severity:** NEW BUG (regression introduced by L3 + L1)
+
+**Description**
+The `fix(L3)` commit `bc03aa0` replaced `Color.withOpacity()` with `Color.withValues(alpha:)` across 3 files (9 sites). Additionally, `fix(L1)` commit `a1cc55f` extracted AppColors constants and also used `withValues(alpha:)` for 8 sites in main.dart and about_screen.dart. Total: 17 `withValues` calls.
+
+The Docker builder image `linxr-builder` is pinned to Flutter 3.22.2. `Color.withValues(alpha:)` was introduced in Flutter 3.27 stable; 3.22.2 does not have this API.
+
+**Fix**
+Single commit `c8a62e5 fix(NEW-1): revert withValues→withOpacity` restores `withOpacity(0.X)` at all 17 sites across the 4 files. Build now succeeds.
+
+**Resolution:** `c8a62e5` — reverted L3 (9 sites) + fixed L1 leftovers (8 sites) = 17 `withValues` → `withOpacity` restorations across 4 files; Docker builder image linxr-builder is pinned to Flutter 3.22.2 which lacks `Color.withValues` (added in 3.27+); build now succeeds.
+
+### NEW-4. (Regression from M12) `registerForActivityResult` not available in `activity-ktx:1.8.0`
+
+**Severity:** NEW BUG (regression introduced by M12)
+
+**Description**
+M12 (`bba3a84`) used `registerForActivityResult(ActivityResultContracts.RequestPermission())` for POST_NOTIFICATIONS. Original M12 commit did NOT declare `androidx.activity:activity-ktx` dependency.
+
+**Fix**
+Replaced `registerForActivityResult` with the older `ActivityCompat.requestPermissions()` + `onRequestPermissionsResult()` API. This API is provided by `androidx.core:core-ktx:1.12.0` (already declared). No new dependency needed.
+
+**Resolution:** `9306d3d` — replaced `registerForActivityResult` with `ActivityCompat.requestPermissions` + added `onRequestPermissionsResult` override; works on all SDK levels including 13+; no new dependency required.
+
 ---
 
 ### Architecture Deviations from CLAUDE.md
@@ -601,3 +630,5 @@ The `|| true` means a **failed APK build** is silently ignored. The script conti
 | L13 | 🟢 | Git | `docker/` gitignored — Dockerfile.build untracked |
 | L14 | 🟢 | Scripts | `build_apk.sh` / `build_aab.sh` 90% duplicated |
 | L15 | 🟢 | Scripts | `\r\n` line endings on some scripts — `bad interpreter` on Linux |
+| NEW-1 | 🟢 | Dart | L3 `withValues(alpha:)` — Flutter 3.22.2 builder image lacks the API |
+| NEW-4 | 🟢 | Kotlin | M12 used removed `registerForActivityResult` extension; rewrite with ActivityCompat |

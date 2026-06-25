@@ -437,9 +437,9 @@ The `|| true` means a **failed APK build** is silently ignored. The script conti
 
 **Resolution:** `16cbbd6` — try/catch wraps _load body; _loadError state set on exception; loading spinner unblocked; red error banner shown to user.
 
-**Resolution:** `3548b1d` — added DEV ONLY security warning comment block above SSH configuration section; hardcoded root credentials and password auth clearly flagged as development-only.
+**Resolution:** `b906a24` — added DEV ONLY security warning comment block above SSH configuration section; hardcoded root credentials and password auth clearly flagged as development-only.
 
-**Resolution:** `d1ba8d8` — quoted "${OUTPUT_DIR}" in echo and $(du -sh ...) commands; script works correctly on paths with spaces (e.g. OneDrive/Documents).
+**Resolution:** `e803528` — quoted "${OUTPUT_DIR}" in echo and $(du -sh ...) commands; script works correctly on paths with spaces (e.g. OneDrive/Documents).
 
 **Resolution:** `bba3a84` (M12 fix) — added `registerForActivityResult(ActivityResultContracts.RequestPermission())` in MainActivity.kt for POST_NOTIFICATIONS on Android 13+; **broken until NEW-4** — original implementation needed `androidx.activity:activity-ktx` which wasn't declared, and the top-level extension was removed in 1.8.0. **Replaced by `9306d3d` (NEW-4)** with the older `ActivityCompat.requestPermissions()` + `onRequestPermissionsResult()` API (no new dependency).
 
@@ -598,6 +598,42 @@ None from this build host. This entry documents the constraint for downstream op
 
 ---
 
+### NEW-10. App crashes on launch on Android 9 — `ClassNotFoundException: android.window.OnBackInvokedCallback` (NEW BUG, surfaced by LDPlayer install)
+
+**Severity:** NEW BUG (critical — app is unusable on Android 8–12 devices)
+
+**Discovered via:** LDPlayer x86_64 emulator (Android 9, API 28, houdini arm64-translation) after NEW-9 networking blocker was resolved via WSL2 mirrored networking. `pm install -r -t build/linxr-debug.apk` succeeded but `am start -n com.ai2th.linxr/.MainActivity` crashed the process within ~1.7s with `Fatal signal 6 (SIGABRT)` from the `flutter-worker-` thread.
+
+**Root cause:** `androidx.core:core-ktx:1.12.0` (declared in `android/app/build.gradle:109`) reflects `android.window.OnBackInvokedCallback` (API 33+) and `android.window.OnBackAnimationCallback` (API 34+) during activity instantiation in `androidx.core.app.CoreComponentFactory.instantiateActivity`. On API <33 these classes don't exist; reflection throws `ClassNotFoundException` *before* `Application.onCreate` runs, and the failure propagates into Flutter's `FlutterJNI.nativeInit` registration which then aborts via SIGABRT.
+
+**Fix applied:** Added `android:enableOnBackInvokedCallback="false"` to the `<application>` tag of `android/app/src/main/AndroidManifest.xml` (line 13). This property is silently ignored on API <33 (no-op for Android 8–12) and tells the system on API ≥33 not to invoke the predictive-back path, which causes `androidx.core` to skip the reflective instantiation entirely. App falls back to legacy `onBackPressed()` flow on all API levels.
+
+**Why this fix:** Three options were considered — (1) downgrade `androidx.core:core-ktx` to 1.10.1 (rejected: non-local regression risk, loses ~2 years of bugfixes), (2) bump `minSdk` to 33 (rejected: drops support for ~30–40% of in-field Android devices, violates CLAUDE.md's `minSdk 26` floor), (3) opt-out of predictive back via the manifest flag (accepted: surgical, backward-compatible, no behavioral change on Android 8–12).
+
+**Resolution:** `pending rebuild` — fix is in `android/app/src/main/AndroidManifest.xml` line 13; APK rebuild (`bash scripts/build_apk.sh debug`) is pending. After rebuild, re-install via `adb -s 127.0.0.1:5555 install -r -t build/linxr-debug.apk` and re-launch via `adb -s 127.0.0.1:5555 shell am start -W -n com.ai2th.linxr/.MainActivity`. Expected: process stays alive, Flutter UI renders, no `ClassNotFoundException` in logcat.
+
+**Detailed evidence:** See `bug-report/E2E_TEST_RESULTS.md` § NEW-10.
+
+---
+
+### NEW-11. Debug APK does not package `androidTest` source set — `am instrument` fails with `Unable to find instrumentation info`
+
+**Severity:** NEW BUG (medium — blocks `VmResourceTest` instrumentation from running via adb)
+
+**Discovered via:** After NEW-10, attempting `adb -s 127.0.0.1:5555 shell am instrument -w -e class com.ai2th.linxr.VmResourceTest com.ai2th.linxr.test/androidx.test.runner.AndroidJUnitRunner` returned `INSTRUMENTATION_STATUS_CODE: -1` with `Unable to find instrumentation info for: ComponentInfo{com.ai2th.linxr.test/androidx.test.runner.AndroidJUnitRunner}`. The `androidTest/` source set exists in the repo (`android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt`) but the debug APK does not include the test instrumentation classes.
+
+**Root cause:** Standard Android Gradle Plugin behavior — the `androidTest` source set is compiled into a separate `androidTest` APK that must be installed alongside the main APK and referenced as `applicationId.test`. Either (a) the test instrumentation isn't being packaged into the debug variant, or (b) the test runner expects a second APK install (`adb install build/outputs/apk/androidTest/debug/app-debug-androidTest.apk`) before `am instrument` will work.
+
+**Fix / Resolution:** Not fixed in this ferment — requires either:
+1. Update `scripts/build_apk.sh` to chain-build both `app-debug.apk` and `app-debug-androidTest.apk` (or use `gradle assembleDebugAndroidTest` to produce both), then install both on the device, OR
+2. Switch `VmResourceTest` from `androidTest` to `test/` (host-side JVM tests) so the existing test infrastructure works.
+
+Documented as out-of-scope follow-up.
+
+**Resolution:** UNFIXED — separate packaging-pipeline change required.
+
+---
+
 ### Architecture Deviations from CLAUDE.md
 
 | Claim in CLAUDE.md | Reality |
@@ -669,7 +705,13 @@ None from this build host. This entry documents the constraint for downstream op
 | L14 | 🟢 | Scripts | `build_apk.sh` / `build_aab.sh` 90% duplicated |
 | L15 | 🟢 | Scripts | `\r\n` line endings on some scripts — `bad interpreter` on Linux |
 | NEW-1 | 🟢 | Dart | L3 `withValues(alpha:)` — Flutter 3.22.2 builder image lacks the API |
+| NEW-2 | 🟢 | Scripts | Build script output dir not propagated; missing `set -e` |
+| NEW-3 | 🟢 | Build | Dart code-sign not gated on debug variant |
 | NEW-4 | 🟢 | Kotlin | M12 used removed `registerForActivityResult` extension; rewrite with ActivityCompat |
 | NEW-5 | 🟢 | Scripts | `firebase_test_linxr.sh` DEVICE default uses `:` separator instead of `=` (gcloud rejects) |
 | NEW-6 | 🟢 | Scripts | `firebase_test_linxr.sh` DEVICE default uses `Pixel4` which is not a valid FTL device model |
 | NEW-7 | 🟢 | Infra | GCP project `alpine-8b916` has no billing account; FTL cannot provision results bucket |
+| NEW-8 | ⚪ | Docs | Retracted false positive — APK V2+V3 signing is sufficient for FTL |
+| NEW-9 | 🟢 | Test | WSL2 networking blocks `127.0.0.1:5555` from reaching Windows-host LDPlayer |
+| NEW-10 | 🔴 | Manifest | App crashes on launch on Android 9–12: `ClassNotFoundException: android.window.OnBackInvokedCallback` |
+| NEW-11 | 🟡 | Build | Debug APK does not package `androidTest` source set; `am instrument` fails |

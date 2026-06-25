@@ -6,6 +6,7 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.ai2th.linxr/vm"
@@ -26,9 +27,9 @@ class MainActivity : FlutterActivity() {
                         try {
                             startVmService()
                             vmManager.startVm()
-                            runOnUiThread { result.success(null) }
+                            if (!isFinishing) runOnUiThread { result.success(null) }
                         } catch (e: Exception) {
-                            runOnUiThread { result.error("VM_START_ERROR", e.message, null) }
+                            if (!isFinishing) runOnUiThread { result.error("VM_START_ERROR", e.message, null) }
                         }
                     }
 
@@ -36,9 +37,9 @@ class MainActivity : FlutterActivity() {
                         try {
                             vmManager.stopVm()
                             stopVmService()
-                            runOnUiThread { result.success(null) }
+                            if (!isFinishing) runOnUiThread { result.success(null) }
                         } catch (e: Exception) {
-                            runOnUiThread { result.error("VM_STOP_ERROR", e.message, null) }
+                            if (!isFinishing) runOnUiThread { result.error("VM_STOP_ERROR", e.message, null) }
                         }
                     }
 
@@ -63,9 +64,9 @@ class MainActivity : FlutterActivity() {
                             vmManager.stopVm()
                             stopVmService()
                             vmManager.resetStorage()
-                            runOnUiThread { result.success(null) }
+                            if (!isFinishing) runOnUiThread { result.success(null) }
                         } catch (e: Exception) {
-                            runOnUiThread { result.error("RESET_ERROR", e.message, null) }
+                            if (!isFinishing) runOnUiThread { result.error("RESET_ERROR", e.message, null) }
                         }
                     }
 
@@ -75,7 +76,8 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
-        executor.shutdown()
+        executor.shutdownNow()
+        executor.awaitTermination(10, TimeUnit.SECONDS)
         super.onDestroy()
     }
 

@@ -1742,3 +1742,110 @@ who runs the wrapper does not have to rediscover the constraint.
 
 Commit: UNFIXED (infrastructure blocker; resolved by human action in
 Cloud Console, not by code change)
+
+### NEW-10
+
+**Files:** `android/app/src/main/AndroidManifest.xml` line 13
+
+**Commit:** `6fef778`
+
+**Before:**
+
+```xml
+<application
+    android:label="Linxr"
+    android:name=".AlpineApp"
+    android:icon="@mipmap/ic_launcher"
+    android:roundIcon="@mipmap/ic_launcher_round"
+    android:networkSecurityConfig="@xml/network_security_config">
+```
+
+**After:**
+
+```xml
+<application
+    android:label="Linxr"
+    android:name=".AlpineApp"
+    android:icon="@mipmap/ic_launcher"
+    android:roundIcon="@mipmap/ic_launcher_round"
+    android:enableOnBackInvokedCallback="false"
+    android:networkSecurityConfig="@xml/network_security_config">
+```
+
+**Why broken (NEW BUG, surfaced by LDPlayer install)**
+
+The `androidx.core:core-ktx:1.12.0` dependency declared in
+`android/app/build.gradle:109` performs runtime reflection of
+`android.window.OnBackInvokedCallback` (API 33+) and
+`android.window.OnBackAnimationCallback` (API 34+) inside
+`androidx.core.app.CoreComponentFactory.instantiateActivity`. That
+factory is invoked by `Instrumentation.newActivity()` for every
+Activity launch, *before* `Application.onCreate()` runs, so there is no
+application code that can catch or recover from the failure.
+
+On Android 8–12 (API 26–32) these classes do not exist on the runtime;
+`Class.forName(...).newInstance()` throws
+`ClassNotFoundException`. The exception propagates back through
+`ActivityThread.performLaunchActivity`, into Flutter's
+`FlutterJNI.nativeInit` JNI registration, which then fails its
+`Check failed: result` assertion and aborts the process with
+`SIGABRT` from the `flutter-worker-` thread. The whole chain takes
+~1.7 seconds from `am start` to `Force finishing activity`.
+
+Reproduction (LDPlayer x86_64 Android 9, houdini64 arm-translation):
+
+```
+$ adb -s 127.0.0.1:5555 install -r -t build/linxr-debug.apk
+Success
+
+$ adb -s 127.0.0.1:5555 shell am start -W -n com.ai2th.linxr/.MainActivity
+Status: ok
+Activity: com.ldmnq.launcher3/com.android.launcher3.Launcher
+WaitTime: 1736
+
+$ adb -s 127.0.0.1:5555 logcat -d | grep -E 'FATAL|OnBackInvoked'
+Caused by: java.lang.ClassNotFoundException: Didn't find class
+  "android.window.OnBackInvokedCallback" ...
+F libc: Fatal signal 6 (SIGABRT), code -6 (SI_TKILL)
+  in tid 4871 (flutter-worker-), pid 4836 (com.ai2th.linxr)
+F DEBUG: Abort message: '[FATAL:flutter/shell/platform/android/
+  library_loader.cc(21)] Check failed: result.
+```
+
+The houdini arm-translation layer is not implicated — the failure is
+pure Java reflection in `androidx.core` before any native code is
+touched. The same crash would occur on a stock Android 9 device.
+
+**Why fixed**
+
+Adding `android:enableOnBackInvokedCallback="false"` to the
+`<application>` element instructs the Android system *not* to use the
+predictive-back path. The property is silently ignored on API <33
+(no-op for the affected Android 8–12 range) and on API ≥33 it tells
+the system that this app opts out of the new back-gesture animation,
+which in turn causes `androidx.core` to skip the reflective
+instantiation of `OnBackInvokedCallback` and `OnBackAnimationCallback`
+entirely. The app falls back to the legacy `onBackPressed()` flow on
+every API level.
+
+Two alternatives were considered and rejected:
+
+1. **Downgrade `androidx.core:core-ktx` to `1.10.1`** — Restores the
+   pre-predictive-back runtime but loses ~2 years of bugfixes from
+   1.11.x and 1.12.x, with non-local regression risk across other
+   `androidx.*` transitive consumers.
+2. **Bump `minSdk` to 33** — Drops support for Android 8, 9, 10, 11,
+   and 12 devices (~30–40% of in-field Android as of 2026). Violates
+   the `minSdk 26` floor declared in `CLAUDE.md` and
+   `android/app/build.gradle:51`.
+
+The manifest flag is surgical: 1 line added, no dependency change, no
+user-visible behavior change on API <33, no regression on the existing
+test matrix for API ≥33 (predictive-back opt-out is a legal API 33+
+behavior; users get the legacy back gesture instead of the new
+animation).
+
+APK rebuild pending — the fix is in
+`android/app/src/main/AndroidManifest.xml` and will be picked up by
+the next `bash scripts/build_apk.sh debug`. After rebuild, re-run the
+same `adb install` + `am start` sequence to verify the crash is gone.

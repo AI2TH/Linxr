@@ -82,6 +82,7 @@ class VmState extends ChangeNotifier {
 
   Timer? _pollTimer;
   Timer? _sshPingTimer;
+  bool _isPolling = false;
 
   String get status => _status;
   bool get isLoading => _isLoading;
@@ -165,14 +166,20 @@ class VmState extends ChangeNotifier {
   void _startPolling() {
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+      if (_isPolling) return;
       if (_status != 'running') {
         _stopPolling();
         return;
       }
-      final s = await VmPlatform.getVmStatus();
-      if (s != _status) {
-        _status = s;
-        notifyListeners();
+      _isPolling = true;
+      try {
+        final s = await VmPlatform.getVmStatus();
+        if (s != _status) {
+          _status = s;
+          notifyListeners();
+        }
+      } finally {
+        _isPolling = false;
       }
     });
   }

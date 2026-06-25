@@ -419,6 +419,30 @@ The `|| true` means a **failed APK build** is silently ignored. The script conti
 
 ---
 
+**Resolution:** `c7a8efc` — onDestroy() now calls stopVm() via AlpineApp vmManager; QEMU cleanly terminates (SIGTERM + waitFor) before super.onDestroy(); orphaned VM process eliminated.
+
+**Resolution:** `9dcc081` — startVm() acquires PARTIAL_WAKE_LOCK (8h timeout); stopVm() releases it if held; Android Doze/standby can no longer throttle or kill the QEMU process.
+
+**Resolution:** `adaabfe` — changed cache=unsafe to cache=writethrough; OS page cache handles crash consistency; qcow2 user data no longer at risk of silent corruption on abnormal termination.
+
+**Resolution:** `043f635` — getVmStatus and getDeviceInfo handlers now dispatch to executor thread; platform thread returns immediately; Flutter UI no longer blocked by @Synchronized getStatus lock.
+
+**Resolution:** `c88351a` — _stdoutSub and _stderrSub stored as _Tab fields; cancelled in close() and _onSessionDone(); terminal controller and SSH session eligible for GC after disconnect.
+
+**Resolution:** `32a4f10` — added if (!mounted) return after each await in _connect; tab close during async SSH handshake no longer causes setState on disposed widget.
+
+**Resolution:** `fa99a8e` — _isPolling flag set before async poll work and cleared in finally; concurrent polling coroutines prevented; only one SSH connection opened at a time.
+
+**Resolution:** `3a03671` — M8: if (!mounted) return after await in _load; M9: try/catch wraps _load body; _loadError state set on exception; loading spinner unblocked; red error banner shown to user.
+
+**Resolution:** `3548b1d` — added DEV ONLY security warning comment block above SSH configuration section; hardcoded root credentials and password auth clearly flagged as development-only.
+
+**Resolution:** `d1ba8d8` — quoted "${OUTPUT_DIR}" in echo and $(du -sh ...) commands; script works correctly on paths with spaces (e.g. OneDrive/Documents).
+
+**Resolution:** `bba3a84` — onCreate() requests POST_NOTIFICATIONS permission via ActivityResultContracts on Android 13+; foreground service notification now appears correctly.
+
+---
+
 ### 🟡 Medium Severity (12 issues)
 
 | # | File | Issue | Impact |

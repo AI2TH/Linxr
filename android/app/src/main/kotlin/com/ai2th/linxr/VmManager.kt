@@ -418,10 +418,8 @@ class VmManager(private val context: Context) {
     }
 
     private fun getFlutterInt(key: String, default: Int): Int {
-        return try {
-            flutterPrefs.getInt(key, default)
-        } catch (_: ClassCastException) {
-            flutterPrefs.getLong(key, default.toLong()).toInt()
-        }
+        // Read as String to handle all storage formats used by Flutter's
+        // shared_preferences plugin across versions (Long, Int, or String).
+        return flutterPrefs.getString(key, null)?.toIntOrNull() ?: default
     }
 }

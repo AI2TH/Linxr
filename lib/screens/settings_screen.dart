@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/vm_platform.dart';
+import '../theme.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -134,7 +135,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1D23),
+        backgroundColor: AppColors.surface,
         title: const Text('Reset VM Storage?',
             style: TextStyle(color: Colors.white)),
         content: const Text(
@@ -150,7 +151,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFDC3545)),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
             child: const Text('Reset'),
           ),
         ],
@@ -167,7 +168,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Storage reset — start the VM to apply the new disk size'),
-            backgroundColor: Color(0xFF20C997),
+            backgroundColor: AppColors.secondary,
           ),
         );
       }
@@ -175,7 +176,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Reset failed: $e'),
-              backgroundColor: const Color(0xFFDC3545)),
+              backgroundColor: AppColors.danger),
         );
       }
     } finally {
@@ -203,18 +204,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFDC3545).withOpacity(0.12),
+                      color: AppColors.danger.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFDC3545).withOpacity(0.4)),
+                      border: Border.all(color: AppColors.danger.withOpacity(0.4)),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.error_outline, color: Color(0xFFDC3545), size: 18),
+                        const Icon(Icons.error_outline, color: AppColors.danger, size: 18),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
                             'Failed to load settings: $_loadError',
-                            style: const TextStyle(color: Color(0xFFDC3545), fontSize: 13),
+                            style: const TextStyle(color: AppColors.danger, fontSize: 13),
                           ),
                         ),
                       ],
@@ -238,7 +239,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 // ── vCPU ──────────────────────────────────────────────────────
                 _SettingCard(
                   icon: Icons.developer_board,
-                  iconColor: const Color(0xFF0D6EFD),
+                  iconColor: AppColors.primary,
                   title: 'vCPU Cores',
                   isAuto: _vcpu == null,
                   valueLabel: _vcpu == null
@@ -259,7 +260,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 // ── RAM ───────────────────────────────────────────────────────
                 _SettingCard(
                   icon: Icons.memory,
-                  iconColor: const Color(0xFF20C997),
+                  iconColor: AppColors.secondary,
                   title: 'RAM',
                   isAuto: _ramMb == null,
                   valueLabel: _ramMb == null
@@ -280,7 +281,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 // ── Disk ──────────────────────────────────────────────────────
                 _SettingCard(
                   icon: Icons.storage,
-                  iconColor: const Color(0xFFFFC107),
+                  iconColor: AppColors.warning,
                   title: 'Disk Cap',
                   isAuto: _diskGb == null,
                   valueLabel: _diskGb == null
@@ -306,7 +307,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _SectionHeader('When changes apply'),
                 const SizedBox(height: 8),
                 Card(
-                  color: const Color(0xFF1A1D23),
+                  color: AppColors.surface,
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
@@ -348,33 +349,33 @@ class _RestartBanner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFC107).withOpacity(0.12),
+        color: AppColors.warning.withOpacity(0.12),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFFFC107).withOpacity(0.4)),
+        border: Border.all(color: AppColors.warning.withOpacity(0.4)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.info_outline, color: Color(0xFFFFC107), size: 18),
+          const Icon(Icons.info_outline, color: AppColors.warning, size: 18),
           const SizedBox(width: 10),
           const Expanded(
             child: Text(
               'VM is running — restart to apply changes',
-              style: TextStyle(color: Color(0xFFFFC107), fontSize: 13),
+              style: TextStyle(color: AppColors.warning, fontSize: 13),
             ),
           ),
           const SizedBox(width: 8),
           restarting
-              ? const SizedBox(
+              ? SizedBox(
                   width: 18, height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2,
-                      color: Color(0xFFFFC107)))
+                      color: AppColors.warning))
               : TextButton(
                   onPressed: onRestart,
                   style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    foregroundColor: const Color(0xFFFFC107),
+                    foregroundColor: AppColors.warning,
                   ),
                   child: const Text('Restart', style: TextStyle(fontSize: 12)),
                 ),
@@ -408,9 +409,9 @@ class _ResetStorageButton extends StatelessWidget {
           : TextButton.icon(
               onPressed: onReset,
               icon: const Icon(Icons.delete_forever, size: 15,
-                  color: Color(0xFFDC3545)),
+                  color: AppColors.danger),
               label: const Text('Reset VM Storage',
-                  style: TextStyle(color: Color(0xFFDC3545), fontSize: 12)),
+                  style: TextStyle(color: AppColors.danger, fontSize: 12)),
               style: TextButton.styleFrom(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 minimumSize: Size.zero,
@@ -566,7 +567,7 @@ class _SettingCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      color: const Color(0xFF1A1D23),
+      color: AppColors.surface,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
         child: Column(
@@ -591,7 +592,7 @@ class _SettingCard extends StatelessWidget {
                     ),
                     child: const Text('Auto',
                         style: TextStyle(
-                            color: Color(0xFF0D6EFD), fontSize: 12)),
+                            color: AppColors.primary, fontSize: 12)),
                   ),
               ],
             ),
@@ -599,7 +600,7 @@ class _SettingCard extends StatelessWidget {
             Text(
               valueLabel,
               style: TextStyle(
-                color: isAuto ? const Color(0xFF20C997) : Colors.white54,
+                color: isAuto ? AppColors.secondary : Colors.white54,
                 fontSize: 12,
               ),
             ),
@@ -610,7 +611,7 @@ class _SettingCard extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 4, bottom: 4),
                 child: Text(note!,
                     style: const TextStyle(
-                        color: Color(0xFFFFC107), fontSize: 11)),
+                        color: AppColors.warning, fontSize: 11)),
               ),
           ],
         ),

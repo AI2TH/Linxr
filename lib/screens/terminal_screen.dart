@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:xterm/xterm.dart';
 import '../services/vm_platform.dart';
+import '../theme.dart';
 
 // ─── Connection state ─────────────────────────────────────────────────────────
 
@@ -197,7 +198,7 @@ class _TerminalScreenState extends State<TerminalScreen> with WidgetsBindingObse
         details.globalPosition & const Size(1, 1),
         Offset.zero & overlay.size,
       ),
-      color: const Color(0xFF1A1D23),
+      color: AppColors.surface,
       items: [
         const PopupMenuItem(value: 'paste', child: Row(children: [
           Icon(Icons.content_paste, size: 16, color: Colors.white70),
@@ -398,13 +399,13 @@ class _TerminalScreenState extends State<TerminalScreen> with WidgetsBindingObse
           if (vmStatus != 'running')
             _Banner(
               icon: Icons.warning_amber,
-              color: const Color(0xFFFFC107),
+              color: AppColors.warning,
               message: 'VM is not running. Start it from the Home tab.',
             )
           else if (_active.connState == _ConnState.idle)
             _Banner(
               icon: Icons.info_outline,
-              color: const Color(0xFF0D6EFD),
+              color: AppColors.primary,
               message: 'Not connected.',
               action: TextButton(
                 onPressed: () => _connect(_active),
@@ -458,7 +459,7 @@ class _TabBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 36,
-      color: const Color(0xFF111827),
+      color: AppColors.navRail,
       child: Row(
         children: [
           Expanded(
@@ -469,8 +470,8 @@ class _TabBar extends StatelessWidget {
                 final active = i == activeIndex;
                 final tab = tabs[i];
                 final dotColor = switch (tab.connState) {
-                  _ConnState.connected  => const Color(0xFF20C997),
-                  _ConnState.connecting => const Color(0xFFFFC107),
+                  _ConnState.connected  => AppColors.secondary,
+                  _ConnState.connecting => AppColors.warning,
                   _ConnState.idle       => Colors.white24,
                 };
                 return GestureDetector(
@@ -481,12 +482,12 @@ class _TabBar extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     decoration: BoxDecoration(
                       color: active
-                          ? const Color(0xFF0E1117)
+                          ? AppColors.background
                           : Colors.transparent,
                       border: Border(
                         bottom: BorderSide(
                           color: active
-                              ? const Color(0xFF0D6EFD)
+                              ? AppColors.primary
                               : Colors.transparent,
                           width: 2,
                         ),
@@ -557,8 +558,8 @@ class _StatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (label, color) = switch (state) {
-      _ConnState.connected  => ('Connected', const Color(0xFF20C997)),
-      _ConnState.connecting => ('Connecting...', const Color(0xFFFFC107)),
+      _ConnState.connected  => ('Connected', AppColors.secondary),
+      _ConnState.connecting => ('Connecting...', AppColors.warning),
       _ConnState.idle       => ('Disconnected', Colors.white38),
     };
     return Chip(
@@ -627,7 +628,7 @@ class _KeyRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 40,
-      color: const Color(0xFF111827),
+      color: AppColors.navRail,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
@@ -642,13 +643,13 @@ class _KeyRow extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 10),
               decoration: BoxDecoration(
                 color: isTab
-                    ? const Color(0xFF0D6EFD).withOpacity(enabled ? 0.25 : 0.08)
-                    : Colors.white.withOpacity(enabled ? 0.07 : 0.03),
+                    ? AppColors.primary.withValues(alpha: enabled ? 0.25 : 0.08)
+                    : Colors.white.withValues(alpha: enabled ? 0.07 : 0.03),
                 borderRadius: BorderRadius.circular(5),
                 border: Border.all(
                   color: isTab
-                      ? const Color(0xFF0D6EFD).withOpacity(enabled ? 0.5 : 0.15)
-                      : Colors.white.withOpacity(enabled ? 0.12 : 0.05),
+                      ? AppColors.primary.withValues(alpha: enabled ? 0.5 : 0.15)
+                      : Colors.white.withValues(alpha: enabled ? 0.12 : 0.05),
                 ),
               ),
               alignment: Alignment.center,
@@ -659,7 +660,7 @@ class _KeyRow extends StatelessWidget {
                   fontFamily: 'monospace',
                   fontWeight: isTab ? FontWeight.bold : FontWeight.normal,
                   color: enabled
-                      ? (isTab ? const Color(0xFF74B9FF) : Colors.white70)
+                      ? (isTab ? AppColors.brightBlue : Colors.white70)
                       : Colors.white24,
                 ),
               ),
@@ -674,27 +675,27 @@ class _KeyRow extends StatelessWidget {
 // ─── Terminal theme ───────────────────────────────────────────────────────────
 
 const _kTermTheme = TerminalTheme(
-  cursor: Color(0xFF20C997),
+  cursor: AppColors.xtermCursor,
   selection: Color(0x440D6EFD),
-  foreground: Color(0xFFE0E0E0),
-  background: Color(0xFF0E1117),
-  black: Color(0xFF1A1D23),
-  white: Color(0xFFE0E0E0),
-  red: Color(0xFFDC3545),
-  green: Color(0xFF20C997),
-  yellow: Color(0xFFFFC107),
-  blue: Color(0xFF0D6EFD),
-  magenta: Color(0xFF9B59B6),
-  cyan: Color(0xFF17A2B8),
-  brightBlack: Color(0xFF6C757D),
-  brightWhite: Color(0xFFFFFFFF),
-  brightRed: Color(0xFFFF6B6B),
-  brightGreen: Color(0xFF5EF0B0),
-  brightYellow: Color(0xFFFFD93D),
-  brightBlue: Color(0xFF74B9FF),
-  brightMagenta: Color(0xFFBB8FCE),
-  brightCyan: Color(0xFF48C9B0),
+  foreground: AppColors.xtermWhite,
+  background: AppColors.xtermBackground,
+  black: AppColors.xtermBlack,
+  white: AppColors.xtermWhite,
+  red: AppColors.termRed,
+  green: AppColors.termGreen,
+  yellow: AppColors.termYellow,
+  blue: AppColors.termBlue,
+  magenta: AppColors.termMagenta,
+  cyan: AppColors.termCyan,
+  brightBlack: AppColors.brightBlack,
+  brightWhite: AppColors.brightWhite,
+  brightRed: AppColors.brightRed,
+  brightGreen: AppColors.brightGreen,
+  brightYellow: AppColors.brightYellow,
+  brightBlue: AppColors.brightBlue,
+  brightMagenta: AppColors.brightMagenta,
+  brightCyan: AppColors.brightCyan,
   searchHitBackground: Color(0x44FFFFFF),
   searchHitBackgroundCurrent: Color(0x660D6EFD),
-  searchHitForeground: Color(0xFF000000),
+  searchHitForeground: AppColors.xtermSearchHitFg,
 );

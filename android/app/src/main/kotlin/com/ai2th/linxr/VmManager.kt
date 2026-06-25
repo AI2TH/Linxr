@@ -4,6 +4,7 @@ import android.app.ActivityManager
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
+import android.os.PowerManager
 import android.os.StatFs
 import android.util.Log
 import java.io.File
@@ -15,6 +16,7 @@ class VmManager(private val context: Context) {
 
     @Volatile private var vmProcess: Process? = null
     @Volatile private var isRunning = false
+    private var wakelock: PowerManager.WakeLock? = null
 
     private val filesDir: File get() = context.filesDir
     private val vmDir: File get() = File(filesDir, "vm")
@@ -46,6 +48,12 @@ class VmManager(private val context: Context) {
         }
         // Kill any orphaned QEMU from a previous process (e.g. after app restart)
         killOrphanQemu()
+        // Acquire PARTIAL_WAKE_LOCK so QEMU keeps running when screen is off.
+        // Without this, Android Doze/standby throttles or kills the process,
+        // causing the VM to die minutes after the user locks their phone.
+        val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakelock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Linxr:VM")
+        wakelock?.acquire(8 * 60 * 60 * 1000L) // 8-hour safety timeout
 
         val freshExtraction = !assetsReady()
         if (freshExtraction) {
@@ -118,6 +126,8 @@ class VmManager(private val context: Context) {
     @Synchronized
     fun stopVm() {
         Log.d(TAG, "stopVm()")
+        if (wakelock?.isHeld == true) wakelock?.release()
+        wakelock = null
         vmProcess?.let { proc ->
             proc.destroy()  // SIGTERM first
             if (!proc.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {

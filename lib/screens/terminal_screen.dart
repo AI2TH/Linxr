@@ -341,6 +341,7 @@ class _TerminalScreenState extends State<TerminalScreen> with WidgetsBindingObse
     tab.client?.close();
     tab.session = null;
     tab.client = null;
+    tab.connState = _ConnState.idle;
     tab.terminal.write('\r\n--- Reconnecting ---\r\n');
     _connect(tab);
   }

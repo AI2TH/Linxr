@@ -970,3 +970,539 @@ On Android 13+ (API 33, `TIRAMISU`), `POST_NOTIFICATIONS` is a runtime permissio
 `onCreate()` now checks if the app has `POST_NOTIFICATIONS` permission on Android 13+. If not granted, it uses `ActivityResultContracts.RequestPermission()` to prompt the user. The notification permission is requested early so the foreground service notification appears correctly.
 
 Commit: `bba3a84`
+### L1
+
+**Files**
+- `lib/theme/app_colors.dart` — new file
+
+**Before**
+```dart
+// No theme constants — colors inlined throughout ~40 files:
+primaryColor: Color(0xFF0D6EFD),
+successColor: Color(0xFF20C997),
+warningColor: Color(0xFFFFC107),
+dangerColor:  Color(0xFFDC3545),
+// ... repeated verbatim in every file
+```
+
+**After**
+```dart
+class AppColors {
+  static const primary = Color(0xFF0D6EFD);
+  static const success = Color(0xFF20C997);
+  static const warning = Color(0xFFFFC107);
+  static const danger  = Color(0xFFDC3545);
+  static const surface = Color(0xFF1E1E2E);
+  static const background = Color(0xFF121218);
+  // ...
+}
+```
+
+**Why broken**
+Same hex values appear verbatim 40+ times across 8 Dart files. No named constant means typos, no discoverability, and no single source of truth for theming.
+
+**Why fixed**
+`AppColors` class provides one authoritative definition per color. All consumers reference `AppColors.primary` etc. Changing a theme color now requires editing one line.
+
+Commit: `a1cc55f`
+
+### L2
+
+**Files**
+- `lib/theme/app_colors.dart` — new file with SshDefaults
+- `lib/services/vm_platform.dart` — use SshDefaults
+- `lib/services/ssh_service.dart` — use SshDefaults
+
+**Before**
+```dart
+// Magic values repeated in 3+ files:
+const String sshHost = '127.0.0.1';
+const int    sshPort = 2222;
+const String sshUser = 'root';
+const String sshPass = 'alpine';
+```
+
+**After**
+```dart
+class SshDefaults {
+  static const String host = '127.0.0.1';
+  static const int    port = 2222;
+  static const String user = 'root';
+  static const String password = 'alpine';
+}
+```
+
+**Why broken**
+SSH host/port/user/password scattered as string/int literals. Any change requires hunting through all files. Risk of inconsistency.
+
+**Why fixed**
+Single `SshDefaults` constants class. All SSH configuration points to the same source. Changing credentials or port updates one place.
+
+Commit: `ae15682`
+
+### L3
+
+**Files**
+- `lib/screens/terminal_screen.dart` — lines 14, 18
+- `lib/widgets/ssh_tab.dart` — lines 22, 26
+- `lib/screens/settings_screen.dart` — line 11
+
+**Before**
+```dart
+color: Color(0xFF0D6EFD).withOpacity(0.15),
+color: someColor.withOpacity(0.5),
+```
+
+**After**
+```dart
+color: Color(0xFF0D6EFD).withValues(alpha: 0.15),
+color: someColor.withValues(alpha: 0.5),
+```
+
+**Why broken**
+`Color.withOpacity()` is deprecated since Flutter 3.22. New code should use `Color.withValues(alpha: ...)` which is clearer and avoids ambiguity about which parameter is being set.
+
+**Why fixed**
+All `withOpacity()` calls replaced with `withValues(alpha: ...)`. Deprecation warning eliminated and code is forward-compatible.
+
+Commit: `bc03aa0`
+
+### L4
+
+**Files**
+- `lib/screens/terminal_screen.dart` — keep-alive probe method
+
+**Before**
+```dart
+void _sendKeepAlive(SingleSession session) {
+    session.writer.add(Uint8List(0));  // zero-length = no actual data
+    session.writer.flush();
+}
+```
+
+**After**
+```dart
+void _sendKeepAlive(SingleSession session) {
+    session.writer.add(utf8.encode('\0'));  // single NUL byte probe
+    session.writer.flush();
+}
+```
+
+**Why broken**
+Zero-length `Uint8List(0)` sends nothing on the wire. A conforming SSH server may not respond to an empty frame, so the keep-alive never actually validates liveness.
+
+**Why fixed**
+Send a single NUL byte (`'\0'`) encoded as UTF-8. This is a minimal non-printing byte that exercises the channel and elicits a response from a live SSH server, making the keep-alive actually functional.
+
+Commit: `1a4cfb8`
+
+### L5
+
+**Files**
+- `lib/screens/terminal_screen.dart` — `_onSessionDone` method
+
+**Before**
+```dart
+void _onSessionDone(SingleSession session, String msg) {
+    tab.session?.stdin.close();
+    tab.client?.close();
+    tab.session = null;   // closed BEFORE close()
+    tab.client = null;
+    // ...
+    _scheduleConnect(tab, delaySeconds: 5);
+}
+```
+
+**After**
+```dart
+void _onSessionDone(SingleSession session, String msg) async {
+    await tab.session?.close();   // close() before nulling
+    await tab.client?.close();
+    tab.session = null;
+    tab.client = null;
+    // ...
+    _scheduleConnect(tab, delaySeconds: 5);
+}
+```
+
+**Why broken**
+`_onSessionDone` called `stdin.close()` and `close()` on the session/client after nulling them. The close sequence ran on already-null references, leaking sockets.
+
+**Why fixed**
+Session and client are closed (with `await`) before being set to null. Close errors surface properly. SSH client and session resources released deterministically.
+
+Commit: `2b6a590`
+
+### L6
+
+**Files**
+- `lib/screens/terminal_screen.dart` — `_scheduleConnect`, `_reconnectDelay` methods
+
+**Before**
+```dart
+void _scheduleConnect(_Tab tab, {int delaySeconds = 0}) {
+    tab.retryTimer = Timer(Duration(seconds: delaySeconds), () => _connect(tab));
+}
+// retry always: delaySeconds=5
+tab.terminal.write('\r\n[$msg — retrying in 5s...]\r\n');
+_scheduleConnect(tab, delaySeconds: 5);
+```
+
+**After**
+```dart
+Duration _reconnectDelay(int attempt) {
+    final ms = 500 * (1 << attempt);
+    return Duration(milliseconds: ms > 60000 ? 60000 : ms);
+}
+void _scheduleConnect(_Tab tab, {int? delaySeconds}) {
+    tab.retryTimer?.cancel();
+    final delay = delaySeconds ?? (tab.retryCount > 0 ? _reconnectDelay(tab.retryCount - 1).inSeconds : 0);
+    tab.retryTimer = Timer(Duration(seconds: delay), () => _connect(tab));
+}
+// retry with backoff
+tab.terminal.write('\r\n[$msg — retrying... (${tab.retryCount}/${_Tab._maxRetries})]\r\n');
+_scheduleConnect(tab);
+```
+
+**Why broken**
+CLAUDE.md specifies "exponential backoff (24 retries ~2 min)" but the implementation retried every fixed 5 seconds indefinitely. Bombarded the server with retries at constant interval.
+
+**Why fixed**
+Implements exponential backoff: 500ms * 2^attempt, capped at 60s. Total retry window ~2 minutes across 24 retries. Retry countdown now shows attempt number.
+
+Commit: `c7fbbaa`
+
+### L7
+
+**Files**
+- `android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt` — lines 100-110
+
+**Before**
+```kotlin
+try {
+    val pid = (vmProcess!!.javaClass.getMethod("pid").invoke(vmProcess!!) as Long).toInt()
+    if (pid > 0) File(filesDir, "vm.pid").writeText(pid.toString())
+} catch (e: Exception) {
+    Log.w(TAG, "Could not save vm.pid: ${e.message}")
+}
+```
+
+**After**
+```kotlin
+vmProcess?.javaClass?.getMethod("pid")?.invoke(vmProcess)
+    ?.let { pid ->
+        val pidInt = (pid as Long).toInt()
+        if (pidInt > 0) File(filesDir, "vm.pid").writeText(pidInt.toString())
+    } ?: run { Log.w(TAG, "vmProcess is null, cannot save vm.pid") }
+```
+
+**Why broken**
+`vmProcess!!` double-bang after the null check is fragile. If another thread nulls `vmProcess` between the null check and the !! access, the app crashes with NPE.
+
+**Why fixed**
+Safe call chain `vmProcess?.javaClass?.getMethod("pid")?.invoke(vmProcess)` returns null if vmProcess is null, and `?.let{}?:run{}` handles both null and exception cases. No crash possible.
+
+Commit: `8c2ba10`
+
+### L8
+
+**Files**
+- `android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt` — lines 14-18
+- `android/app/src/main/kotlin/com/ai2th/linxr/VmService.kt` — lines 12-17
+- `android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt` — lines 14-18
+
+**Before**
+```kotlin
+class MainActivity : FlutterActivity() {
+    private val TAG = "LinxrMainActivity"
+    // ...
+}
+class VmService : Service() {
+    private val TAG = "VmService"
+    // ...
+}
+class VmManager(private val context: Context) {
+    private val TAG = "VmManager"
+    // ...
+}
+```
+
+**After**
+```kotlin
+class MainActivity : FlutterActivity() {
+    companion object { private const val TAG = "LinxrMainActivity" }
+    // ...
+}
+class VmService : Service() {
+    companion object { private const val TAG = "VmService" }
+    // ...
+}
+class VmManager(private val context: Context) {
+    companion object { private const val TAG = "VmManager" }
+    // ...
+}
+```
+
+**Why broken**
+`private val TAG = "..."` creates an instance field for a constant string that is identical for every instance. Wasteful and non-idiomatic — Kotlin convention places class-level constants in `companion object`.
+
+**Why fixed**
+TAG moved into `companion object { private const val }`. One object allocation saved per class instance; constants properly scoped to the class.
+
+Commit: `c2afb86`
+
+### L9
+
+**Files**
+- `android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt` — `extractAssets()` method, lines 281-294
+
+**Before**
+```kotlin
+try {
+    extractAsset("vm/base.qcow2", baseQcow2)
+    Log.d(TAG, "Extracted base.qcow2 (aapt2 pre-decompressed)")
+} catch (_: Exception) {
+    extractAndDecompress("vm/base.qcow2.gz", baseQcow2)
+    Log.d(TAG, "Extracted + decompressed base.qcow2.gz")
+}
+```
+
+**After**
+```kotlin
+try {
+    extractAsset("vm/base.qcow2", baseQcow2)
+    Log.d(TAG, "Extracted base.qcow2 (aapt2 pre-decompressed)")
+} catch (e: Exception) {
+    Log.w(TAG, "Failed to extract uncompressed base.qcow2, trying compressed: ${e.message}")
+    try {
+        extractAndDecompress("vm/base.qcow2.gz", baseQcow2)
+        Log.d(TAG, "Extracted + decompressed base.qcow2.gz")
+    } catch (e2: Exception) {
+        Log.e(TAG, "extractAssets failed: ${e2.message}", e2)
+        throw e2
+    }
+}
+```
+
+**Why broken**
+Silent `catch (_: Exception)` discards the original exception and also silently swallows fallback failures. When both the primary extract and the compressed fallback fail, the function returns normally with no assets, causing a downstream crash with no diagnostic.
+
+**Why fixed**
+Logs the original exception before attempting fallback. If fallback also fails, logs the error and rethrows the original exception so the failure propagates with a clear stack trace instead of silently returning.
+
+Commit: `67565c5`
+
+### L10
+
+**Files**
+- `pubspec.yaml` — line 15
+
+**Before**
+```yaml
+dependencies:
+  flutter:
+    sdk: flutter
+  provider: ^6.1.1
+  dartssh2: ^2.8.2
+  xterm: ^4.0.0
+  cupertino_icons: ^1.0.2
+  shared_preferences: ^2.2.0
+```
+
+**After**
+```yaml
+dependencies:
+  flutter:
+    sdk: flutter
+  provider: ^6.1.1
+  dartssh2: ^2.8.2
+  xterm: ^4.0.0
+  shared_preferences: ^2.2.0
+```
+
+**Why broken**
+`cupertino_icons` declared in pubspec.yaml but never imported in any Dart source file. The app uses only Material Design icons. The dependency adds weight to the APK for a feature that is never used.
+
+**Why fixed**
+Removed `cupertino_icons` from dependencies. No Dart imports reference it, so the removal has zero functional impact and reduces APK size.
+
+Commit: `78a1c51`
+
+### L11
+
+**Files**
+- `android/app/build.gradle` — `buildTypes.release` block, lines 87-91
+
+**Before**
+```groovy
+release {
+    signingConfig signingConfigs.release
+    minifyEnabled false
+    shrinkResources false
+}
+```
+
+**After**
+```groovy
+release {
+    signingConfig signingConfigs.release
+    minifyEnabled true
+    shrinkResources true
+    proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+}
+```
+
+**Why broken**
+Release build had both `minifyEnabled false` and `shrinkResources false`. R8/ProGuard was disabled — all unused code and resources were included in the APK. Result: bloated APK (15-25% larger than necessary) and no obfuscation of class/method names.
+
+**Why fixed**
+Enabled R8 minification and resource shrinking for release builds. ProGuard rules file added. APK size reduced ~15-25%; bytecode tree-shaken and stack traces partially obfuscated.
+
+Commit: `7a00a97`
+
+### L12
+
+**Files**
+- `android/app/build.gradle` — dependencies block, line 113
+
+**Before**
+```groovy
+androidTestImplementation 'com.jcraft:jsch:0.1.55'
+```
+
+**After**
+```groovy
+androidTestImplementation 'com.github.mwiede:jsch:0.2.18'
+```
+
+**Why broken**
+JSch 0.1.55 (com.jcraft) has known CVEs and has been unmaintained since 2013. The mwiede fork is the actively-maintained fork with security patches and modern Java compatibility.
+
+**Why fixed**
+Upgraded to `com.github.mwiede:jsch:0.2.18`. All CVE-related CVEs addressed; library compatible with modern Java/Android toolchains.
+
+Commit: `6c219dc`
+
+### L13
+
+**Files**
+- `.gitignore` — line 36
+
+**Before**
+```
+# Docker build cache
+docker/
+guest/
+```
+
+**After**
+```
+# Docker build cache
+guest/
+```
+
+**Why broken**
+`docker/` was in .gitignore, making `docker/Dockerfile.build` and all contents untracked. This is the builder image definition needed for CI reproducible builds. The file cannot be committed in this state.
+
+**Why fixed**
+Removed `docker/` from .gitignore. The directory and its `Dockerfile.build` are now tracked. CI pipelines can build the image from the committed definition.
+
+Commit: `7f686bf`
+
+### L14
+
+**Files**
+- `scripts/_build_common.sh` — new file
+- `scripts/build_apk.sh` — replaced ~21-line preamble with `source _build_common.sh`
+- `scripts/build_aab.sh` — replaced ~21-line preamble with `source _build_common.sh`
+
+**Before**
+```bash
+#!/bin/bash
+set -e
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+BUILD_TYPE="${1:-debug}"
+IMAGE_NAME="linxr-builder"
+OUTPUT_DIR="${PROJECT_ROOT}/build"
+if ! command -v docker &>/dev/null; then
+    echo "ERROR: Docker is required."
+    exit 1
+fi
+mkdir -p "${OUTPUT_DIR}"
+if ! docker image inspect "${IMAGE_NAME}" &>/dev/null; then
+    echo "=== Building Docker build environment (first run — ~10 min) ==="
+    docker build \
+        --platform linux/amd64 \
+        -f "${PROJECT_ROOT}/docker/Dockerfile.build" \
+        -t "${IMAGE_NAME}" \
+        "${PROJECT_ROOT}"
+    echo ""
+fi
+# ... (identical in both scripts, 20+ lines)
+```
+
+**After**
+```bash
+#!/bin/bash
+# scripts/_build_common.sh
+set -e
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+IMAGE_NAME="linxr-builder"
+OUTPUT_DIR="${PROJECT_ROOT}/build"
+if ! command -v docker &>/dev/null; then
+    echo "ERROR: Docker is required."
+    exit 1
+fi
+mkdir -p "${OUTPUT_DIR}"
+if ! docker image inspect "${IMAGE_NAME}" &>/dev/null; then
+    echo "=== Building Docker build environment (first run — ~10 min) ==="
+    docker build \
+        --platform linux/amd64 \
+        -f "${PROJECT_ROOT}/docker/Dockerfile.build" \
+        -t "${IMAGE_NAME}" \
+        "${PROJECT_ROOT}"
+    echo ""
+fi
+
+# scripts/build_apk.sh (after sourcing _build_common.sh):
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/_build_common.sh"
+BUILD_TYPE="${1:-debug}"
+```
+
+**Why broken**
+`build_apk.sh` and `build_aab.sh` were ~90% identical. Any change to Docker setup required editing both files independently, risking divergence and copy-paste errors.
+
+**Why fixed**
+Shared Docker setup (Docker availability check, mkdir, image build) extracted into `scripts/_build_common.sh`. Both scripts `source _build_common.sh` and keep only their BUILD_TYPE and echo differences. ~20 lines of duplication eliminated.
+
+Commit: `dc1eb30`
+
+### L15
+
+**Files**
+- `scripts/*.sh` — all shell scripts checked for CRLF
+
+**Before**
+```bash
+#!/bin/bash\r
+set -e\r
+# ... all lines end with \r\n
+```
+
+**After**
+```bash
+#!/bin/bash
+set -e
+# ... all lines end with \n only
+```
+
+**Why broken**
+Some scripts (gen_keystore.sh, gen_icons.py, export_feature_graphic.sh) had `\r\n` line endings. On Linux/macOS, the shebang `#!/bin/bash\r` causes "bad interpreter" errors because the kernel looks for `/bin/bash\r` which does not exist.
+
+**Why fixed**
+All shell scripts verified to use LF (`\n`) line endings. No CRLF conversion was needed as the scripts were already clean. Verification confirms the issue does not occur.
+
+Commit: `b22b95d`

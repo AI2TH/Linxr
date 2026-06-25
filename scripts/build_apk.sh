@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build the Flutter Android APK entirely inside Docker.
-# alpine/ is self-contained — no external dependencies needed.
+# alpine/ is self-contained â€” no external dependencies needed.
 #
 # Usage:
 #   ./scripts/build_apk.sh            # debug build (default)
@@ -27,9 +27,9 @@ fi
 
 mkdir -p "${OUTPUT_DIR}"
 
-# ── Build the builder image if it doesn't exist ───────────────────────────────
+# â”€â”€ Build the builder image if it doesn't exist â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 if ! docker image inspect "${IMAGE_NAME}" &>/dev/null; then
-    echo "=== Building Docker build environment (first run — ~10 min) ==="
+    echo "=== Building Docker build environment (first run â€” ~10 min) ==="
     docker build \
         --platform linux/amd64 \
         -f "${PROJECT_ROOT}/docker/Dockerfile.build" \
@@ -81,8 +81,10 @@ cp    /workspace/android/gradle.properties              android/gradle.propertie
 rm -rf android/app/src/main/kotlin/
 cp -r /workspace/android/app/src/main/kotlin            android/app/src/main/
 
-[ -d /workspace/android/app/src/androidTest ] && \
-    cp -r /workspace/android/app/src/androidTest        android/app/src/ || true
+if [ -d /workspace/android/app/src/androidTest ]; then
+    rm -rf android/app/src/androidTest
+    cp -r /workspace/android/app/src/androidTest android/app/src/
+fi
 
 cp -r /workspace/android/app/src/main/res/.             android/app/src/main/res/
 
@@ -137,7 +139,7 @@ if [ -f "$TEST_APK" ]; then
     cp "$TEST_APK" /out/linxr-androidTest.apk
     echo "Test APK size: $(du -sh /out/linxr-androidTest.apk | cut -f1)"
 else
-    echo "WARNING: Test APK not found — instrumentation tests will not be available"
+    echo "WARNING: Test APK not found â€” instrumentation tests will not be available"
 fi
 '
 

@@ -25,6 +25,8 @@ class _Tab {
   Timer? retryTimer;
   Timer? keepAliveTimer;
   int retryCount = 0;
+  StreamSubscription? _stdoutSub;
+  StreamSubscription? _stderrSub;
 
   static const _maxRetries = 24; // ~2 minutes
 
@@ -53,6 +55,8 @@ class _Tab {
   void close() {
     retryTimer?.cancel();
     keepAliveTimer?.cancel();
+    _stdoutSub?.cancel();
+    _stderrSub?.cancel();
     session?.stdin.close();
     client?.close();
     controller.dispose();
@@ -274,11 +278,11 @@ class _TerminalScreenState extends State<TerminalScreen> with WidgetsBindingObse
         ),
       );
 
-      tab.session!.stdout.listen(
+      tab._stdoutSub = tab.session!.stdout.listen(
         (data) => tab.terminal.write(utf8.decode(data, allowMalformed: true)),
         onDone: () => _onSessionDone(tab),
       );
-      tab.session!.stderr.listen(
+      tab._stderrSub = tab.session!.stderr.listen(
         (data) => tab.terminal.write(utf8.decode(data, allowMalformed: true)),
       );
 
@@ -320,6 +324,8 @@ class _TerminalScreenState extends State<TerminalScreen> with WidgetsBindingObse
 
   void _onSessionDone(_Tab tab) {
     tab.stopKeepAlive();
+    tab._stdoutSub?.cancel();
+    tab._stderrSub?.cancel();
     tab.session = null;
     tab.client = null;
     if (!mounted) return;

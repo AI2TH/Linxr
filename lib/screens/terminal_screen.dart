@@ -576,7 +576,7 @@ class _StatusChip extends StatelessWidget {
     return Chip(
       label: Text(label, style: TextStyle(color: color, fontSize: 11)),
       backgroundColor: Colors.transparent,
-      side: BorderSide(color: color.withValues(alpha: 0.4)),
+      side: BorderSide(color: color.withOpacity(0.4)),
       padding: const EdgeInsets.symmetric(horizontal: 4),
       visualDensity: VisualDensity.compact,
     );
@@ -597,7 +597,7 @@ class _Banner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: color.withValues(alpha: 0.12),
+      color: color.withOpacity(0.12),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
@@ -654,13 +654,13 @@ class _KeyRow extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 10),
               decoration: BoxDecoration(
                 color: isTab
-                    ? AppColors.primary.withValues(alpha: enabled ? 0.25 : 0.08)
-                    : Colors.white.withValues(alpha: enabled ? 0.07 : 0.03),
+                    ? AppColors.primary.withOpacity(enabled ? 0.25 : 0.08)
+                    : Colors.white.withOpacity(enabled ? 0.07 : 0.03),
                 borderRadius: BorderRadius.circular(5),
                 border: Border.all(
                   color: isTab
-                      ? AppColors.primary.withValues(alpha: enabled ? 0.5 : 0.15)
-                      : Colors.white.withValues(alpha: enabled ? 0.12 : 0.05),
+                      ? AppColors.primary.withOpacity(enabled ? 0.5 : 0.15)
+                      : Colors.white.withOpacity(enabled ? 0.12 : 0.05),
                 ),
               ),
               alignment: Alignment.center,

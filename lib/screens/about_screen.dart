@@ -45,7 +45,7 @@ class _CompanyBranding extends StatelessWidget {
           'ai2th.github.io',
           style: TextStyle(
             fontSize: 12,
-            color: Colors.white.withOpacity(0.35),
+            color: Colors.white.withValues(alpha: 0.35),
           ),
         ),
       ],
@@ -300,10 +300,10 @@ class _DepTile extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
-              color: AppColors.secondary.withOpacity(0.12),
+              color: AppColors.secondary.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(4),
               border: Border.all(
-                  color: AppColors.secondary.withOpacity(0.3)),
+                  color: AppColors.secondary.withValues(alpha: 0.3)),
             ),
             child: Text(
               dep.license,

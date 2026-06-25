@@ -263,4 +263,24 @@ reasoning for every change is in
 - **Commit:** UNFIXED (infrastructure constraint; not fixable from build host)
 - **Summary:** With NEW-5/NEW-6 corrected, FTL submission progressed to bucket creation then failed: `Permission denied while creating bucket [alpine-8b916_firebase_test_results]. Is billing enabled for project: [alpine-8b916]?`. The service account has `roles/editor` (sufficient for FTL); the blocker is the project-level billing account linkage. **Action required:** project owner must link a billing account in Cloud Console → Billing → Link a billing account. Once linked, re-run `./firebase_test_linxr.sh`. This is an operational task, not a code fix.
 
+#### NEW-8. (Retracted) `apksigner` printout claim of "no V2+V3 signature" — false positive
+- **Files:** (no source change) — documentation correction
+- **Commit:** `5a92b9c`
+- **Summary:** Earlier `apksigner verify --print-certs` output was misread as "no V2+V3 signature"; in fact the APK IS correctly V2+V3 signed with `linxr-debug.keystore` (cert SHA-256 matches exactly). The V2+V3 schemes are sufficient for FTL; lack of V1 JAR signing is expected for modern AGP. Retracted — no fix needed.
+
+#### NEW-9. WSL2 loopback doesn't reach Windows-host LDPlayer — `127.0.0.1:5555` unreachable from inside WSL2
+- **Files:** (no source change) — host configuration
+- **Commit:** `(resolved at host)` — added `[wsl2] networkingMode=mirrored` to `%UserProfile%\.wslconfig`
+- **Summary:** First LDPlayer test attempt from inside WSL2 failed because `127.0.0.1` in WSL2 is the WSL loopback, not the Windows host. Resolved by enabling WSL2 mirrored networking in `~/.wslconfig` + `wsl --shutdown`. After restart, `127.0.0.1:5555` from inside WSL2 resolves directly to the LDPlayer instance on the Windows host, and the test could proceed (which then surfaced NEW-10).
+
+#### NEW-10. App crashes on launch on Android 8–12 — `ClassNotFoundException: android.window.OnBackInvokedCallback`
+- **Files:** `android/app/src/main/AndroidManifest.xml`
+- **Commit:** `6fef778`
+- **Summary:** `androidx.core:core-ktx:1.12.0` reflects `android.window.OnBackInvokedCallback` (API 33+) and `android.window.OnBackAnimationCallback` (API 34+) during activity instantiation in `androidx.core.app.CoreComponentFactory.instantiateActivity`. On API 26–32 the reflection throws `ClassNotFoundException` *before* `Application.onCreate` runs, propagating into Flutter's `FlutterJNI.nativeInit` which aborts via SIGABRT. Discovered via LDPlayer x86_64 Android 9 install: `pm install` succeeded, but `am start` crashed within 1.7s. Adding `android:enableOnBackInvokedCallback="false"` to `<application>` (a property that's silently ignored on API <33 and opts out of predictive-back on API ≥33) makes `androidx.core` skip the reflection entirely. App falls back to legacy `onBackPressed()` on all API levels. Two alternatives were considered and rejected (downgrade `androidx.core` to 1.10.1 — regression risk; bump `minSdk` to 33 — drops Android 8–12 device support, violates `minSdk 26` floor in CLAUDE.md). APK rebuild pending for verification.
+
+#### NEW-11. Debug APK does not package `androidTest` source set — `am instrument` fails with `Unable to find instrumentation info`
+- **Files:** (no source change) — packaging-pipeline gap
+- **Commit:** UNFIXED (build-script change required)
+- **Summary:** After NEW-10, attempting `am instrument -w -e class com.ai2th.linxr.VmResourceTest com.ai2th.linxr.test/androidx.test.runner.AndroidJUnitRunner` returned `INSTRUMENTATION_STATUS_CODE: -1`. The `androidTest/` source set exists in the repo (`android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt`) but the debug APK does not package the test instrumentation classes. Two fix paths: (a) update `scripts/build_apk.sh` to chain-build `app-debug.apk` + `app-debug-androidTest.apk` and install both on the device, or (b) move `VmResourceTest` from `androidTest/` to `test/` (host-side JVM tests). Out-of-scope follow-up.
+
 [Unreleased]: https://github.com/ai2th/linxr/compare/HEAD...bugs

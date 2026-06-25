@@ -114,7 +114,7 @@ dart run flutter_launcher_icons
 
 echo ""
 echo "--- Step 4: flutter build apk ('"${BUILD_TYPE}"') ---"
-flutter build apk --'"${BUILD_TYPE}"' 2>&1 || true
+flutter build apk --'"${BUILD_TYPE}"' 2>&1
 
 echo ""
 echo "--- Step 5: Copy APK to output ---"

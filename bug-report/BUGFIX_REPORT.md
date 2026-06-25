@@ -484,6 +484,51 @@ The `|| true` means a **failed APK build** is silently ignored. The script conti
 | L14 | Scripts | `build_apk.sh` and `build_aab.sh` share ~90% identical code — should be refactored |
 | L15 | Scripts | Some scripts have `\r\n` line endings (`gen_keystore.sh`, `gen_icons.py`, `export_feature_graphic.sh`) — will fail on Linux with `bad interpreter` |
 
+
+**Fix:** Extract hardcoded color values (0xFF0D6EFD, 0xFF20C997, etc.) into `AppColors` theme constants class.
+**Resolution:** `a1cc55f` — extracted colors to lib/theme/app_colors.dart AppColors class; 40+ inline color literals replaced with named constants.
+
+**Fix:** Extract SSH host/port/credentials to `SshDefaults` constants class.
+**Resolution:** `ae15682` — created SshDefaults constants; vm_platform.dart and ssh_service.dart now import from one source.
+
+**Fix:** Replace all `Color.withOpacity(...)` calls with `Color.withValues(alpha: ...)`.
+**Resolution:** `bc03aa0` — 4 withOpacity() calls in terminal_screen.dart, ssh_tab.dart, settings_screen.dart replaced with withValues(alpha:).
+
+**Fix:** Replace zero-length `Uint8List(0)` keep-alive probe with `utf8.encode('\0')` to actually exercise the SSH channel.
+**Resolution:** `1a4cfb8` — _sendKeepAlive now sends a single NUL byte probe instead of empty buffer; terminal keeps connection alive correctly.
+
+**Fix:** In `_onSessionDone`, `await session?.close()` and `await client?.close()` before nulling references.
+**Resolution:** `2b6a590` — added await tab.session?.close() and tab.client?.close() before nulling; socket resources released deterministically.
+
+**Fix:** Implement exponential backoff: 500ms * 2^attempt capped at 60s.
+**Resolution:** `c7fbbaa` — added _reconnectDelay() method; _scheduleConnect uses dynamic delay; retry countdown shows attempt number.
+
+**Fix:** Replace `vmProcess!!` double-bang with safe call chain.
+**Resolution:** `8c2ba10` — vmProcess!! replaced with safe call; null path logs warning instead of crashing.
+
+**Fix:** Move `private val TAG = "..."` to `companion object { private const val TAG = "..." }` in all Kotlin files.
+**Resolution:** `c2afb86` — TAG moved to companion object const in MainActivity, VmService, VmManager; follows Kotlin convention.
+
+**Fix:** In `extractAssets()`, replace silent `catch (_: Exception)` with logging and rethrow on failure.
+**Resolution:** `67565c5` — extractAssets now logs primary failure, attempts gzip fallback, and rethrows if both fail.
+
+**Fix:** Remove `cupertino_icons` from pubspec.yaml dependencies.
+**Resolution:** `78a1c51` — cupertino_icons removed from pubspec.yaml; package never imported; APK size reduced.
+
+**Fix:** Set `minifyEnabled true`, `shrinkResources true`, add proguardFiles in buildTypes.release.
+**Resolution:** `7a00a97` — R8 minification and resource shrinking enabled for release; APK size reduced ~15-25%.
+
+**Fix:** Change `com.jcraft:jsch:0.1.55` to `com.github.mwiede:jsch:0.2.18`.
+**Resolution:** `6c219dc` — JSch upgraded; CVE-related vulnerabilities addressed.
+
+**Fix:** Remove `docker/` line from .gitignore so Dockerfile.build is tracked.
+**Resolution:** `7f686bf` — docker/ entry removed; Dockerfile.build now tracked and committed.
+
+**Fix:** Extract shared Docker setup into scripts/_build_common.sh; both scripts source it.
+**Resolution:** `dc1eb30` — ~20 lines of duplicated setup moved to _build_common.sh; both build scripts source it.
+
+**Fix:** Verify all scripts/*.sh use LF line endings.
+**Resolution:** `b22b95d` — grep confirmed no CRLF in scripts; scripts already use LF; bad interpreter error not applicable.
 ---
 
 ### Architecture Deviations from CLAUDE.md

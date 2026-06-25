@@ -26,6 +26,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _loaded = false;
   bool _resetting = false;
   bool _restarting = false;
+  String? _loadError;
 
   // ── Derived ranges from device info ────────────────────────────────────────
 
@@ -66,23 +67,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _load() async {
-    final results = await Future.wait([
-      VmPlatform.getDeviceInfo(),
-      SharedPreferences.getInstance(),
-    ]);
-    if (!mounted) return;
-    final device = results[0] as DeviceInfo;
-    final prefs  = results[1] as SharedPreferences;
-    setState(() {
-      _device = device;
-      final v = prefs.getInt(_kVcpu);
-      final r = prefs.getInt(_kRam);
-      final d = prefs.getInt(_kDisk);
-      _vcpu   = (v != null && v > 0) ? v : null;
-      _ramMb  = (r != null && r > 0) ? r : null;
-      _diskGb = (d != null && d > 0) ? d : null;
-      _loaded = true;
-    });
+    try {
+      final results = await Future.wait([
+        VmPlatform.getDeviceInfo(),
+        SharedPreferences.getInstance(),
+      ]);
+      if (!mounted) return;
+      final device = results[0] as DeviceInfo;
+      final prefs  = results[1] as SharedPreferences;
+      setState(() {
+        _device = device;
+        final v = prefs.getInt(_kVcpu);
+        final r = prefs.getInt(_kRam);
+        final d = prefs.getInt(_kDisk);
+        _vcpu   = (v != null && v > 0) ? v : null;
+        _ramMb  = (r != null && r > 0) ? r : null;
+        _diskGb = (d != null && d > 0) ? d : null;
+        _loaded = true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadError = e.toString();
+        _loaded = true;
+      });
+    }
   }
 
   // ── Persist ─────────────────────────────────────────────────────────────────
@@ -188,6 +197,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
+
+                // ── Load error banner ────────────────────────────────────────
+                if (_loadError != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDC3545).withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFDC3545).withOpacity(0.4)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline, color: Color(0xFFDC3545), size: 18),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Failed to load settings: $_loadError',
+                            style: const TextStyle(color: Color(0xFFDC3545), fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
 
                 // ── VM running banner ─────────────────────────────────────────
                 if (vmRunning) ...[

@@ -166,42 +166,74 @@ apk add curl git python3
 
 ## Troubleshooting & FAQs
 
-### 1. `npm install` (or other heavy network operations) fails or drops connection inside the VM (Issue #19)
+### Known Issues & Bug Tracker
+
+| Issue ID | Category | Reported By | Date | Description & Root Cause |
+| :--- | :--- | :--- | :--- | :--- |
+| **#19** | Network Issue | jimkardy | Jun 9 | `npm install` fails midway with network errors despite strong WiFi. **Root cause:** SLIRP user-mode networking drops packets/DNS requests under high concurrency, worsened by TCG CPU overhead. |
+| **#18** | Kernel Update Issue | fmohican | Jun 7 | Can't upgrade kernel past 6.6.140 via `apk upgrade`. **Root cause:** QEMU boots external kernel files bundled in the APK, not from the guest's `/boot`. |
+| **#16** | Terminal Slowness | User | Jun 25 | Commands in terminal feel slow/delayed (even simple commands like `ls`). **Root cause:** CPU emulation (TCG) overhead and emulator translation (Berberis), not network/SLIRP. |
+
+---
+
+### 1. `npm install` fails or drops connection inside the VM (Issue #19)
+
 Under heavy network operations (like `npm install`), the QEMU SLIRP (user-mode) network stack can drop packets or DNS queries due to high concurrency. Additionally, software CPU emulation (TCG) adds CPU latency which can cause connections to time out.
-* **Recommended Solutions**:
-  * Increase npm's download/fetch retry timeouts:
-    ```bash
-    npm config set fetch-retry-maxtimeout 120000
-    npm config set fetch-retry-mintimeout 20000
-    ```
-  * Use lighter package managers like `pnpm` or `yarn`, which are more resource-efficient and use fewer concurrent connections.
-  * Override the default SLIRP DNS resolver (`10.0.2.3`) inside the VM's `/etc/resolv.conf` with a public DNS (e.g. `nameserver 1.1.1.1` or `nameserver 8.8.8.8`).
+
+#### Detailed Fixes & Mitigations:
+* **Increase npm Timeout and Retries**: Set conservative fetch and retry configs to handle the packet drops:
+  ```bash
+  npm config set fetch-retry-maxtimeout 120000
+  npm config set fetch-retry-mintimeout 20000
+  npm config set fetch-retries 10
+  ```
+* **Use Lighter Package Managers**: Use `pnpm` or `yarn` which perform less concurrent network activity and consume fewer CPU cycles inside the emulation layer.
+* **Override the Default DNS Resolver**: By default, QEMU SLIRP routes DNS through `10.0.2.3`. Change it inside the VM's `/etc/resolv.conf` to a public DNS:
+  ```
+  nameserver 1.1.1.1
+  nameserver 8.8.8.8
+  ```
+* **Restrict Concurrency**: If using npm, limit the maximum socket concurrency:
+  ```bash
+  npm config set maxsockets 3
+  ```
+
+---
 
 ### 2. Can't upgrade the Linux kernel inside the VM (stuck at `6.6.x`, Issue #18)
 
-The VM boots using QEMU's `-kernel` and `-initrd` flags, which load
-`vmlinuz-virt` and `initramfs-virt` from the APK's bundled assets — **not**
-from the guest's `/boot/` directory. This is by design:
-
-- The host-side kernel must match the modules compiled into `base.qcow2`.
-  A mismatch causes a kernel panic at boot.
-- Android's app sandbox prevents mounting the QCOW2 overlay to extract
-  a guest-side kernel before QEMU starts.
+The VM boots using QEMU's `-kernel` and `-initrd` flags, which load `vmlinuz-virt` and `initramfs-virt` from the APK's bundled assets — **not** from the guest's `/boot/` directory. This is by design:
+* The host-side kernel must match the modules compiled into `base.qcow2`. A mismatch causes a kernel panic at boot.
+* Android's app sandbox prevents mounting the QCOW2 overlay to extract a guest-side kernel before QEMU starts.
 
 **To upgrade the kernel**, the project maintainer must:
-
-1. Build a new Alpine rootfs with the desired kernel version using
-   `scripts/build_qcow2.sh`.
-2. Copy the matching `vmlinuz-virt` and `initramfs-virt` into
-   `android/app/src/main/assets/vm/`.
+1. Build a new Alpine rootfs with the desired kernel version using `scripts/build_qcow2.sh`.
+2. Copy the matching `vmlinuz-virt` and `initramfs-virt` into `android/app/src/main/assets/vm/`.
 3. Bump `ASSETS_VERSION` in `VmManager.kt` (currently `"v26"`).
 4. Build and release a new APK.
 
-**What users can do**: Run `apk upgrade` to update userland packages
-(OpenSSH, Python, etc.) — those changes persist across reboots.
-Only the kernel itself requires an APK update.
+**What users can do**: Run `apk upgrade` to update userland packages (OpenSSH, Python, etc.) — those changes persist across reboots. Only the kernel itself requires an APK update.
 
-### 3. VNC / Graphical UI and GPU hardware acceleration (Issue #17)
+---
+
+### 3. Terminal commands are slow, delayed, or laggy (even simple ones like `ls`)
+
+Users often notice input lag and delayed execution inside the terminal. While this can feel like network latency, it is **not caused by SLIRP networking**. 
+* **Root Cause**: This is entirely due to **TCG (Tiny Code Generator) CPU emulation overhead** (~3x performance penalty on native ARM64 devices, or 10x-25x on x86_64 emulators due to Berberis translation). Every character typed and command executed requires translating ARM64 instructions to the host CPU in software.
+
+#### How to Fix/Mitigate Slowness:
+* **Run on Native ARM64 Hardware**: Run the app on a physical ARM64 Android device instead of an x86_64 Android Emulator. This removes the translation layer and speeds up execution significantly.
+* **Disable Reverse DNS Lookup in sshd**: By default, `sshd` tries to look up the host IP, causing delays. Add or uncomment the following line in `/etc/ssh/sshd_config` inside the VM, then restart the sshd service:
+  ```
+  UseDNS no
+  ```
+  Restart service: `rc-service sshd restart`
+* **Cap Guest Memory & Cores**: Capping the guest VM at **512 MB** and **1 or 2 vCPUs** in Settings prevents host device swap thrashing and CPU starvation.
+
+---
+
+### 4. VNC / Graphical UI and GPU hardware acceleration (Issue #17)
+
 Currently, Linxr is configured for command-line access.
 * **Recommended Solutions**:
   * **VNC Display**: You can install a headless desktop environment (e.g. XFCE) and VNC server (e.g. `x11vnc` or `tigervnc`) inside the Alpine VM, and connect to `localhost:5900` from Android using any external VNC client app.

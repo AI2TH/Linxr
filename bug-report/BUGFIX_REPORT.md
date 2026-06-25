@@ -433,7 +433,9 @@ The `|| true` means a **failed APK build** is silently ignored. The script conti
 
 **Resolution:** `fa99a8e` — _isPolling flag set before async poll work and cleared in finally; concurrent polling coroutines prevented; only one SSH connection opened at a time.
 
-**Resolution:** `3a03671` — M8: if (!mounted) return after await in _load; M9: try/catch wraps _load body; _loadError state set on exception; loading spinner unblocked; red error banner shown to user.
+**Resolution:** `764206b` — if (!mounted) return after await in _load; prevents setState on disposed widget when navigating away during load.
+
+**Resolution:** `16cbbd6` — try/catch wraps _load body; _loadError state set on exception; loading spinner unblocked; red error banner shown to user.
 
 **Resolution:** `3548b1d` — added DEV ONLY security warning comment block above SSH configuration section; hardcoded root credentials and password auth clearly flagged as development-only.
 

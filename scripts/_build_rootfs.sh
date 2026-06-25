@@ -232,6 +232,11 @@ ttyAMA0::respawn:/sbin/getty -L ttyAMA0 115200 vt100
 EOF
 
 # â”€â”€ SSH â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ⚠️  SECURITY WARNING — DEVELOPMENT ONLY ⚠️
+# This VM is configured with root SSH access using hardcoded credentials
+# (root:alpine). DO NOT expose port 2222 on a public or shared network.
+# For production use, replace with key-based auth and disable password login.
+
 echo "--- Configuring SSH ---"
 chroot "${ROOTFS}" ssh-keygen -A
 

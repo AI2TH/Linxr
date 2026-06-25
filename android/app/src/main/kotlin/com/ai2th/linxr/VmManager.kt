@@ -12,7 +12,9 @@ import java.io.FileOutputStream
 import java.util.zip.GZIPInputStream
 
 class VmManager(private val context: Context) {
-    private val TAG = "VmManager"
+    companion object {
+        private const val TAG = "VmManager"
+    }
 
     @Volatile private var vmProcess: Process? = null
     @Volatile private var isRunning = false

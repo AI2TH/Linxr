@@ -12,7 +12,9 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 
 class VmService : Service() {
-    private val TAG = "VmService"
+    companion object {
+        private const val TAG = "VmService"
+    }
     private val CHANNEL_ID = "linxr_channel"
     private val NOTIFICATION_ID = 1
 

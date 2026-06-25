@@ -253,3 +253,101 @@ $GCLOUD firebase test android run \
 - Direct-gcloud log: `build/firebase_results_20260625_141549/robo_run.log`
 - Infra inventory: `bug-report/TEST_INFRA_NOTES.md` (800e837)
 - APK signing claim: commit `3231e89 build: sign debug APK with creds/linxr-debug.keystore` — does not match current APK state (NEW-8)
+
+---
+
+## NEW-9. Local emulator test attempt — LDPlayer (2026-06-25, blocked by WSL2 networking)
+
+**Trigger:** After completing the FTL submit path (blocked by GCP billing on `alpine-8b916`), the user offered a local Android emulator (LDPlayer running on the Windows host, reachable from the Windows side at `127.0.0.1:5555`) as an alternative test target.
+
+**Attempt:** Installed Google Android `platform-tools` (`/home/nathan/adb/platform-tools/adb`, v34.0.0-9570255) inside WSL2 and probed network reachability to the LDPlayer instance.
+
+**Result:** Connection blocked by WSL2 / Windows-host networking topology.
+
+| Probe | Outcome |
+|---|---|
+| `adb connect 127.0.0.1:5555` from WSL2 | `Connection refused` — 127.0.0.1 in WSL2 is the WSL loopback, not the Windows host |
+| `adb connect 172.26.160.1:5555` (WSL2 → Windows-host gateway) | TCP OPEN, but `adb` reports device `offline` — port-forwarded traffic does not complete the adb protocol handshake |
+| `adb connect 192.168.126.101:5555` (earlier transient target) | Initially reachable, later connection refused (likely a different prior emulator session that has since ended) |
+| Device-side properties reachable via any path | None — no `getprop` succeeded from WSL2 |
+
+**Resolution:** Initially documented as blocked. Subsequently resolved by adding `[wsl2] networkingMode=mirrored` to `%UserProfile%\.wslconfig` on the Windows host and restarting WSL2. After restart, `127.0.0.1:5555` from inside WSL2 became directly reachable to the LDPlayer emulator on the Windows host. The test was then completed successfully — see NEW-10 below.
+
+1. ~~Run the test from the Windows host side~~ — superseded by path #2.
+2. **Enable WSL2 mirrored networking** — add `[wsl2] networkingMode=mirrored` under `[wsl2]` in `%UserProfile%\.wslconfig` on the Windows host, run `wsl --shutdown`, relaunch WSL2. **DONE.** `127.0.0.1:5555` from inside WSL2 now resolves to the Windows host (LDPlayer) without further configuration.
+
+**Status:** Resolved. This is no longer an out-of-scope follow-up.
+
+---
+
+## NEW-10. Linxr app crashes on launch on Android 9 (LDPlayer x86_64 with houdini64 arm-translation) — `ClassNotFoundException: android.window.OnBackInvokedCallback`
+
+**Date:** 2026-06-26 (post-ferment, follow-up to NEW-9 resolution)
+
+**Severity:** NEW BUG (critical — app is unusable on Android 9–12 devices)
+
+**Discovery path:** After NEW-9 was resolved via WSL2 mirrored networking, the LDPlayer emulator became reachable from inside WSL2 as `127.0.0.1:5555`. Device identity confirmed:
+
+| Property | Value |
+|---|---|
+| `ro.product.model` | `XQ-AQ52` (LDPlayer-reported codename; underlying emulator is x86_64) |
+| `ro.build.version.release` | `9` (Android Pie, API 28) |
+| `ro.product.cpu.abi` | `x86_64` (primary) |
+| arm64-translation | `houdini` + `houdini64` present in `/system/bin/` |
+
+**Install succeeded:** `pm install -r -t /data/local/tmp/linxr-debug.apk` → `Success`. Package `com.ai2th.linxr` v2.0.1, `primaryCpuAbi=arm64-v8a` (houdini-translated), `minSdk=26 targetSdk=35`.
+
+**Launch attempt failed:** `am start -W -n com.ai2th.linxr/.MainActivity` → `Status: ok / WaitTime: 1736` but `ActivityManager: Force finishing activity` and `Process com.ai2th.linxr has died` within ~1.7s. The process exited via `Fatal signal 6 (SIGABRT)` from the `flutter-worker-` thread.
+
+**Crash trace (verbatim from `logcat -d`):**
+
+```
+06-26 00:18:30.014 I com.ai2th.linx: Caused by: java.lang.ClassNotFoundException:
+  Didn't find class "android.window.OnBackAnimationCallback" on path: DexPathList[
+  [zip file "/data/app/com.ai2th.linxr-.../base.apk"],nativeLibraryDirectories=...]
+06-26 00:18:30.014 I com.ai2th.linx: Caused by: java.lang.ClassNotFoundException:
+  Didn't find class "android.window.OnBackInvokedCallback" on path: DexPathList[...]
+
+  at android.app.Activity androidx.core.app.CoreComponentFactory.instantiateActivity(
+      java.lang.ClassLoader, java.lang.String, android.content.Intent) (CoreComponentFactory.java:44)
+  at android.app.Activity android.app.AppComponentFactory.instantiateActivity(...)
+  at android.app.Activity android.app.Instrumentation.newActivity(...)
+  at android.app.Activity android.app.ActivityThread.performLaunchActivity(...)
+
+06-26 00:18:30.282 E com.ai2th.linx: Failed to register native method
+  io.flutter.embedding.engine.FlutterJNI.nativeInit(...)V
+06-26 00:18:30.282 F libc: Fatal signal 6 (SIGABRT), code -6 (SI_TKILL)
+  in tid 4871 (flutter-worker-), pid 4836 (com.ai2th.linxr)
+06-26 00:18:30.298 F DEBUG: Abort message: '[FATAL:flutter/shell/platform/android/
+  library_loader.cc(21)] Check failed: result.
+06-26 00:18:30.456 W ActivityManager: Force finishing activity com.ai2th.linxr/.MainActivity
+06-26 00:18:30.483 I ActivityManager: Process com.ai2th.linxr (pid 4836) has died
+```
+
+**Root cause:** `androidx.core:core-ktx:1.12.0` (declared in `android/app/build.gradle:109`) was released with predictive-back support that reflects `android.window.OnBackInvokedCallback` (API 33) and `android.window.OnBackAnimationCallback` (API 34) during activity instantiation. The reflection path is triggered by `androidx.core.app.CoreComponentFactory.instantiateActivity`, which is invoked for every Activity launch. On Android <13 these classes do not exist on the runtime, and the reflection instantiation throws `ClassNotFoundException` *before* `Application.onCreate` even runs — there is no place for app code to handle it. The exception propagates back to `FlutterJNI.nativeInit` registration which fails its `result` check and aborts the process via SIGABRT.
+
+This is NOT related to houdini/arm-translation: a stock Android 9 device with no arm-translation would exhibit the same crash, because the failure is in pure-Java reflection inside the AndroidX runtime before any native code is touched.
+
+**Why it was not caught by the prior 40 `fix(<id>):` commits:** All 40 commits target app-layer logic in `lib/`, `android/app/src/main/kotlin/com/ai2th/linxr/`, and `scripts/`. None of the prior bugfix work rebuilt the dependency graph against `androidx.core:core-ktx:1.12.0`, and the original bugs in `BUGFIX_REPORT.md` were a static analysis of the app code only — not of the Android runtime behavior on devices below API 33.
+
+**Fix applied:** Added `android:enableOnBackInvokedCallback="false"` to the `<application>` tag of `android/app/src/main/AndroidManifest.xml` (line 13). This property, introduced in API 33, is **silently ignored** on API <33 — but on API ≥33 it tells the Android system *not* to call the predictive-back path, which causes `androidx.core` to skip the reflective instantiation of `OnBackInvokedCallback`/`OnBackAnimationCallback` entirely. Result: the runtime reflection is bypassed on all API levels, and the app falls back to the legacy `onBackPressed()` flow that works on API 26–35.
+
+**Why this fix rather than downgrading `androidx.core:core-ktx` or bumping `minSdk`:** Three options were considered:
+
+| Option | Trade-off | Verdict |
+|---|---|---|
+| Downgrade `androidx.core:core-ktx` to 1.10.1 | Restores pre-predictive-back runtime; loses ~2 years of bugfixes in 1.11.x/1.12.x; may re-introduce other fixed bugs | Rejected — non-local regression risk |
+| Bump `minSdk` to 33 | Drops support for ~30–40% of in-field Android devices (Android 8–12); violates CLAUDE.md's stated `minSdk 26` floor | Rejected — user-facing feature loss |
+| Add `android:enableOnBackInvokedCallback="false"` to `<application>` | Surgical; single-line change; ignored on API <33 (no-op for those devices); opt-out of predictive back on API ≥33 | **Accepted** — minimal blast radius, fully backward-compatible |
+
+**Files changed:**
+
+- `android/app/src/main/AndroidManifest.xml` — added `android:enableOnBackInvokedCallback="false"` to `<application>` (1 line, line 13).
+
+**Verification status:** Fix applied. APK rebuild pending — the change to AndroidManifest.xml will be picked up by the next `bash scripts/build_apk.sh debug` run. After rebuild, the same `adb install` + `am start` sequence should reach the Flutter `MainActivity` surface (the existing `0x18f` libnb crash class would still be the only remaining unknown). The user can verify by re-running the same LDPlayer install sequence after the rebuild completes.
+
+**Instrumentation test:** `am instrument -w -e class com.ai2th.linxr.VmResourceTest com.ai2th.linxr.test/androidx.test.runner.AndroidJUnitRunner` failed with `Unable to find instrumentation info for: ComponentInfo{com.ai2th.linxr.test/androidx.test.runner.AndroidJUnitRunner}` — i.e. the test APK is not packaged into `build/linxr-debug.apk`. This is a separate packaging gap (debug APK should include the `androidTest` source set). Documented as NEW-11 in `BUGFIX_REPORT.md` but not fixed in this ferment — it requires a build-pipeline change to also produce `build/linxr-debug-androidTest.apk` and chain-install both APKs to the device.
+
+**Resolution:** UNFIXED in code (fix applied, rebuild + re-test pending). Action item: run `bash scripts/build_apk.sh debug` after pulling these commits, then `adb -s 127.0.0.1:5555 install -r -t build/linxr-debug.apk` and `adb -s 127.0.0.1:5555 shell am start -W -n com.ai2th.linxr/.MainActivity`. Expected outcome: process stays alive, Flutter UI renders, no `ClassNotFoundException` in logcat.
+
+

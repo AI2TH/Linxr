@@ -281,9 +281,15 @@ class VmManager(private val context: Context) {
         try {
             extractAsset("vm/base.qcow2", baseQcow2)
             Log.d(TAG, "Extracted base.qcow2 (aapt2 pre-decompressed)")
-        } catch (_: Exception) {
-            extractAndDecompress("vm/base.qcow2.gz", baseQcow2)
-            Log.d(TAG, "Extracted + decompressed base.qcow2.gz")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to extract uncompressed base.qcow2, trying compressed: ${e.message}")
+            try {
+                extractAndDecompress("vm/base.qcow2.gz", baseQcow2)
+                Log.d(TAG, "Extracted + decompressed base.qcow2.gz")
+            } catch (e2: Exception) {
+                Log.e(TAG, "extractAssets failed: ${e2.message}", e2)
+                throw e2
+            }
         }
 
         // Always re-extract kernel files so they match the modules in base.qcow2.

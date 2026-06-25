@@ -137,62 +137,21 @@ echo 'root:100000:65536' >> "${ROOTFS}/etc/subgid"
 # Alpine linux-virt ships ip_tables, bridge, br_netfilter, veth etc. as loadable
 # .ko files (not built-in). Docker requires them at runtime. Copy the actual .ko
 # files from the build container's linux-virt installation into the rootfs so
-# modprobe can load them in the guest.
+# 
 echo "--- Installing linux-virt kernel modules into rootfs ---"
 apk add --no-cache linux-virt
 
 KVER=$(ls /lib/modules/ | grep '\-virt' | head -1)
 echo "Kernel version: $KVER"
 
-# Alpine ships .ko.gz (gzip-compressed modules). kmod handles them natively.
-# List of modules needed for Docker bridge networking.
-DOCKER_MODULES="
-kernel/lib/libcrc32c.ko.gz
-kernel/net/ipv6/ipv6.ko.gz
-kernel/net/802/stp.ko.gz
-kernel/net/llc/llc.ko.gz
-kernel/net/ipv4/netfilter/nf_defrag_ipv4.ko.gz
-kernel/net/ipv6/netfilter/nf_defrag_ipv6.ko.gz
-kernel/net/netfilter/x_tables.ko.gz
-kernel/net/netfilter/nf_conntrack.ko.gz
-kernel/net/netfilter/nf_nat.ko.gz
-kernel/net/netfilter/xt_conntrack.ko.gz
-kernel/net/netfilter/xt_MASQUERADE.ko.gz
-kernel/net/netfilter/xt_addrtype.ko.gz
-kernel/net/ipv4/netfilter/ip_tables.ko.gz
-kernel/net/ipv4/netfilter/iptable_filter.ko.gz
-kernel/net/ipv4/netfilter/iptable_nat.ko.gz
-kernel/net/bridge/bridge.ko.gz
-kernel/net/bridge/br_netfilter.ko.gz
-kernel/drivers/net/veth.ko.gz
-kernel/fs/fuse/fuse.ko.gz
-kernel/fs/overlayfs/overlay.ko.gz
-"
-
-for MOD_PATH in $DOCKER_MODULES; do
-    SRC="/lib/modules/$KVER/$MOD_PATH"
-    DST="${ROOTFS}/lib/modules/$KVER/$MOD_PATH"
-    if [ -f "$SRC" ]; then
-        mkdir -p "$(dirname "$DST")"
-        cp "$SRC" "$DST"
-        echo "  copied: $MOD_PATH"
-    else
-        echo "  WARNING: $SRC not found â€” skipping"
-    fi
-done
-
-# Copy module metadata files so modprobe/depmod can resolve dependencies
+# Copy all kernel modules to guest rootfs
 mkdir -p "${ROOTFS}/lib/modules/$KVER"
-for META in modules.builtin modules.order modules.builtin.modinfo; do
-    SRC="/lib/modules/$KVER/$META"
-    [ -f "$SRC" ] && cp "$SRC" "${ROOTFS}/lib/modules/$KVER/$META"
-done
+cp -r /lib/modules/$KVER/. "${ROOTFS}/lib/modules/$KVER/"
 
 # Build module dependency database inside rootfs
 depmod -b "${ROOTFS}" "$KVER"
 echo "--- Kernel modules ready (KVER=$KVER) ---"
 
-# â”€â”€ cgroup2 + device nodes + modprobe OpenRC service â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Runs in sysinit after mdev so /dev is populated.
 # Also loads the Docker networking kernel modules before dockerd starts.
 cat > "${ROOTFS}/etc/init.d/cgroups" << 'EOF'

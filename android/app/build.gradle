@@ -25,7 +25,7 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace "com.ai2th.linxr"
-    compileSdk 36
+    compileSdk 35
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
@@ -53,6 +53,9 @@ android {
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        ndk {
+            abiFilters "arm64-v8a"
+        }
     }
 
     signingConfigs {

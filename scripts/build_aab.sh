@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build the Flutter Android AAB entirely inside Docker.
-# alpine/ is self-contained — no external dependencies needed.
+# alpine/ is self-contained â€” no external dependencies needed.
 #
 # Usage:
 #   ./scripts/build_aab.sh            # release build (default)
@@ -27,9 +27,9 @@ fi
 
 mkdir -p "${OUTPUT_DIR}"
 
-# ── Build the builder image if it doesn't exist ───────────────────────────────
+# â”€â”€ Build the builder image if it doesn't exist â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 if ! docker image inspect "${IMAGE_NAME}" &>/dev/null; then
-    echo "=== Building Docker build environment (first run — ~10 min) ==="
+    echo "=== Building Docker build environment (first run â€” ~10 min) ==="
     docker build \
         --platform linux/amd64 \
         -f "${PROJECT_ROOT}/docker/Dockerfile.build" \

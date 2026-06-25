@@ -31,7 +31,7 @@ class VmManager(private val context: Context) {
         get() = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
 
     // Bump when base.qcow2.gz changes (forces re-extraction on next launch)
-    private val ASSETS_VERSION = "v26"
+    private val ASSETS_VERSION = "v27"
 
     // -------------------------------------------------------------------------
     // Public API
@@ -54,8 +54,13 @@ class VmManager(private val context: Context) {
         }
 
         val qemuBin = resolveQemuBinary()
-        val vcpu  = getFlutterInt("flutter.vcpu_count", dynamicVcpu())
-        val ramMb = getFlutterInt("flutter.ram_mb", dynamicRamMb())
+        var vcpu  = getFlutterInt("flutter.vcpu_count", dynamicVcpu())
+        var ramMb = getFlutterInt("flutter.ram_mb", dynamicRamMb())
+        if (isEmulator()) {
+            Log.d(TAG, "Running on emulator: forcing vcpu=1, ram=512MB to conserve host resources")
+            vcpu = 1
+            ramMb = 512
+        }
 
         val baseImage = File(vmDir, "base.qcow2")
         val userImage = File(vmDir, "user.qcow2")
@@ -81,6 +86,7 @@ class VmManager(private val context: Context) {
 
         vmProcess = ProcessBuilder(cmd).apply {
             environment()["LD_LIBRARY_PATH"] = nativeLibDir.absolutePath
+            environment()["BERBERIS_GUEST_LD_LIBRARY_PATH"] = nativeLibDir.absolutePath
             redirectErrorStream(true)
         }.start()
 
@@ -166,23 +172,30 @@ class VmManager(private val context: Context) {
         val cmd = mutableListOf<String>()
         cmd += qemuBin
 
-        if (isArm64()) {
+        val isArm = isArm64()
+        if (isArm) {
             cmd += listOf("-machine", "virt")
-            cmd += listOf("-cpu", "cortex-a53")
+            cmd += listOf("-cpu", "max")
         } else {
             cmd += listOf("-machine", "q35")
             cmd += listOf("-cpu", "qemu64")
         }
 
-        // Multi-threaded TCG: one thread per vCPU — significantly faster boot and runtime
+        // Multi-threaded TCG: one thread per vCPU — significantly faster boot and runtime.
+        // On emulators, vcpu is capped to 1 so thread=multi does not starve the host.
         cmd += listOf("-accel", "tcg,thread=multi,tb-size=256")
         cmd += listOf("-overcommit", "mem-lock=off")
 
         cmd += listOf("-smp", vcpu.toString())
         cmd += listOf("-m", ramMb.toString())
-        cmd += listOf("-drive", "if=none,file=$baseImage,id=base,format=qcow2,readonly=on")
-        cmd += listOf("-drive", "if=none,file=$userImage,id=user,format=qcow2")
-        cmd += listOf("-device", "virtio-blk-pci,drive=user")
+        cmd += listOf("-drive", "if=none,file=$userImage,id=user,format=qcow2,cache=unsafe,file.locking=off")
+
+        if (isArm) {
+            cmd += listOf("-device", "virtio-blk-device,drive=user")
+        } else {
+            cmd += listOf("-device", "virtio-blk-pci,drive=user")
+        }
+
         // SSH forward only: host 2222 → guest 22
         // SLIRP DNS override: bypass QEMU's single-threaded DNS proxy (10.0.2.3)
         // and advertise Cloudflare DNS (1.1.1.1) directly via DHCP.
@@ -193,11 +206,18 @@ class VmManager(private val context: Context) {
             "dnssearch=lan," +
             "hostfwd=tcp::2222-:22"
         )
-        cmd += listOf("-device", "virtio-net-pci,netdev=net0,romfile=")
-        // Virtio RNG speeds up guest entropy (faster crypto, faster SSH key gen at boot)
-        cmd += listOf("-device", "virtio-rng-pci")
+
+        if (isArm) {
+            cmd += listOf("-device", "virtio-net-device,netdev=net0")
+            cmd += listOf("-device", "virtio-rng-device")
+        } else {
+            cmd += listOf("-device", "virtio-net-pci,netdev=net0,romfile=")
+            cmd += listOf("-device", "virtio-rng-pci")
+        }
+        val serialLog = File(vmDir, "serial.log")
+        serialLog.delete()
         cmd += listOf("-display", "none")
-        cmd += listOf("-serial", "stdio")
+        cmd += listOf("-serial", "file:${serialLog.absolutePath}")
 
         val kernel = File(vmDir, "vmlinuz-virt")
         val initrd  = File(vmDir, "initramfs-virt")
@@ -206,8 +226,8 @@ class VmManager(private val context: Context) {
             cmd += listOf("-initrd", initrd.absolutePath)
             cmd += listOf("-append",
                 "console=ttyAMA0 root=/dev/vda rootfstype=ext4 rootflags=rw " +
-                "modules=virtio_blk,ext4 quiet " +
-                "cgroup_no_v1=all")
+                "modules=virtio_blk,virtio_mmio,virtio_net,ext4 nowatchdog " +
+                "cgroup_no_v1=all fastboot")
         }
         return cmd
     }
@@ -293,6 +313,7 @@ class VmManager(private val context: Context) {
             userImagePath, "${sizeGb}G"
         ).apply {
             environment()["LD_LIBRARY_PATH"] = nativeLibDir.absolutePath
+            environment()["BERBERIS_GUEST_LD_LIBRARY_PATH"] = nativeLibDir.absolutePath
         }.start()
         val exitCode = proc.waitFor()
         if (exitCode != 0) {
@@ -366,6 +387,17 @@ class VmManager(private val context: Context) {
 
     private fun isArm64(): Boolean =
         Build.SUPPORTED_ABIS.any { it.startsWith("arm64") }
+
+    private fun isEmulator(): Boolean {
+        val finger = Build.FINGERPRINT
+        return finger.startsWith("generic")
+                || finger.startsWith("unknown")
+                || Build.MODEL.contains("google_sdk")
+                || Build.MODEL.contains("Emulator")
+                || Build.MODEL.contains("Android SDK built for x86")
+                || Build.PRODUCT.startsWith("sdk_gphone")
+                || Build.PRODUCT.contains("sdk_gphone16k")
+    }
 
     private fun getFlutterInt(key: String, default: Int): Int {
         return try {

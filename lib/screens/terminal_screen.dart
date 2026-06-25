@@ -566,7 +566,7 @@ class _StatusChip extends StatelessWidget {
     return Chip(
       label: Text(label, style: TextStyle(color: color, fontSize: 11)),
       backgroundColor: Colors.transparent,
-      side: BorderSide(color: color.withOpacity(0.4)),
+      side: BorderSide(color: color.withValues(alpha: 0.4)),
       padding: const EdgeInsets.symmetric(horizontal: 4),
       visualDensity: VisualDensity.compact,
     );
@@ -587,7 +587,7 @@ class _Banner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: color.withOpacity(0.12),
+      color: color.withValues(alpha: 0.12),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [

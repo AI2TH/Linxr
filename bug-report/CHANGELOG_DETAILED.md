@@ -747,34 +747,62 @@ Commit: `fa99a8e`
 
 ---
 
-### M8 (includes M9)
+### M8
 
 **Files**
 
-- `lib/screens/settings_screen.dart` — lines 29, 69-95, 198-223
+- `lib/screens/settings_screen.dart` — line 72
 
 **Before**
 
 ```dart
-// Line 29: bool _restarting = false;
-// (no _loadError)
-
 // Line 69: Future<void> _load() async {
 // Line 70:   final results = await Future.wait([
 // Line 71:     VmPlatform.getDeviceInfo(),
 // Line 72:     SharedPreferences.getInstance(),
 // Line 73:   ]);
 // Line 74:   final device = results[0] as DeviceInfo;
-// Line 75:   final prefs  = results[1] as SharedPreferences;
-// Line 76:   setState(() {
-// Line 77:     _device = device;
-// Line 78:     final v = prefs.getInt(_kVcpu);
-// Line 79:     final r = prefs.getInt(_kRam);
-// Line 80:     final d = prefs.getInt(_kDisk);
-// Line 81:     _vcpu   = (v != null && v > 0) ? v : null;
-// Line 82:     _ramMb  = (r != null && r > 0) ? r : null;
-// Line 83:     _diskGb = (d != null && d > 0) ? d : null;
-// Line 84:     _loaded = true;
+```
+
+**After**
+
+```dart
+// Line 69: Future<void> _load() async {
+// Line 70:   final results = await Future.wait([
+// Line 71:     VmPlatform.getDeviceInfo(),
+// Line 72:     SharedPreferences.getInstance(),
+// Line 73:   ]);
+// Line 74:   if (!mounted) return;
+// Line 75:   final device = results[0] as DeviceInfo;
+```
+
+**Why broken**
+
+`_load()` had no `mounted` check after the `await`. If the user navigated away from Settings during `_load()`, the subsequent `setState()` operated on a disposed widget — `setState() called after dispose()` error.
+
+**Why fixed**
+
+`if (!mounted) return;` after the `await` short-circuits when the widget is disposed mid-async-operation, preventing `setState` on a dead widget.
+
+Commit: `764206b`
+
+---
+
+### M9
+
+**Files**
+
+- `lib/screens/settings_screen.dart` — lines 31, 69-95, 198-223
+
+**Before**
+
+```dart
+// Line 31: bool _restarting = false;
+// (no _loadError)
+
+// Line 69: Future<void> _load() async {
+// Line 70:   final results = await Future.wait([
+...
 // Line 85:   });
 // Line 86: }
 ```
@@ -782,28 +810,13 @@ Commit: `fa99a8e`
 **After**
 
 ```dart
-// Line 29: bool _restarting = false;
-// Line 30: String? _loadError;
+// Line 31: bool _restarting = false;
+// Line 32: String? _loadError;
 
 // Line 69: Future<void> _load() async {
 // Line 70:   try {
 // Line 71:     final results = await Future.wait([
-// Line 72:       VmPlatform.getDeviceInfo(),
-// Line 73:       SharedPreferences.getInstance(),
-// Line 74:     ]);
-// Line 75:     if (!mounted) return;
-// Line 76:     final device = results[0] as DeviceInfo;
-// Line 77:     final prefs  = results[1] as SharedPreferences;
-// Line 78:     setState(() {
-// Line 79:       _device = device;
-// Line 80:       final v = prefs.getInt(_kVcpu);
-// Line 81:       final r = prefs.getInt(_kRam);
-// Line 82:       final d = prefs.getInt(_kDisk);
-// Line 83:       _vcpu   = (v != null && v > 0) ? v : null;
-// Line 84:       _ramMb  = (r != null && r > 0) ? r : null;
-// Line 85:       _diskGb = (d != null && d > 0) ? d : null;
-// Line 86:       _loaded = true;
-// Line 87:     });
+...
 // Line 88:   } catch (e) {
 // Line 89:     if (!mounted) return;
 // Line 90:     setState(() {
@@ -816,17 +829,13 @@ Commit: `fa99a8e`
 
 **Why broken**
 
-**M8**: `_load()` had no `mounted` check after the `await`. If the user navigated away from Settings during `_load()`, the subsequent `setState()` operated on a disposed widget — `setState() called after dispose()` error.
-
-**M9**: `_load()` had no try/catch. If `getDeviceInfo()` or `SharedPreferences.getInstance()` threw (e.g., platform channel error, permissions issue), the exception was silently caught by Flutter's zone, `_loaded` stayed `false`, and the loading spinner ran forever with no error feedback.
+`_load()` had no try/catch. If `getDeviceInfo()` or `SharedPreferences.getInstance()` threw (e.g., platform channel error, permissions issue), the exception was silently caught by Flutter's zone, `_loaded` stayed `false`, and the loading spinner ran forever with no error feedback.
 
 **Why fixed**
 
-**M8**: `if (!mounted) return;` after the `await` short-circuits when the widget is disposed mid-async-operation, preventing `setState` on a dead widget.
+The entire `_load()` body is wrapped in try/catch. On exception, `_loadError` is set and `_loaded` is set to `true` (unblocking the spinner), showing a red error banner in the UI. The loading spinner no longer hangs forever on error.
 
-**M9**: The entire `_load()` body is wrapped in try/catch. On exception, `_loadError` is set and `_loaded` is set to `true` (unblocking the spinner), showing a red error banner in the UI. The loading spinner no longer hangs forever on error.
-
-Commit: `3a03671`
+Commit: `16cbbd6`
 
 ---
 

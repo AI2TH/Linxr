@@ -14,7 +14,9 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class MainActivity : FlutterActivity() {
-    private val TAG = "LinxrMainActivity"
+    companion object {
+        private const val TAG = "LinxrMainActivity"
+    }
     private val CHANNEL = "com.ai2th.linxr/vm"
     private val vmManager get() = (applicationContext as AlpineApp).vmManager
     private val executor = Executors.newSingleThreadExecutor()

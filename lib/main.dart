@@ -37,7 +37,7 @@ class AlpineApp extends StatelessWidget {
         ),
         navigationBarTheme: NavigationBarThemeData(
           backgroundColor: AppColors.navRail,
-          indicatorColor: AppColors.primary.withValues(alpha: 0.2),
+          indicatorColor: AppColors.primary.withOpacity(0.2),
           labelTextStyle: WidgetStateProperty.all(
             const TextStyle(color: Colors.white70, fontSize: 11),
           ),
@@ -45,7 +45,7 @@ class AlpineApp extends StatelessWidget {
             if (states.contains(WidgetState.selected)) {
               return const IconThemeData(color: AppColors.primary);
             }
-            return IconThemeData(color: Colors.white.withValues(alpha: 0.4));
+            return IconThemeData(color: Colors.white.withOpacity(0.4));
           }),
         ),
         useMaterial3: true,

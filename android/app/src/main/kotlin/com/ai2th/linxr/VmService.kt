@@ -29,6 +29,13 @@ class VmService : Service() {
     }
 
     override fun onDestroy() {
+        // Stop the QEMU VM before the service is destroyed so the process
+        // does not become orphaned (running with no bound service/activity).
+        try {
+            (applicationContext as AlpineApp).vmManager.stopVm()
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to stop VM in onDestroy: ${e.message}")
+        }
         super.onDestroy()
         Log.d(TAG, "VmService destroyed")
     }

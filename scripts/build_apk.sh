@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build the Flutter Android APK entirely inside Docker.
-# alpine/ is self-contained â€” no external dependencies needed.
+# alpine/ is self-contained — no external dependencies needed.
 #
 # Usage:
 #   ./scripts/build_apk.sh            # debug build (default)
@@ -12,31 +12,10 @@
 #
 # Requirements: Docker only. No Flutter, Java, or Android SDK on the host.
 
-set -e
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+source "${SCRIPT_DIR}/_build_common.sh"
+
 BUILD_TYPE="${1:-debug}"
-IMAGE_NAME="linxr-builder"
-OUTPUT_DIR="${PROJECT_ROOT}/build"
-
-if ! command -v docker &>/dev/null; then
-    echo "ERROR: Docker is required."
-    exit 1
-fi
-
-mkdir -p "${OUTPUT_DIR}"
-
-# â”€â”€ Build the builder image if it doesn't exist â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-if ! docker image inspect "${IMAGE_NAME}" &>/dev/null; then
-    echo "=== Building Docker build environment (first run â€” ~10 min) ==="
-    docker build \
-        --platform linux/amd64 \
-        -f "${PROJECT_ROOT}/docker/Dockerfile.build" \
-        -t "${IMAGE_NAME}" \
-        "${PROJECT_ROOT}"
-    echo ""
-fi
 
 echo "=== Building Flutter APK (${BUILD_TYPE}) inside Docker ==="
 echo "Project : ${PROJECT_ROOT}"
@@ -139,7 +118,7 @@ if [ -f "$TEST_APK" ]; then
     cp "$TEST_APK" /out/linxr-androidTest.apk
     echo "Test APK size: $(du -sh /out/linxr-androidTest.apk | cut -f1)"
 else
-    echo "WARNING: Test APK not found â€” instrumentation tests will not be available"
+    echo "WARNING: Test APK not found — instrumentation tests will not be available"
 fi
 '
 

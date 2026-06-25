@@ -263,6 +263,7 @@ class _TerminalScreenState extends State<TerminalScreen> with WidgetsBindingObse
     try {
       final socket = await SSHSocket.connect('127.0.0.1', 2222)
           .timeout(const Duration(seconds: 10));
+      if (!mounted) return;
 
       tab.client = SSHClient(
         socket,
@@ -277,6 +278,7 @@ class _TerminalScreenState extends State<TerminalScreen> with WidgetsBindingObse
           height: tab.terminal.viewHeight,
         ),
       );
+      if (!mounted) return;
 
       tab._stdoutSub = tab.session!.stdout.listen(
         (data) => tab.terminal.write(utf8.decode(data, allowMalformed: true)),

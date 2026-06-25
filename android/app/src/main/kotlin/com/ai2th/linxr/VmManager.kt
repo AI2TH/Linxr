@@ -147,6 +147,7 @@ class VmManager(private val context: Context) {
         }
     }
 
+    @Synchronized
     fun getStatus(): String {
         vmProcess?.let {
             return try {

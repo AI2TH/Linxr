@@ -83,6 +83,11 @@ android {
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
+            // NEW-12: enable R8 minification on debug to strip android.window.OnBackAnimationCallback
+            // (API 33+) references that break Dalvik verification on Android 9 (LDPlayer).
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         release {
             signingConfig signingConfigs.release

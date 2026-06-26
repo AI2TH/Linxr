@@ -16,6 +16,15 @@ allprojects {
         google()
         mavenCentral()
     }
+    // Globally force older androidx.activity to avoid OnBackAnimationCallback (API 33+)
+    // being referenced in dex class signatures, which breaks Dalvik verification
+    // on pre-API-33 devices like LDPlayer (Android 9 / API 28). NEW-12.
+    configurations.all {
+        resolutionStrategy {
+            force 'androidx.activity:activity:1.7.2'
+            force 'androidx.activity:activity-ktx:1.7.2'
+        }
+    }
 }
 
 rootProject.buildDir = '../build'

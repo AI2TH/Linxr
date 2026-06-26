@@ -248,4 +248,71 @@ else
     exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# Docker daemon startup (NEW-18)
+# ---------------------------------------------------------------------------
+# The OLD 23.apk had `docker run hello-world` working. Restore that behavior.
+#
+# Root causes of dockerd failure in QEMU virt environment (found via testing):
+#   1. overlay2 storage driver fails: overlayfs kernel module version mismatch
+#      (module built for 6.6.140, VM runs 6.6.142) → "no such device"
+#   2. iptables module (ip_tables) not found → dockerd can't init firewall
+#   3. bridge module not found → dockerd can't create docker0 bridge
+#
+# Fix: configure daemon.json with vfs storage driver (no kernel module needed),
+# disable iptables and bridge networking (not needed for single-VM use case).
+if command -v dockerd >/dev/null 2>&1; then
+    echo "Configuring Docker daemon for QEMU virt environment..."
+    mkdir -p /etc/docker
+
+    # vfs: copy-on-write via plain directory copies — no kernel module needed.
+    # iptables=false, bridge=none: skip modules that don't exist in virt kernel.
+    # registry-mirrors: use Chinese mirrors for faster image pulls over SLIRP.
+    cat > /etc/docker/daemon.json <<'DOCKEREOF'
+{
+  "storage-driver": "vfs",
+  "iptables": false,
+  "bridge": "none",
+  "registry-mirrors": [
+    "https://docker.m.daocloud.io",
+    "https://mirror.ccs.tencentyun.com"
+  ]
+}
+DOCKEREOF
+
+    # Clean any previous docker state from failed overlay2 attempts
+    rm -rf /var/lib/docker/* 2>/dev/null || true
+
+    # Start dockerd via OpenRC if the init script exists.
+    # Note: the OpenRC service is named 'docker' not 'dockerd'.
+    if [ -f /etc/init.d/docker ]; then
+        rc-service docker start >/var/log/dockerd.log 2>&1
+        echo "Docker started via rc-service docker (logging to /var/log/dockerd.log)"
+    else
+        # Fallback: start dockerd directly in background with logging
+        dockerd > /var/log/dockerd.log 2>&1 &
+        echo "Docker started directly (logging to /var/log/dockerd.log)"
+    fi
+
+    # Poll for /var/run/docker.sock — dockerd creates it when fully initialized.
+    # vfs driver + containerd init can take 10-15s under TCG emulation.
+    echo "Waiting for Docker socket..."
+    DOCKER_READY=0
+    for i in $(seq 1 30); do
+        if [ -S /var/run/docker.sock ]; then
+            DOCKER_READY=1
+            echo "Docker socket ready after ${i}s"
+            break
+        fi
+        sleep 1
+    done
+
+    if [ "$DOCKER_READY" -eq 1 ]; then
+        echo "=== Docker daemon is running ==="
+    else
+        echo "WARNING: Docker socket not ready after 30s. Check /var/log/dockerd.log"
+        tail -5 /var/log/dockerd.log 2>/dev/null || true
+    fi
+fi
+
 echo "=== Bootstrap Complete ==="

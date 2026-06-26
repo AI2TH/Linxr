@@ -54,7 +54,11 @@ android {
         versionName flutterVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         ndk {
-            abiFilters "arm64-v8a"
+            // NEW-13: include x86_64 so the APK can run natively on x86_64 emulators
+            // (LDPlayer) without relying on Houdini. libflutter.so for arm64-v8a uses
+            // AES+PCLMULQDQ CPU features which Houdini cannot emulate, causing
+            // SIGABRT in FlutterJNI.nativeInit. Native x86_64 build avoids this entirely.
+            abiFilters "arm64-v8a", "x86_64"
         }
     }
 
@@ -83,11 +87,6 @@ android {
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
-            // NEW-12: enable R8 minification on debug to strip android.window.OnBackAnimationCallback
-            // (API 33+) references that break Dalvik verification on Android 9 (LDPlayer).
-            minifyEnabled true
-            shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         release {
             signingConfig signingConfigs.release
@@ -109,26 +108,12 @@ flutter {
     source '../..'
 }
 
-// Force older androidx.activity to avoid OnBackAnimationCallback (API 33+)
-// being referenced in dex class signatures, which breaks Dalvik verification
-// on pre-API-33 devices like LDPlayer (Android 9 / API 28). NEW-12.
-configurations.all {
-    resolutionStrategy {
-        force 'androidx.activity:activity:1.7.2'
-        force 'androidx.activity:activity-ktx:1.7.2'
-    }
-}
-
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
-    // Pin to 1.10.1: 1.12.0 transitively pulls androidx.activity 1.8.x whose
-    // ComponentActivity$1 inner class references android.window.OnBackAnimationCallback
-    // (added in API 33). On Android 9 (API 28) the class verifier rejects the
-    // entire activity class, causing ClassNotFoundException at MainActivity
-    // instantiation. 1.10.1 uses androidx.activity 1.7.x which does not reference
-    // OnBackAnimationCallback. See NEW-12 in CHANGELOG.md.
+    // NEW-12: pin to 1.10.1 to avoid androidx.activity 1.8.x transitively pulled
+    // by androidx.core 1.12.0. 1.8.x references android.window.OnBackAnimationCallback
+    // (API 33+) which causes Dalvik class verification to fail on Android 9 (LDPlayer).
     implementation "androidx.core:core-ktx:1.10.1"
-    implementation "androidx.activity:activity:1.7.2"
 
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test:runner:1.5.2'

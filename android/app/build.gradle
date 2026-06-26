@@ -54,13 +54,14 @@ android {
         versionName flutterVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         ndk {
-            // NEW-13: ship ONLY x86_64 for LDPlayer builds. When the APK contains
-            // both arm64-v8a and x86_64, Android's package manager picks arm64-v8a
-            // (because it's listed first in abiFilters and LDPlayer exposes arm64-v8a
-            // in its ABI list). This forces Houdini translation which fails because
-            // libflutter.so uses AES+PCLMULQDQ CPU features that LDPlayer's host CPU
-            // doesn't have. Native x86_64 libflutter.so runs without translation.
-            abiFilters "x86_64"
+            // NEW-13: include BOTH x86_64 (native LDPlayer) and arm64-v8a (for
+            // libqemu.so + other native libs that only ship for arm64-v8a).
+            // List x86_64 FIRST so the package manager prefers the native libflutter.so
+            // (avoids Houdini translation that fails on AES+PCLMULQDQ instructions).
+            // When the VM starts, VmManager spawns qemu from jniLibs/arm64-v8a/libqemu.so
+            // via the Android NativeBridge (Houdini) — qemu is an interpreter and
+            // doesn't depend on host CPU crypto extensions.
+            abiFilters "x86_64", "arm64-v8a"
         }
     }
 

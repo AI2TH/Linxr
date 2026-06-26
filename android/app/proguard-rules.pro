@@ -23,13 +23,19 @@
     @android.webkit.JavascriptInterface <methods>;
 }
 
-# Allow R8 to remove unused AndroidX activity 1.8.x predictive-back code paths
-# so OnBackAnimationCallback isn't referenced in dex signatures.
+# NEW-12: Don't warn about API 33+ classes that are only used by predictive-back
+# gesture code paths. R8 will still keep the references but the build will succeed.
+-dontwarn android.window.OnBackAnimationCallback
+-dontwarn android.window.OnBackInvokedCallback
+-dontwarn android.window.OnBackInvokedDispatcher
+-dontwarn android.window.BackEvent
+
+# Allow R8 to remove unused AndroidX activity 1.8.x predictive-back code paths.
 -assumenosideeffects class androidx.activity.ComponentActivity {
     public *** onBackInvoked();
 }
 
-# Strip debug logs from release builds (not used in debug builds anyway).
+# Strip debug logs from release builds.
 -assumenosideeffects class android.util.Log {
     public static int d(...);
     public static int v(...);
@@ -37,3 +43,4 @@
 
 # Keep our own Kotlin classes.
 -keep class com.ai2th.linxr.** { *; }
+

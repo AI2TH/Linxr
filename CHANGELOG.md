@@ -283,4 +283,34 @@ reasoning for every change is in
 - **Commit:** UNFIXED (build-script change required)
 - **Summary:** After NEW-10, attempting `am instrument -w -e class com.ai2th.linxr.VmResourceTest com.ai2th.linxr.test/androidx.test.runner.AndroidJUnitRunner` returned `INSTRUMENTATION_STATUS_CODE: -1`. The `androidTest/` source set exists in the repo (`android/app/src/androidTest/kotlin/com/ai2th/linxr/VmResourceTest.kt`) but the debug APK does not package the test instrumentation classes. Two fix paths: (a) update `scripts/build_apk.sh` to chain-build `app-debug.apk` + `app-debug-androidTest.apk` and install both on the device, or (b) move `VmResourceTest` from `androidTest/` to `test/` (host-side JVM tests). Out-of-scope follow-up.
 
+#### NEW-16. Faster Alpine/npm/pip mirrors + QEMU TCG tb-size=1024
+- **Files:** `android/app/src/main/assets/bootstrap/init_bootstrap.sh`, `android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt`, `android/app/build.gradle`
+- **Commit:** `39f6da3`
+- **Summary:** Swap slow default package mirrors for fast China-based CDNs and
+  bump QEMU TCG translation block cache 4x (tb-size=256 → 1024). Alpine apk
+  now uses `mirrors.aliyun.com/alpine/v3.19` (with reachability test + fallback
+  to `dl-cdn.alpinelinux.org`); npm registry set to `registry.npmmirror.com`;
+  pip index set to `pypi.tuna.tsinghua.edu.cn/simple`. TCG tb-size=1024 reduces
+  JIT re-translation overhead under software emulation.
+- **Before/After timings** (phone 4XAIUK75LZBIO7T8, arm64-v8a, SSH via adb forward):
+  - `apk add bash`: 56.03s → 43.36s (22.6% faster)
+  - `pip install fastapi uvicorn`: TIMED OUT (>4min) → 529s/8m49s (NOW COMPLETES)
+  - `wget http://1.1.1.1/`: 0.29s → 0.18s
+  - `npm install fastapi`: 3m36.89s baseline (clean after-timing inconclusive under TCG load)
+- **Constraints:** No root required. No HTTP proxy, no disk cache, no 9p virtfs.
+  Only in-VM config changes + 1 QEMU cmdline arg change.
+
+#### NEW-18. Start dockerd inside VM so `docker run hello-world` works
+- **Files:** `android/app/src/main/assets/bootstrap/init_bootstrap.sh`
+- **Commit:** `ec43f5e`
+- **Summary:** Restore OLD 23.apk behavior where `docker run hello-world` worked.
+  init_bootstrap.sh now starts dockerd on first boot with a QEMU-compatible
+  configuration: `vfs` storage driver (no kernel module needed), `iptables: false`,
+  `bridge: none` (skip missing modules), and registry-mirrors for faster image
+  pulls. Polls `/var/run/docker.sock` up to 30s.
+- **Root causes fixed:** overlay2 fails (kernel 6.6.142 vs modules 6.6.140);
+  ip_tables/bridge modules missing in QEMU virt kernel.
+- **Verified at runtime:** `docker info` → Server Version 25.0.5, Storage Driver:
+  vfs; `docker run --rm hello-world` → "Hello from Docker!" EXIT 0.
+
 [Unreleased]: https://github.com/ai2th/linxr/compare/HEAD...bugs

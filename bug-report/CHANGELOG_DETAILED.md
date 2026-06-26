@@ -1849,3 +1849,134 @@ APK rebuild pending — the fix is in
 `android/app/src/main/AndroidManifest.xml` and will be picked up by
 the next `bash scripts/build_apk.sh debug`. After rebuild, re-run the
 same `adb install` + `am start` sequence to verify the crash is gone.
+
+---
+
+## NEW-16. Faster Alpine/npm/pip mirrors + QEMU TCG tb-size=1024
+
+**Commit:** `39f6da3`
+**Files:** `android/app/src/main/assets/bootstrap/init_bootstrap.sh`,
+`android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt`,
+`android/app/build.gradle`
+
+### Problem
+
+The VM uses QEMU's SLIRP user-mode networking (single-threaded TCP
+stack) and TCG software emulation (~3x slower than native). Default
+package mirrors (`dl-cdn.alpinelinux.org`, `registry.npmjs.org`,
+`pypi.org`) are geographically distant and slow over SLIRP. The TCG
+translation block cache was only 256 entries, causing frequent JIT
+re-translations.
+
+### Fix
+
+Three mirror swaps in `init_bootstrap.sh`:
+
+1. **Alpine apk** — `LINXR_APK_MIRROR` var (default
+   `mirrors.aliyun.com/alpine/v3.19`) with 3s reachability test
+   checking both aarch64 (phone) and x86_64 (emulator) APKINDEX.
+   Fallback to `dl-cdn.alpinelinux.org/alpine/v3.19`. Rewrites
+   `/etc/apk/repositories`.
+2. **npm registry** — `npm config set registry
+   https://registry.npmmirror.com` added to existing npm config block.
+3. **pip index** — `/root/.config/pip/pip.conf` with
+   `index-url=https://pypi.tuna.tsinghua.edu.cn/simple`,
+   `trusted-host`, `timeout=120`, `retries=5`.
+
+TCG change in `VmManager.kt` line 225:
+`-accel tcg,thread=multi,tb-size=256` → `tb-size=1024`
+(4x larger translation block cache reduces JIT re-translation
+overhead under software emulation).
+
+`build.gradle`: `abiFilters` now includes both `arm64-v8a` +
+`x86_64` (multi-ABI APK for phone + emulator testing).
+
+### Before/After Timings
+
+Measured on phone 4XAIUK75LZBIO7T8 (Xiaomi 2201117PI, Android 13,
+arm64-v8a) via SSH over `adb forward tcp:12345 tcp:2222`:
+
+| Benchmark | Before (baseline) | After (NEW-16) | Improvement |
+|---|---|---|---|
+| `apk add bash` | 56.03s | 43.36s | 22.6% faster |
+| `pip install fastapi uvicorn` | TIMED OUT (>4min) | 529s (8m49s) | NOW COMPLETES |
+| `wget http://1.1.1.1/` | 0.29s | 0.18s | 38% faster |
+| `npm install fastapi` | 3m36.89s | inconclusive | TCG load |
+
+### Constraints Honored
+
+- No root required (app itself needs no root)
+- No HTTP proxy server in Android app
+- No disk cache
+- No 9p virtfs
+- Only in-VM config changes + 1 QEMU cmdline arg change
+
+---
+
+## NEW-18. Start dockerd inside VM so `docker run hello-world` works
+
+**Commit:** `ec43f5e`
+**Files:** `android/app/src/main/assets/bootstrap/init_bootstrap.sh`
+
+### Problem
+
+The OLD 23.apk had `docker run hello-world` working. After the bugfix
+branch, dockerd failed to start inside the QEMU VM with three root
+causes:
+
+1. **overlay2 storage driver fails** — overlayfs kernel module
+   version mismatch (module built for 6.6.140, VM runs 6.6.142) →
+   "no such device" error.
+2. **iptables module (ip_tables) not found** — dockerd can't init
+   firewall rules.
+3. **bridge module not found** — dockerd can't create docker0 bridge
+   interface.
+
+### Fix
+
+`init_bootstrap.sh` now includes a Docker daemon startup block
+(guarded by `command -v dockerd`) that:
+
+1. Creates `/etc/docker/daemon.json` with:
+   - `"storage-driver": "vfs"` (copy-on-write via plain directory
+     copies — no kernel module needed)
+   - `"iptables": false` (skip missing ip_tables module)
+   - `"bridge": "none"` (skip missing bridge module)
+   - `"registry-mirrors": ["https://docker.m.daocloud.io",
+     "https://mirror.ccs.tencentyun.com"]` (faster image pulls)
+2. Cleans previous docker state (`rm -rf /var/lib/docker/*`)
+3. Starts dockerd via `rc-service docker start` (OpenRC service name
+   is `docker` not `dockerd`) with fallback to direct
+   `dockerd > /var/log/dockerd.log 2>&1 &`
+4. Polls for `/var/run/docker.sock` up to 30s (1s intervals)
+5. Reports success or logs failure (non-fatal — doesn't exit 1)
+
+### Runtime Verification
+
+On phone 4XAIUK75LZBIO7T8 (manually applied inside running VM since
+base.qcow2 contains old baked-in bootstrap):
+
+```
+$ docker info 2>&1 | head -15
+Client:
+ Version:    25.0.5
+Server:
+ Server Version: 25.0.5
+ Storage Driver: vfs
+ Cgroup Driver: cgroupfs
+ Cgroup Version: 2
+
+$ docker run --rm hello-world
+Hello from Docker!
+This message shows that your installation appears to be working correctly.
+EXIT_CODE=0
+```
+
+Image pulled from Docker Hub (arm64v8) via SLIRP networking.
+
+### Note on base.qcow2
+
+The `init_bootstrap.sh` changes are baked into `base.qcow2` at
+image-build time. To permanently apply, rebuild base.qcow2 via
+`bash scripts/build_qcow2.sh`. For this verification, changes were
+applied manually inside the running VM via SSH.

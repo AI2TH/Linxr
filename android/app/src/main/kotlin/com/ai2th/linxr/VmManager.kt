@@ -100,13 +100,29 @@ class VmManager(private val context: Context) {
             redirectErrorStream(true)
         }.start()
 
-        // Persist PID so we can kill this QEMU if the app restarts before stopVm()
-        // Use reflection: Process.pid() is Java 9+ but source compat is Java 8
-        vmProcess?.javaClass?.getMethod("pid")?.invoke(vmProcess)
-            ?.let { pid ->
-                val pidInt = (pid as Long).toInt()
-                if (pidInt > 0) File(filesDir, "vm.pid").writeText(pidInt.toString())
-            } ?: run { Log.w(TAG, "vmProcess is null, cannot save vm.pid") }
+        // Persist PID so we can kill this QEMU if the app restarts before stopVm().
+        // Use reflection: Process.pid() is Java 9+ but source compat is Java 8.
+        // NEW-15: wrap reflection in try-catch — on Android 13 (API 33) ART runtime
+        // the reflection can throw ClassCastException ("java.lang.UNIXProcess.pid []")
+        // because UNIXProcess.pid() may return a long[] array instead of a boxed
+        // Long on some platform versions. Without this catch, the exception
+        // propagates to MainActivity as VM_START_ERROR and VmState sets _status='error'
+        // even though QEMU successfully spawned. The QEMU stays running but the UI
+        // wrongly reports "VM is not running". This is a non-fatal nicety — pid
+        // persistence is for orphan QEMU kill on app restart, not for VM functionality.
+        try {
+            val pidObj = vmProcess?.javaClass?.getMethod("pid")?.invoke(vmProcess)
+            val pidInt: Int = when (pidObj) {
+                is Long -> pidObj.toInt()
+                is Int -> pidObj
+                is LongArray -> pidObj.firstOrNull()?.toInt() ?: 0
+                is IntArray -> pidObj.firstOrNull() ?: 0
+                else -> 0
+            }
+            if (pidInt > 0) File(filesDir, "vm.pid").writeText(pidInt.toString())
+        } catch (e: Throwable) {
+            Log.w(TAG, "pid reflection failed (non-fatal): ${e.javaClass.simpleName}: ${e.message}")
+        }
 
         isRunning = true
 

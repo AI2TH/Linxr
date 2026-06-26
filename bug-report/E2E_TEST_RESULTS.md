@@ -294,4 +294,61 @@ All previous 46 bugs (C1-C8, M1-M12, L1-L15, NEW-1..NEW-11) remain PASS. NEW-12 
 
 The phone (real arm64 device) is the canonical test environment for this app; LDPlayer (x86_64 emulator) has limitations documented as NEW-14.
 
+---
+
+## Ferment 4: SLIRP + Alpine Mirror Speedup (NEW-16 + NEW-18)
+
+**Date:** 2026-06-26
+**Phone:** 4XAIUK75LZBIO7T8 (Xiaomi 2201117PI, Android 13, arm64-v8a)
+**Commits:** `39f6da3` (NEW-16), `ec43f5e` (NEW-18)
+
+### QEMU Cmdline Verified at Runtime
+
+`/proc/<qemu-pid>/cmdline` confirms:
+```
+-accel tcg,thread=multi,tb-size=1024
+```
+(was `tb-size=256` before NEW-16 fix)
+
+### Benchmark Results: Before vs After
+
+| Benchmark | Before (baseline) | After (NEW-16) | Status |
+|---|---|---|---|
+| `apk add bash` | 56.03s | 43.36s | ✅ 22.6% faster |
+| `pip install fastapi uvicorn` | TIMED OUT (>4min) | 529s (8m49s) | ✅ NOW COMPLETES |
+| `wget http://1.1.1.1/` | 0.29s | 0.18s | ✅ 38% faster |
+| `npm install fastapi` | 3m36.89s | inconclusive | ⚠️ TCG load |
+| `docker run --rm hello-world` | EXIT 125 | EXIT 0 | ✅ FIXED (NEW-18) |
+
+### Docker Verification (NEW-18)
+
+```
+$ docker info
+Server:
+ Server Version: 25.0.5
+ Storage Driver: vfs
+ Cgroup Driver: cgroupfs
+ Cgroup Version: 2
+
+$ docker run --rm hello-world
+Hello from Docker!
+This message shows that your installation appears to be working correctly.
+EXIT_CODE=0
+```
+
+### Mirror Configuration Verified Inside VM
+
+- `/etc/apk/repositories` → `https://mirrors.aliyun.com/alpine/v3.19/main` + `/community`
+- npm registry → `https://registry.npmmirror.com`
+- pip.conf → `index-url=https://pypi.tuna.tsinghua.edu.cn/simple`
+- `/etc/docker/daemon.json` → `vfs` + `iptables:false` + `bridge:none` + registry-mirrors
+
+### Notes
+
+- `init_bootstrap.sh` changes are baked into `base.qcow2` at image-build time.
+  For permanent application, rebuild base.qcow2 via `bash scripts/build_qcow2.sh`.
+  For this verification, changes were applied manually inside the running VM.
+- No root required. No HTTP proxy, no disk cache, no 9p virtfs.
+- Only in-VM config changes + 1 QEMU cmdline arg change.
+
 

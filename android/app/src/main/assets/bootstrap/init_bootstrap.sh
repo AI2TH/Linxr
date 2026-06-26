@@ -6,6 +6,37 @@
 echo "=== Alpine VM Bootstrap Starting ==="
 
 # ---------------------------------------------------------------------------
+# Package mirror configuration (NEW-16)
+# ---------------------------------------------------------------------------
+# Use a fast mirror (mirrors.aliyun.com) instead of the default
+# dl-cdn.alpinelinux.org. The Aliyun CDN has PoPs across Asia and
+# dramatically reduces apk download times over SLIRP networking.
+# If the mirror is unreachable, fall back to the official CDN.
+# Override at build time by setting LINXR_APK_MIRROR before this runs.
+LINXR_APK_MIRROR="${LINXR_APK_MIRROR:-mirrors.aliyun.com/alpine/v3.19}"
+LINXR_APK_FALLBACK="dl-cdn.alpinelinux.org/alpine/v3.19"
+
+# Test mirror reachability (3s timeout); fall back if needed.
+# Check both aarch64 (phone) and x86_64 (emulator) index files.
+if wget -q -T 3 -O /dev/null "https://${LINXR_APK_MIRROR}/main/aarch64/APKINDEX.tar.gz" 2>/dev/null \
+|| wget -q -T 3 -O /dev/null "https://${LINXR_APK_MIRROR}/main/x86_64/APKINDEX.tar.gz" 2>/dev/null; then
+    APK_HOST="$LINXR_APK_MIRROR"
+    echo "Using fast Alpine mirror: https://$APK_HOST"
+else
+    APK_HOST="$LINXR_APK_FALLBACK"
+    echo "Fast mirror unreachable, falling back to: https://$APK_HOST"
+fi
+
+# Rewrite /etc/apk/repositories to use the selected mirror
+cat > /etc/apk/repositories <<REPOEOF
+https://${APK_HOST}/main
+https://${APK_HOST}/community
+REPOEOF
+
+apk update 2>/dev/null || true
+echo "Alpine repositories configured."
+
+# ---------------------------------------------------------------------------
 # Expand filesystem to fill the virtual disk
 # ---------------------------------------------------------------------------
 echo "Expanding filesystem to fill disk..."
@@ -163,10 +194,28 @@ echo "Network tuning applied."
 # fetch timeout can still expire under load. Pre-configure npm to retry
 # more aggressively. Only runs if npm/Node.js is installed.
 if command -v npm >/dev/null 2>&1 || [ -d /usr/lib/node_modules ]; then
+    npm config set registry https://registry.npmmirror.com        2>/dev/null || true
     npm config set fetch-retry-maxtimeout 120000 2>/dev/null || true
     npm config set fetch-retry-mintimeout 20000  2>/dev/null || true
     npm config set fetch-retries 5               2>/dev/null || true
-    echo "npm retry config set for SLIRP networking."
+    echo "npm registry set to npmmirror.com + retry config for SLIRP."
+fi
+
+# ---------------------------------------------------------------------------
+# pip mirror configuration (NEW-16)
+# ---------------------------------------------------------------------------
+# Use Tsinghua University mirror (pypi.tuna.tsinghua.edu.cn) for faster
+# pip downloads over SLIRP. Falls back silently if pip not installed yet.
+if command -v pip >/dev/null 2>&1 || command -v pip3 >/dev/null 2>&1; then
+    mkdir -p /root/.config/pip
+    cat > /root/.config/pip/pip.conf <<'PIPEOF'
+[global]
+index-url = https://pypi.tuna.tsinghua.edu.cn/simple
+trusted-host = pypi.tuna.tsinghua.edu.cn
+timeout = 120
+retries = 5
+PIPEOF
+    echo "pip mirror set to Tsinghua (pypi.tuna.tsinghua.edu.cn)."
 fi
 
 # ---------------------------------------------------------------------------

@@ -54,12 +54,11 @@ android {
         versionName flutterVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         ndk {
-            // NEW-13: ship ONLY x86_64 for LDPlayer. Native execution avoids
-            // Houdini AES+PCLMULQDQ translation failures. libqemu.so (arm64-v8a
-            // only) is unavailable on x86_64 — VM start fails but app launches
-            // and UI is fully functional. For VM testing, use a real arm64-v8a
-            // device or build QEMU x86_64 from source (see NEW-14).
-            abiFilters "x86_64"
+            // NEW-13/NEW-15: include BOTH arm64-v8a (for real Android devices
+            // where libqemu.so is available and VM can start natively) and
+            // x86_64 (for LDPlayer emulator where app can launch natively but
+            // VM requires NEW-14 fix — QEMU x86_64 cross-compile).
+            abiFilters "arm64-v8a", "x86_64"
         }
     }
 

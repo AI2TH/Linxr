@@ -54,11 +54,13 @@ android {
         versionName flutterVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         ndk {
-            // NEW-13: include x86_64 so the APK can run natively on x86_64 emulators
-            // (LDPlayer) without relying on Houdini. libflutter.so for arm64-v8a uses
-            // AES+PCLMULQDQ CPU features which Houdini cannot emulate, causing
-            // SIGABRT in FlutterJNI.nativeInit. Native x86_64 build avoids this entirely.
-            abiFilters "arm64-v8a", "x86_64"
+            // NEW-13: ship ONLY x86_64 for LDPlayer builds. When the APK contains
+            // both arm64-v8a and x86_64, Android's package manager picks arm64-v8a
+            // (because it's listed first in abiFilters and LDPlayer exposes arm64-v8a
+            // in its ABI list). This forces Houdini translation which fails because
+            // libflutter.so uses AES+PCLMULQDQ CPU features that LDPlayer's host CPU
+            // doesn't have. Native x86_64 libflutter.so runs without translation.
+            abiFilters "x86_64"
         }
     }
 

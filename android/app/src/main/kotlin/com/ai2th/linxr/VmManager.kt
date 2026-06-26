@@ -220,7 +220,9 @@ class VmManager(private val context: Context) {
 
         // Multi-threaded TCG: one thread per vCPU — significantly faster boot and runtime.
         // On emulators, vcpu is capped to 1 so thread=multi does not starve the host.
-        cmd += listOf("-accel", "tcg,thread=multi,tb-size=256")
+        // tb-size=1024 (NEW-16): 4x larger translation block cache (was 256) reduces
+        // JIT re-translation overhead, speeding up CPU-intensive workloads like npm/pip.
+        cmd += listOf("-accel", "tcg,thread=multi,tb-size=1024")
         cmd += listOf("-overcommit", "mem-lock=off")
 
         cmd += listOf("-smp", vcpu.toString())

@@ -106,7 +106,14 @@ flutter {
 
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
-    implementation "androidx.core:core-ktx:1.12.0"
+    // Pin to 1.10.1: 1.12.0 transitively pulls androidx.activity 1.8.x whose
+    // ComponentActivity$1 inner class references android.window.OnBackAnimationCallback
+    // (added in API 33). On Android 9 (API 28) the class verifier rejects the
+    // entire activity class, causing ClassNotFoundException at MainActivity
+    // instantiation. 1.10.1 uses androidx.activity 1.7.x which does not reference
+    // OnBackAnimationCallback. See NEW-12 in CHANGELOG.md.
+    implementation "androidx.core:core-ktx:1.10.1"
+    implementation "androidx.activity:activity:1.7.2"
 
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test:runner:1.5.2'

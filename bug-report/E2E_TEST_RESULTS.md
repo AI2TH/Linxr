@@ -218,3 +218,80 @@ After this, rebuild the APK and the VM/SSH tests will pass.
 - APK: `build/linxr-debug.apk` (142.6 MB, x86_64-only)
 - APK signing: Cert SHA-256 `7dabcb2b705097a5c1f44ea81f6c3fb22b262ddba23b0e632087ee990c74d88d` (verified `apksigner verify --print-certs`) matches `linxr-debug.keystore` exactly
 
+---
+
+## Phone runtime verification (2026-06-26) — NEW-15 fix
+
+**Device:** `4XAIUK75LZBIO7T8` (Xiaomi 2201117PI, Android 13 / API 33, arm64-v8a, abilist `arm64-v8a,armeabi-v7a,armeabi`)
+**APK installed:** `build/linxr-debug.apk` (149.5 MB, multi-ABI arm64-v8a + x86_64)
+
+### Bug discovered
+
+User reported Terminal tab showing **"VM is not running. Start it from the Home tab."** even though port 2222 was listening and SSH worked externally.
+
+### Root cause (NEW-15)
+
+In `VmManager.startVm()` (VmManager.kt:103-105), the post-spawn `Process.pid()` reflection call:
+```kotlin
+vmProcess?.javaClass?.getMethod("pid")?.invoke(vmProcess)
+    ?.let { pid ->
+        val pidInt = (pid as Long).toInt()
+        if (pidInt > 0) File(filesDir, "vm.pid").writeText(pidInt.toString())
+    }
+```
+threw `NoSuchMethodException: java.lang.UNIXProcess.pid []` on Android 13 ART runtime. The exception propagated to `MainActivity.onMethodCall("startVm")`, which reported it as `VM_START_ERROR` PlatformException. Dart side caught it, set `_status = 'error'`, and the UI permanently showed "VM is not running". The QEMU process had already spawned successfully and was running with sshd on port 2222 — only the Dart-side state machine was wrong.
+
+### Fix (commit `45b3a07`)
+
+Wrap the pid reflection in `try-catch`, handle the case where the underlying method may return `Long`, `Int`, `LongArray`, `IntArray`, or `null`, and log any failure as `non-fatal` (warning-level). PID persistence is for orphan QEMU kill on app restart — a nice-to-have, not essential for VM functionality. With the catch, `startVm()` continues to `isRunning = true` and the VM UI properly reflects the running state.
+
+### Runtime verification on phone (NEW-15 fix verified)
+
+| Test | Result | Evidence |
+|------|--------|----------|
+| Install APK | PASS | `adb install -r -t -g` → Success (after user-confirm) |
+| App launches | PASS | `am start -W` → 3705ms; MainActivity topResumedActivity |
+| Home screen renders | PASS | uiautomator: "Linxr", "Alpine Linux VM Stopped", "Shell Access", "Start VM" button at (540, 1204), 4 nav tabs |
+| Tap Start VM | PASS | logcat: `VmManager: startVm()` → `pid reflection failed (non-fatal): NoSuchMethodException` → `VM process launched` (no VM_START_ERROR) |
+| QEMU spawned | PASS | `ps -A` shows libqemu.so PID 22155, RSS 337 MB |
+| Port 2222 listening | PASS | `netstat -tln` shows `tcp 0.0.0.0:2222 LISTEN` |
+| QEMU command line | PASS | libqemu.so arm64-v8a, cache=writethrough, hostfwd=tcp::2222-:22, vmlinuz-virt + initramfs-virt |
+| VM boots (Dart SSH ping succeeds) | PASS | UI transitions Stopped → Booting → Running after ~60s |
+| Home shows "Running" | PASS | uiautomator: "Alpine Linux VM Running" + "Stop VM" button |
+| **SSH-internal: uname** | PASS | `Linux linxr 6.6.142-0-virt #1-Alpine SMP aarch64 Linux` |
+| **SSH-internal: os-release** | PASS | `Alpine Linux v3.19.9` |
+| **SSH-internal: id** | PASS | `uid=0(root) gid=0(root) groups=0(root),1(bin),...,10(wheel),...` |
+| **SSH-internal: ls /** | PASS | `bin dev etc home lib lost+found media mnt opt proc root run sbin srv sys tmp usr var` |
+| **SSH-internal: apk version** | PASS | `apk-tools 2.14.4, compiled for aarch64` |
+| **SSH-internal: UTF-8 round-trip** | PASS | `Hello Linxr — αβγ 中文 🐧` echoed back correctly |
+| **SSH-internal: docker** | PASS (CLI only) | `Docker version 25.0.5, build d260a54c81efcc3f00fe67dee78c94b16c2f8692` (CLI present; daemon not running in VM, normal for minimal Alpine image) |
+| **SSH-internal: npm** | NOT INSTALLED | `node: not found`; can be installed via `apk add nodejs npm` — not pre-baked in qcow2 |
+| Terminal tab: Connected | PASS | uiautomator: "Terminal", "Connected", "Shell 1", Tab/Esc/arrow/C-c/d/z/l keyboard |
+| **Tap Stop VM** | PASS | logcat: `VmManager: stopVm()` → `VM stopped`; QEMU gone; WakeLock `REL Linxr:VM`; port 2222 TIME_WAIT then closed; UI → "Stopped" + "Start VM" |
+| **Restart cycle** | PASS | Tap Start again → new QEMU PID 23518 → "Booting" → "Running" after ~60s |
+| **Tab navigation (Home/Terminal/Settings/About)** | PASS | uiautomator dumps for each tab show correct content (Settings: sliders + Restart button; About: version info) |
+| APK signing | PASS | Cert SHA-256 matches linxr-debug.keystore exactly |
+
+### Per-bug verification update (46/46 + NEW-15)
+
+All previous 46 bugs (C1-C8, M1-M12, L1-L15, NEW-1..NEW-11) remain PASS. NEW-12 and NEW-13 also PASS on phone (covered by the same `am start -W` + UI dump evidence). **NEW-15** PASS (fixed + verified). **NEW-14** remains deferred — x86_64 QEMU not built; phone uses native arm64 so doesn't need it.
+
+### Final state
+
+- **Branch:** `bugs` @ `45b3a07 fix(NEW-15): catch pid() reflection failure in VmManager.startVm()`
+- **Total commits on `bugs`:** 85
+- **New commit this session:** `45b3a07`
+- **APK:** `build/linxr-debug.apk` (149.5 MB, multi-ABI)
+- **LDPlayer (x86_64):** App launches, all UI tabs accessible, VM blocked by NEW-14 (x86_64 libqemu.so missing) — documented in `bug-report/E2E_TEST_RESULTS.md` upper sections
+- **Phone (arm64-v8a, API 33):** Full app + VM + SSH + tabs + restart cycle all PASS at runtime
+
+### Per-environment summary
+
+| Environment | App launches | UI tabs | VM start | SSH terminal | VM/SSH restart |
+|-------------|--------------|---------|----------|--------------|----------------|
+| LDPlayer @ 127.0.0.1:5555 (x86_64) | ✅ | ✅ | ❌ NEW-14 | n/a | n/a |
+| Phone @ 4XAIUK75LZBIO7T8 (arm64-v8a) | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+The phone (real arm64 device) is the canonical test environment for this app; LDPlayer (x86_64 emulator) has limitations documented as NEW-14.
+
+

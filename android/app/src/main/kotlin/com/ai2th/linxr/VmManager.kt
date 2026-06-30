@@ -185,14 +185,14 @@ class VmManager(private val context: Context) {
 
     @Synchronized
     fun getStatus(): String {
-        vmProcess?.let {
-            return try {
-                it.exitValue()
+        val proc = vmProcess
+        if (proc != null) {
+            if (proc.isAlive) {
+                return "running"
+            } else {
                 isRunning = false
                 vmProcess = null
-                "stopped"
-            } catch (_: IllegalThreadStateException) {
-                "running"
+                return "stopped"
             }
         }
         return "stopped"
@@ -243,7 +243,7 @@ class VmManager(private val context: Context) {
             "user,id=net0," +
             "dns=1.1.1.1," +
             "dnssearch=lan," +
-            "hostfwd=tcp:127.0.0.1:2222-:22"
+            "hostfwd=tcp::2222-:22"
         )
 
         if (isArm) {

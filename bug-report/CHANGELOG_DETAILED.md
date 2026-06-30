@@ -1980,3 +1980,123 @@ The `init_bootstrap.sh` changes are baked into `base.qcow2` at
 image-build time. To permanently apply, rebuild base.qcow2 via
 `bash scripts/build_qcow2.sh`. For this verification, changes were
 applied manually inside the running VM via SSH.
+
+---
+
+## PR-20. Bind QEMU hostfwd to 127.0.0.1 (security hardening)
+
+**Commit:** `897cc5b` (+ fixup `91ec19a`)
+**Files:** `android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt`,
+`README.md`, `IMPROVE.md`, `PAPER.md`
+
+### Problem
+
+`VmManager.buildQemuCommand()` configured the SLIRP port forward as:
+
+```
+-netdev user,id=net0,...,hostfwd=tcp::2222-:22
+```
+
+When the host-side port is specified without an IP address, QEMU SLIRP
+binds the forward on **all interfaces** (`0.0.0.0:2222`). This means any
+device on the same network as the phone can reach the guest SSH service
+(port 22) through the forwarded port 2222. Because the VM uses a
+hardcoded root password (`alpine`), binding externally creates an
+avoidable attack surface.
+
+### Fix
+
+Change the hostfwd argument to explicitly bind the listener to the
+loopback interface only:
+
+```
+-netdev user,id=net0,...,hostfwd=tcp:127.0.0.1:2222-:22
+```
+
+Now only apps running on the same Android device can connect to
+`127.0.0.1:2222` from the host side. External hosts cannot reach the VM
+through this forward.
+
+### Files Updated
+
+- `android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt`
+  - Line ~246: `hostfwd=tcp::2222-:22` → `hostfwd=tcp:127.0.0.1:2222-:22`
+- `README.md`: Updated SLIRP description
+- `IMPROVE.md`: Updated dynamic hostfwd example
+- `PAPER.md`: Updated QEMU command-line example
+
+### Security Note
+
+This is defense-in-depth. The SSH password is still hardcoded inside the
+VM, so binding the forward to loopback reduces the blast radius if the
+device is on an untrusted network. A future improvement would be to
+allow users to change the root password and/or use key-based auth, but
+that requires guest-side changes (see PR #6 discussion).
+
+---
+
+## PR-7. Replace exception-based control flow in `VmManager.getStatus()`
+
+**Commit:** `b7f3d5b`
+**Files:** `android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt`
+
+### Problem
+
+`VmManager.getStatus()` was called every 5 seconds by the Flutter
+`VmState` polling timer to determine whether the QEMU process was still
+running. The implementation used `Process.exitValue()`:
+
+```kotlin
+vmProcess?.let {
+    return try {
+        it.exitValue()
+        isRunning = false
+        vmProcess = null
+        "stopped"
+    } catch (_: IllegalThreadStateException) {
+        "running"
+    }
+}
+return "stopped"
+```
+
+`exitValue()` throws `IllegalThreadStateException` when the process is
+still alive. Because the VM is alive for almost the entire duration the
+app is open, **every poll threw and caught an exception**. Exceptions are
+relatively expensive on Android (stack trace capture, allocation), and
+they are also noisy in profiling/traces.
+
+### Fix
+
+Use `Process.isAlive()` directly:
+
+```kotlin
+val proc = vmProcess
+if (proc != null) {
+    if (proc.isAlive) {
+        return "running"
+    } else {
+        isRunning = false
+        vmProcess = null
+        return "stopped"
+    }
+}
+return "stopped"
+```
+
+### Why This Is Better
+
+- `isAlive()` is a simple JNI/native status check; no exception is
+  thrown or caught.
+- Semantically clearer: the code reads as a state check rather than a
+  control-flow-by-exception pattern.
+- Preserves the exact same behavior: returns `"running"` while alive,
+  `"stopped"` after exit, and cleans up `vmProcess`.
+
+### Interaction With Other Fixes
+
+This function already had `@Synchronized` added in fix C3
+(commit `4e16403`), so the new implementation remains thread-safe under
+concurrent calls from `VmState` polling and `MainActivity` lifecycle
+callbacks.
+

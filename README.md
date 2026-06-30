@@ -68,7 +68,7 @@ Android App (Flutter + Kotlin)
 ├── VmService.kt          — foreground service keeps QEMU alive
 │
 ├── QEMU (libqemu.so)     — aarch64 machine emulation
-│   └── SLIRP networking  — NAT with hostfwd TCP:2222→:22
+│   └── SLIRP networking  — NAT with hostfwd TCP:127.0.0.1:2222→:22
 │
 └── Alpine Linux VM
     ├── OpenRC init       — sysinit / boot / default runlevels

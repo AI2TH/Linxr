@@ -313,4 +313,27 @@ reasoning for every change is in
 - **Verified at runtime:** `docker info` → Server Version 25.0.5, Storage Driver:
   vfs; `docker run --rm hello-world` → "Hello from Docker!" EXIT 0.
 
+#### PR-20. Bind QEMU hostfwd to 127.0.0.1 (security hardening)
+- **Files:** `android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt`,
+  `README.md`, `IMPROVE.md`, `PAPER.md`
+- **Commit:** `897cc5b` (+ `91ec19a` fixup)
+- **Summary:** Change SLIRP port forward from binding on all interfaces
+  (`hostfwd=tcp::2222-:22`) to loopback only
+  (`hostfwd=tcp:127.0.0.1:2222-:22`). Prevents any external network host from
+  reaching the guest SSH service. Documentation examples updated to match.
+
+#### PR-7. Replace exception-based control flow in `VmManager.getStatus()`
+- **Files:** `android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt`
+- **Commit:** `b7f3d5b`
+- **Summary:** Use `Process.isAlive()` instead of catching
+  `IllegalThreadStateException` from `Process.exitValue()`. Eliminates exception
+  overhead during the 5-second VM status polling loop.
+
+#### PR-5. Add `VmState.startVm` success path test
+- **Files:** `test/services/vm_state_test.dart` (new)
+- **Commit:** `6ea4f27`
+- **Summary:** Unit test verifies startVm() transitions status
+  `stopped → starting → running`, toggles `isLoading`, clears `errorMessage`,
+  and invokes the `com.ai2th.linxr/vm` platform channel once.
+
 [Unreleased]: https://github.com/ai2th/linxr/compare/HEAD...bugs

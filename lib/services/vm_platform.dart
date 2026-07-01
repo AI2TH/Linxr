@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import '../constants.dart';
 
 class VmPlatform {
   static const _channel = MethodChannel('com.ai2th.linxr/vm');
@@ -45,14 +46,14 @@ class VmPlatform {
     SSHClient? client;
     try {
       final socket = await SSHSocket.connect(
-        '127.0.0.1',
-        2222,
+        SshDefaults.host,
+        SshDefaults.port,
         timeout: const Duration(seconds: 3),
       );
       client = SSHClient(
         socket,
-        username: 'root',
-        onPasswordRequest: () => 'alpine',
+        username: SshDefaults.username,
+        onPasswordRequest: () => SshDefaults.password,
       );
       await client.authenticated.timeout(const Duration(seconds: 4));
       return true;
@@ -82,6 +83,7 @@ class VmState extends ChangeNotifier {
 
   Timer? _pollTimer;
   Timer? _sshPingTimer;
+  bool _isPolling = false;
 
   String get status => _status;
   bool get isLoading => _isLoading;
@@ -165,14 +167,20 @@ class VmState extends ChangeNotifier {
   void _startPolling() {
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+      if (_isPolling) return;
       if (_status != 'running') {
         _stopPolling();
         return;
       }
-      final s = await VmPlatform.getVmStatus();
-      if (s != _status) {
-        _status = s;
-        notifyListeners();
+      _isPolling = true;
+      try {
+        final s = await VmPlatform.getVmStatus();
+        if (s != _status) {
+          _status = s;
+          notifyListeners();
+        }
+      } finally {
+        _isPolling = false;
       }
     });
   }

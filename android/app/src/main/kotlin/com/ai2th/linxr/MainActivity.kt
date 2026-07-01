@@ -1,19 +1,54 @@
 package com.ai2th.linxr
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
+import android.util.Log
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class MainActivity : FlutterActivity() {
+    companion object {
+        private const val TAG = "LinxrMainActivity"
+    }
     private val CHANNEL = "com.ai2th.linxr/vm"
     private val vmManager get() = (applicationContext as AlpineApp).vmManager
     private val executor = Executors.newSingleThreadExecutor()
 
+    private val REQUEST_POST_NOTIFICATIONS = 1001
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                    REQUEST_POST_NOTIFICATIONS
+                )
+            }
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_POST_NOTIFICATIONS) {
+            val granted = grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+            Log.i(TAG, "POST_NOTIFICATIONS granted=$granted")
+        }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -26,9 +61,9 @@ class MainActivity : FlutterActivity() {
                         try {
                             startVmService()
                             vmManager.startVm()
-                            runOnUiThread { result.success(null) }
+                            if (!isFinishing) runOnUiThread { result.success(null) }
                         } catch (e: Exception) {
-                            runOnUiThread { result.error("VM_START_ERROR", e.message, null) }
+                            if (!isFinishing) runOnUiThread { result.error("VM_START_ERROR", e.message, null) }
                         }
                     }
 
@@ -36,17 +71,18 @@ class MainActivity : FlutterActivity() {
                         try {
                             vmManager.stopVm()
                             stopVmService()
-                            runOnUiThread { result.success(null) }
+                            if (!isFinishing) runOnUiThread { result.success(null) }
                         } catch (e: Exception) {
-                            runOnUiThread { result.error("VM_STOP_ERROR", e.message, null) }
+                            if (!isFinishing) runOnUiThread { result.error("VM_STOP_ERROR", e.message, null) }
                         }
                     }
 
-                    "getVmStatus" -> {
+                    "getVmStatus" -> executor.execute {
                         try {
-                            result.success(vmManager.getStatus())
+                            val status = vmManager.getStatus()
+                            if (!isFinishing) runOnUiThread { result.success(status) }
                         } catch (e: Exception) {
-                            result.success("unknown")
+                            if (!isFinishing) runOnUiThread { result.success("unknown") }
                         }
                     }
 
@@ -63,9 +99,9 @@ class MainActivity : FlutterActivity() {
                             vmManager.stopVm()
                             stopVmService()
                             vmManager.resetStorage()
-                            runOnUiThread { result.success(null) }
+                            if (!isFinishing) runOnUiThread { result.success(null) }
                         } catch (e: Exception) {
-                            runOnUiThread { result.error("RESET_ERROR", e.message, null) }
+                            if (!isFinishing) runOnUiThread { result.error("RESET_ERROR", e.message, null) }
                         }
                     }
 
@@ -75,7 +111,8 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
-        executor.shutdown()
+        executor.shutdownNow()
+        executor.awaitTermination(10, TimeUnit.SECONDS)
         super.onDestroy()
     }
 

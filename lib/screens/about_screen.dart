@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import '../theme.dart';
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
@@ -75,7 +76,7 @@ class _AppInfoCardState extends State<_AppInfoCard> {
   @override
   Widget build(BuildContext context) {
     return Card(
-      color: const Color(0xFF1A1D23),
+      color: AppColors.surface,
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Row(
@@ -109,17 +110,17 @@ class _AppInfoCardState extends State<_AppInfoCard> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF0D6EFD).withOpacity(0.15),
+                        color: AppColors.primary.withOpacity(0.15),
                         borderRadius: BorderRadius.circular(4),
                         border: Border.all(
-                          color: const Color(0xFF0D6EFD).withOpacity(0.4),
+                          color: AppColors.primary.withOpacity(0.4),
                         ),
                       ),
                       child: Text(
                         'v$_version',
                         style: const TextStyle(
                           fontSize: 11,
-                          color: Color(0xFF0D6EFD),
+                          color: AppColors.primary,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -189,11 +190,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
   @override
   Widget build(BuildContext context) {
     return Card(
-      color: const Color(0xFF1A1D23),
+      color: AppColors.surface,
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
-          leading: const Icon(Icons.gavel, color: Color(0xFF20C997), size: 20),
+          leading: const Icon(Icons.gavel, color: AppColors.secondary, size: 20),
           title: const Text('License',
               style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
           subtitle: const Text('MIT License — Open Source',
@@ -254,12 +255,12 @@ class _DependenciesCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      color: const Color(0xFF1A1D23),
+      color: AppColors.surface,
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           leading: const Icon(Icons.account_tree_outlined,
-              color: Color(0xFF0D6EFD), size: 20),
+              color: AppColors.primary, size: 20),
           title: const Text('Open Source Components',
               style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
           subtitle: Text('${_deps.length} components',
@@ -299,15 +300,15 @@ class _DepTile extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
-              color: const Color(0xFF20C997).withOpacity(0.12),
+              color: AppColors.secondary.withOpacity(0.12),
               borderRadius: BorderRadius.circular(4),
               border: Border.all(
-                  color: const Color(0xFF20C997).withOpacity(0.3)),
+                  color: AppColors.secondary.withOpacity(0.3)),
             ),
             child: Text(
               dep.license,
               style: const TextStyle(
-                  fontSize: 9, color: Color(0xFF20C997), fontWeight: FontWeight.w600),
+                  fontSize: 9, color: AppColors.secondary, fontWeight: FontWeight.w600),
             ),
           ),
           const SizedBox(width: 10),

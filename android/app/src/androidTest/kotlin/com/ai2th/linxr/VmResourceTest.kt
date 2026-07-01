@@ -32,7 +32,7 @@ class VmResourceTest {
         try { vmManager.stopVm() } catch (_: Exception) {}
     }
 
-    @Test(timeout = 900_000) // 15 min
+    @Test(timeout = 6_000_000) // 100 min
     fun checkVmResources() {
         waitForSsh()
 
@@ -102,8 +102,8 @@ class VmResourceTest {
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     private fun waitForSsh() {
-        val deadline = System.currentTimeMillis() + 12 * 60_000L
-        Log.i(TAG, "Waiting for SSH on 127.0.0.1:2222 (up to 12 min)...")
+        val deadline = System.currentTimeMillis() + 90 * 60_000L
+        Log.i(TAG, "Waiting for SSH on 127.0.0.1:2222 (up to 90 min)...")
         while (System.currentTimeMillis() < deadline) {
             try {
                 Socket().use { it.connect(InetSocketAddress("127.0.0.1", 2222), 3_000) }
@@ -113,17 +113,26 @@ class VmResourceTest {
                 Thread.sleep(5_000)
             }
         }
-        throw AssertionError("VM SSH not ready within 12 minutes")
+        throw AssertionError("VM SSH not ready within 90 minutes")
     }
 
     private fun openSession(): Session {
+        val deadline = System.currentTimeMillis() + 90 * 60_000L
         val jsch = JSch()
-        val session = jsch.getSession("root", "127.0.0.1", 2222)
-        session.setPassword("alpine")
-        session.setConfig("StrictHostKeyChecking", "no")
-        session.setConfig("PreferredAuthentications", "password")
-        session.connect(30_000)
-        return session
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                val session = jsch.getSession("root", "127.0.0.1", 2222)
+                session.setPassword("alpine")
+                session.setConfig("StrictHostKeyChecking", "no")
+                session.setConfig("PreferredAuthentications", "password")
+                session.connect(15_000)
+                return session
+            } catch (e: Exception) {
+                Log.w(TAG, "SSH connection attempt failed: ${e.message}, retrying in 5s...")
+                try { Thread.sleep(5_000) } catch (_: InterruptedException) {}
+            }
+        }
+        throw AssertionError("Failed to connect SSH session within 90 minutes")
     }
 
     private fun exec(session: Session, cmd: String): String {

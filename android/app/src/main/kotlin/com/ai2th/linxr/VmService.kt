@@ -12,7 +12,9 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 
 class VmService : Service() {
-    private val TAG = "VmService"
+    companion object {
+        private const val TAG = "VmService"
+    }
     private val CHANNEL_ID = "linxr_channel"
     private val NOTIFICATION_ID = 1
 
@@ -29,6 +31,13 @@ class VmService : Service() {
     }
 
     override fun onDestroy() {
+        // Stop the QEMU VM before the service is destroyed so the process
+        // does not become orphaned (running with no bound service/activity).
+        try {
+            (applicationContext as AlpineApp).vmManager.stopVm()
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to stop VM in onDestroy: ${e.message}")
+        }
         super.onDestroy()
         Log.d(TAG, "VmService destroyed")
     }

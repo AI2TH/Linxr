@@ -4,6 +4,7 @@ import 'screens/terminal_screen.dart';
 import 'screens/about_screen.dart';
 import 'screens/settings_screen.dart';
 import 'services/vm_platform.dart';
+import 'theme.dart';
 
 void main() {
   runApp(
@@ -24,25 +25,25 @@ class AlpineApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.dark(
-          primary: const Color(0xFF0D6EFD),
-          secondary: const Color(0xFF20C997),
-          surface: const Color(0xFF1A1D23),
+          primary: AppColors.primary,
+          secondary: AppColors.secondary,
+          surface: AppColors.surface,
         ),
-        scaffoldBackgroundColor: const Color(0xFF0E1117),
+        scaffoldBackgroundColor: AppColors.background,
         appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF0E1117),
+          backgroundColor: AppColors.background,
           foregroundColor: Colors.white,
           elevation: 0,
         ),
         navigationBarTheme: NavigationBarThemeData(
-          backgroundColor: const Color(0xFF111827),
-          indicatorColor: const Color(0xFF0D6EFD).withOpacity(0.2),
+          backgroundColor: AppColors.navRail,
+          indicatorColor: AppColors.primary.withOpacity(0.2),
           labelTextStyle: WidgetStateProperty.all(
             const TextStyle(color: Colors.white70, fontSize: 11),
           ),
           iconTheme: WidgetStateProperty.resolveWith((states) {
             if (states.contains(WidgetState.selected)) {
-              return const IconThemeData(color: Color(0xFF0D6EFD));
+              return const IconThemeData(color: AppColors.primary);
             }
             return IconThemeData(color: Colors.white.withOpacity(0.4));
           }),
@@ -136,15 +137,15 @@ class _StatusCard extends StatelessWidget {
     final vm = context.watch<VmState>();
 
     final (label, color, icon) = switch (vm.status) {
-      'running'  => ('Running', const Color(0xFF20C997), Icons.check_circle),
-      'booting'  => ('Booting...', const Color(0xFFFFC107), Icons.hourglass_top),
-      'starting' => ('Starting...', const Color(0xFFFFC107), Icons.hourglass_top),
-      'error'    => ('Error', const Color(0xFFDC3545), Icons.error),
+      'running'  => ('Running', AppColors.secondary, Icons.check_circle),
+      'booting'  => ('Booting...', AppColors.warning, Icons.hourglass_top),
+      'starting' => ('Starting...', AppColors.warning, Icons.hourglass_top),
+      'error'    => ('Error', AppColors.danger, Icons.error),
       _          => ('Stopped', Colors.white38, Icons.stop_circle_outlined),
     };
 
     return Card(
-      color: const Color(0xFF1A1D23),
+      color: AppColors.surface,
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Row(
@@ -167,7 +168,7 @@ class _StatusCard extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(vm.errorMessage!,
                         style: const TextStyle(
-                            color: Color(0xFFDC3545), fontSize: 12)),
+                            color: AppColors.danger, fontSize: 12)),
                   ),
               ],
             ),
@@ -186,7 +187,7 @@ class _SshInfoCard extends StatelessWidget {
     final isRunning = context.watch<VmState>().isRunning;
 
     return Card(
-      color: const Color(0xFF1A1D23),
+      color: AppColors.surface,
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -194,7 +195,7 @@ class _SshInfoCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.terminal, color: Color(0xFF0D6EFD), size: 20),
+                const Icon(Icons.terminal, color: AppColors.primary, size: 20),
                 const SizedBox(width: 8),
                 Text('Shell Access',
                     style: Theme.of(context)
@@ -221,7 +222,7 @@ class _SshInfoCard extends StatelessWidget {
                 style: TextStyle(
                   fontFamily: 'monospace',
                   fontSize: 12,
-                  color: isRunning ? const Color(0xFF20C997) : Colors.white38,
+                  color: isRunning ? AppColors.secondary : Colors.white38,
                 ),
               ),
             ),
@@ -264,7 +265,7 @@ class _ControlButton extends StatelessWidget {
         icon: const Icon(Icons.stop),
         label: const Text('Stop VM'),
         style: FilledButton.styleFrom(
-          backgroundColor: const Color(0xFFDC3545),
+          backgroundColor: AppColors.danger,
           padding: const EdgeInsets.symmetric(vertical: 14),
         ),
       );
@@ -278,7 +279,7 @@ class _ControlButton extends StatelessWidget {
           icon: const Icon(Icons.play_arrow),
           label: const Text('Start VM'),
           style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF0D6EFD),
+            backgroundColor: AppColors.primary,
             padding: const EdgeInsets.symmetric(vertical: 14),
           ),
         ),

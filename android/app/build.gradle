@@ -53,6 +53,13 @@ android {
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        ndk {
+            // NEW-13/NEW-15: include BOTH arm64-v8a (for real Android devices
+            // where libqemu.so is available and VM can start natively) and
+            // x86_64 (for LDPlayer emulator where app can launch natively but
+            // VM requires NEW-14 fix — QEMU x86_64 cross-compile).
+            abiFilters "arm64-v8a", "x86_64"
+        }
     }
 
     signingConfigs {
@@ -83,8 +90,9 @@ android {
         }
         release {
             signingConfig signingConfigs.release
-            minifyEnabled false
-            shrinkResources false
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 
@@ -102,9 +110,12 @@ flutter {
 
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
-    implementation "androidx.core:core-ktx:1.12.0"
+    // NEW-12: pin to 1.10.1 to avoid androidx.activity 1.8.x transitively pulled
+    // by androidx.core 1.12.0. 1.8.x references android.window.OnBackAnimationCallback
+    // (API 33+) which causes Dalvik class verification to fail on Android 9 (LDPlayer).
+    implementation "androidx.core:core-ktx:1.10.1"
 
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test:runner:1.5.2'
-    androidTestImplementation 'com.jcraft:jsch:0.1.55'
+    androidTestImplementation 'com.github.mwiede:jsch:0.2.18'
 }

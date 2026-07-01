@@ -12,31 +12,10 @@
 #
 # Requirements: Docker only. No Flutter, Java, or Android SDK on the host.
 
-set -e
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+source "${SCRIPT_DIR}/_build_common.sh"
+
 BUILD_TYPE="${1:-release}"
-IMAGE_NAME="linxr-builder"
-OUTPUT_DIR="${PROJECT_ROOT}/build"
-
-if ! command -v docker &>/dev/null; then
-    echo "ERROR: Docker is required."
-    exit 1
-fi
-
-mkdir -p "${OUTPUT_DIR}"
-
-# ── Build the builder image if it doesn't exist ───────────────────────────────
-if ! docker image inspect "${IMAGE_NAME}" &>/dev/null; then
-    echo "=== Building Docker build environment (first run — ~10 min) ==="
-    docker build \
-        --platform linux/amd64 \
-        -f "${PROJECT_ROOT}/docker/Dockerfile.build" \
-        -t "${IMAGE_NAME}" \
-        "${PROJECT_ROOT}"
-    echo ""
-fi
 
 echo "=== Building Flutter AAB (${BUILD_TYPE}) inside Docker ==="
 echo "Project : ${PROJECT_ROOT}"
@@ -102,7 +81,7 @@ printf "flutter.sdk=/opt/flutter\nsdk.dir=/opt/android-sdk\n" > android/local.pr
 # Copy release signing config if present
 if [ -f /workspace/android/key.properties ]; then
     cp /workspace/android/key.properties android/key.properties
-    KEYSTORE_FILE=$(grep '"'"'^storeFile='"'"' android/key.properties | cut -d= -f2)
+    KEYSTORE_FILE=$(grep "^storeFile=" android/key.properties | cut -d= -f2)
     [ -n "$KEYSTORE_FILE" ] && [ -f "/workspace/android/app/$KEYSTORE_FILE" ] && \
         cp "/workspace/android/app/$KEYSTORE_FILE" "android/app/$KEYSTORE_FILE" || true
 fi

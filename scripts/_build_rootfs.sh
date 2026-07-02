@@ -17,10 +17,10 @@ cp /etc/apk/keys/* "${ROOTFS}/etc/apk/keys/"
 cp /etc/apk/repositories "${ROOTFS}/etc/apk/"
 # docker and fuse-overlayfs are in community â€” ensure it's enabled
 grep -q 'community' "${ROOTFS}/etc/apk/repositories" || \
-    echo "https://dl-cdn.alpinelinux.org/alpine/v3.19/community" >> "${ROOTFS}/etc/apk/repositories"
+    echo "https://dl-cdn.alpinelinux.org/alpine/v3.24/community" >> "${ROOTFS}/etc/apk/repositories"
 # host container also needs community for the --root apk calls
 grep -q 'community' /etc/apk/repositories || \
-    echo "https://dl-cdn.alpinelinux.org/alpine/v3.19/community" >> /etc/apk/repositories
+    echo "https://dl-cdn.alpinelinux.org/alpine/v3.24/community" >> /etc/apk/repositories
 
 apk --root "${ROOTFS}" --initdb --no-cache add \
     alpine-base \
@@ -47,8 +47,8 @@ apk --root "${ROOTFS}" --initdb --no-cache add \
 # Use Aliyun CDN for faster apk downloads over SLIRP. Fallback to official CDN.
 # Reachability test is done at image-build time; if Aliyun is unreachable,
 # the official CDN is used instead.
-LINXR_APK_MIRROR="${LINXR_APK_MIRROR:-mirrors.aliyun.com/alpine/v3.19}"
-LINXR_APK_FALLBACK="dl-cdn.alpinelinux.org/alpine/v3.19"
+LINXR_APK_MIRROR="${LINXR_APK_MIRROR:-mirrors.aliyun.com/alpine/v3.24}"
+LINXR_APK_FALLBACK="dl-cdn.alpinelinux.org/alpine/v3.24"
 if wget -q -T 3 -O /dev/null "https://${LINXR_APK_MIRROR}/main/aarch64/APKINDEX.tar.gz" 2>/dev/null \
 || wget -q -T 3 -O /dev/null "https://${LINXR_APK_MIRROR}/main/x86_64/APKINDEX.tar.gz" 2>/dev/null; then
     APK_HOST="$LINXR_APK_MIRROR"

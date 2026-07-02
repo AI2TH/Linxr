@@ -31,7 +31,7 @@ docker run --rm \
     --platform linux/arm64 \
     -v "${OUTPUT_DIR}:/out" \
     -v "${SCRIPT_DIR}/_build_rootfs.sh:/build.sh:ro" \
-    alpine:3.19 \
+    alpine:3.24 \
     sh /build.sh
 
 echo ""

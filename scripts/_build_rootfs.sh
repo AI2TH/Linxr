@@ -36,7 +36,49 @@ apk --root "${ROOTFS}" --initdb --no-cache add \
     iptables \
     iptables-legacy \
     ip6tables \
-    kmod
+    kmod \
+    nodejs \
+    npm \
+    py3-pip
+
+# ---------------------------------------------------------------------------
+# Package mirror configuration (NEW-16) — baked into base.qcow2
+# ---------------------------------------------------------------------------
+# Use Aliyun CDN for faster apk downloads over SLIRP. Fallback to official CDN.
+# Reachability test is done at image-build time; if Aliyun is unreachable,
+# the official CDN is used instead.
+LINXR_APK_MIRROR="${LINXR_APK_MIRROR:-mirrors.aliyun.com/alpine/v3.19}"
+LINXR_APK_FALLBACK="dl-cdn.alpinelinux.org/alpine/v3.19"
+if wget -q -T 3 -O /dev/null "https://${LINXR_APK_MIRROR}/main/aarch64/APKINDEX.tar.gz" 2>/dev/null \
+|| wget -q -T 3 -O /dev/null "https://${LINXR_APK_MIRROR}/main/x86_64/APKINDEX.tar.gz" 2>/dev/null; then
+    APK_HOST="$LINXR_APK_MIRROR"
+    echo "Using fast Alpine mirror: https://$APK_HOST"
+else
+    APK_HOST="$LINXR_APK_FALLBACK"
+    echo "Fast mirror unreachable, falling back to: https://$APK_HOST"
+fi
+cat > "${ROOTFS}/etc/apk/repositories" <<REPOEOF
+https://${APK_HOST}/main
+https://${APK_HOST}/community
+REPOEOF
+
+# npm registry (NEW-16)
+mkdir -p "${ROOTFS}/root/.npm"
+chroot "${ROOTFS}" npm config set registry https://registry.npmmirror.com
+chroot "${ROOTFS}" npm config set fetch-retry-maxtimeout 120000
+chroot "${ROOTFS}" npm config set fetch-retry-mintimeout 20000
+chroot "${ROOTFS}" npm config set fetch-retries 5
+
+# pip mirror (NEW-16)
+mkdir -p "${ROOTFS}/root/.config/pip"
+cat > "${ROOTFS}/root/.config/pip/pip.conf" <<'PIPEOF'
+[global]
+index-url = https://pypi.tuna.tsinghua.edu.cn/simple
+trusted-host = pypi.tuna.tsinghua.edu.cn
+timeout = 120
+retries = 5
+PIPEOF
+
 
 # â”€â”€ Directory skeleton â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 mkdir -p "${ROOTFS}/proc" \
@@ -89,7 +131,7 @@ printf 'auto lo\niface lo inet loopback\n\nauto eth0\niface eth0 inet static\n  
     > "${ROOTFS}/etc/network/interfaces"
 
 # DNS
-printf 'nameserver 10.0.2.3\nnameserver 8.8.8.8\n' \
+printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\noptions timeout:5 attempts:3 rotate\n' \
     > "${ROOTFS}/etc/resolv.conf"
 
 echo "linxr" > "${ROOTFS}/etc/hostname"
@@ -117,10 +159,13 @@ EOF
 # â”€â”€ Docker daemon config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 cat > "${ROOTFS}/etc/docker/daemon.json" << 'EOF'
 {
-  "storage-driver": "overlay2",
-  "exec-opts": ["native.cgroupdriver=cgroupfs"],
-  "iptables": true,
-  "ip-masq": true,
+  "storage-driver": "vfs",
+  "iptables": false,
+  "bridge": "none",
+  "registry-mirrors": [
+    "https://docker.m.daocloud.io",
+    "https://mirror.ccs.tencentyun.com"
+  ],
   "log-driver": "json-file",
   "log-opts": {
     "max-size": "10m",

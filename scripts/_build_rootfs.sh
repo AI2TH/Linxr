@@ -5,7 +5,7 @@
 set -e
 
 ROOTFS=/tmp/rootfs
-IMAGE_SIZE=2G
+IMAGE_SIZE=4G
 
 echo "--- Installing build tools ---"
 apk add --no-cache e2fsprogs qemu-img
@@ -303,6 +303,10 @@ printf '%%wheel ALL=(ALL) NOPASSWD: ALL\n' >> "${ROOTFS}/etc/sudoers"
 printf 'root ALL=(ALL) NOPASSWD: ALL\n'    >  "${ROOTFS}/etc/sudoers.d/root"
 chmod 440 "${ROOTFS}/etc/sudoers"
 chmod 440 "${ROOTFS}/etc/sudoers.d/root"
+
+# Mark filesystem as already expanded so first-boot resize2fs is skipped.
+# Resize under TCG was taking 5+ minutes and caused boots >3 hours.
+touch "${ROOTFS}/etc/.disk_expanded"
 
 # â”€â”€ Build ext4 image (no loop mount needed) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 echo "--- Creating ${IMAGE_SIZE} ext4 image ---"

@@ -376,15 +376,17 @@ class VmManager(private val context: Context) {
         Log.d(TAG, "Created user.qcow2 at $userImagePath")
     }
 
-    // Returns a virtual disk size (GB) sized to the phone's available storage,
-    // minus 2 GB headroom. QCOW2 is sparse so this costs nothing until written.
+    // Returns a virtual disk size (GB). We cap at 4 GB to match the pre-expanded
+    // base filesystem; QCOW2 is sparse so unused space costs nothing. Previously
+    // sizing to available storage (e.g. 32 GB) forced a multi-minute resize2fs
+    // under TCG at first boot, causing boots >3 hours.
     private fun availableOverlaySizeGb(): Long {
         return try {
             val stat = StatFs(filesDir.absolutePath)
             val availableGb = (stat.availableBlocksLong * stat.blockSizeLong) / (1024L * 1024 * 1024)
-            (availableGb - 2L).coerceAtLeast(8L)
+            ((availableGb - 2L).coerceAtLeast(4L)).coerceAtMost(4L)
         } catch (_: Exception) {
-            8L
+            4L
         }
     }
 

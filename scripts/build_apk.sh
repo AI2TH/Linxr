@@ -93,6 +93,7 @@ dart run flutter_launcher_icons
 
 echo ""
 echo "--- Step 4: flutter build apk ('"${BUILD_TYPE}"') ---"
+export GRADLE_OPTS="-Dorg.gradle.daemon=false -Xmx3g"
 flutter build apk --'"${BUILD_TYPE}"' 2>&1
 
 echo ""

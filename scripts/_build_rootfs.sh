@@ -104,6 +104,8 @@ mknod -m 666 "${ROOTFS}/dev/fuse"    c 10 229 2>/dev/null || true
 
 # â”€â”€ OpenRC runlevels â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 echo "--- Configuring OpenRC ---"
+# Verbose boot so we can see which service stalls under TCG.
+printf 'rc_verbose="yes"\nrc_logger="YES"\nrc_log_path="/tmp/openrc.log"\n' >> "${ROOTFS}/etc/rc.conf"
 mkdir -p "${ROOTFS}/etc/runlevels/sysinit" \
          "${ROOTFS}/etc/runlevels/boot" \
          "${ROOTFS}/etc/runlevels/default" \
@@ -117,10 +119,14 @@ for svc in bootmisc hostname modules sysctl syslog; do
     [ -f "${ROOTFS}/etc/init.d/${svc}" ] && \
         ln -sf /etc/init.d/${svc} "${ROOTFS}/etc/runlevels/boot/${svc}" 2>/dev/null || true
 done
-for svc in networking sshd local docker; do
+for svc in networking dropbear local; do
     [ -f "${ROOTFS}/etc/init.d/${svc}" ] && \
         ln -sf /etc/init.d/${svc} "${ROOTFS}/etc/runlevels/default/${svc}" 2>/dev/null || true
 done
+# Docker is installed but not started at boot; it can be started manually
+# after the VM is running. This avoids boot stalls under TCG.
+rm -f "${ROOTFS}/etc/runlevels/default/docker"
+rm -f "${ROOTFS}/etc/runlevels/boot/docker"
 for svc in killprocs mount-ro savecache; do
     [ -f "${ROOTFS}/etc/init.d/${svc}" ] && \
         ln -sf /etc/init.d/${svc} "${ROOTFS}/etc/runlevels/shutdown/${svc}" 2>/dev/null || true
@@ -246,25 +252,10 @@ ln -sf /etc/init.d/cgroups "${ROOTFS}/etc/runlevels/sysinit/cgroups"
 # This runs in the boot runlevel (completes before default/sshd starts).
 # It expands the ext4 filesystem to fill whatever virtual disk size was set
 # when user.qcow2 was created (e.g. 8 GB, 50 GB).
-cat > "${ROOTFS}/etc/init.d/diskexpand" << 'EOF'
-#!/sbin/openrc-run
-description="Expand filesystem to fill virtual disk"
-depend() {
-    after modules bootmisc
-    use dev
-}
-start() {
-    [ -f /etc/.disk_expanded ] && return 0
-    ebegin "Expanding filesystem to disk size"
-    /usr/sbin/resize2fs /dev/vda >/tmp/resize.log 2>&1
-    local ret=$?
-    /bin/df -h / >> /tmp/resize.log 2>&1
-    [ $ret -eq 0 ] && /bin/touch /etc/.disk_expanded
-    eend 0
-}
-EOF
-chmod +x "${ROOTFS}/etc/init.d/diskexpand"
-ln -sf /etc/init.d/diskexpand "${ROOTFS}/etc/runlevels/boot/diskexpand"
+# diskexpand is no longer needed: the base filesystem is built at its final
+# size and marked /etc/.disk_expanded. Leaving the service out avoids any
+# chance of it stalling the boot runlevel under TCG.
+rm -f "${ROOTFS}/etc/runlevels/boot/diskexpand" "${ROOTFS}/etc/init.d/diskexpand"
 
 # â”€â”€ inittab â€” ttyAMA0 console â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 cat > "${ROOTFS}/etc/inittab" << 'EOF'

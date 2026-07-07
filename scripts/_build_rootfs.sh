@@ -282,18 +282,13 @@ EOF
 # (root:alpine). DO NOT expose port 2222 on a public or shared network.
 # For production use, replace with key-based auth and disable password login.
 
-echo "--- Configuring SSH ---"
-chroot "${ROOTFS}" ssh-keygen -A
-
-# Use sed to override any existing (uncommented) directives â€” first match wins
-# in sshd_config, so we can't just append when lines already exist.
-sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/'       "${ROOTFS}/etc/ssh/sshd_config"
-sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' "${ROOTFS}/etc/ssh/sshd_config"
-sed -i 's/^#\?UsePAM.*/UsePAM no/'                          "${ROOTFS}/etc/ssh/sshd_config"
-# Fallback: append if sed found nothing to replace
-grep -q '^PermitRootLogin'       "${ROOTFS}/etc/ssh/sshd_config" || echo 'PermitRootLogin yes'       >> "${ROOTFS}/etc/ssh/sshd_config"
-grep -q '^PasswordAuthentication' "${ROOTFS}/etc/ssh/sshd_config" || echo 'PasswordAuthentication yes' >> "${ROOTFS}/etc/ssh/sshd_config"
-grep -q '^UsePAM'                "${ROOTFS}/etc/ssh/sshd_config" || echo 'UsePAM no'                >> "${ROOTFS}/etc/ssh/sshd_config"
+echo "--- Configuring dropbear ---"
+# Dropbear is used instead of OpenSSH because its handshake is much lighter
+# under TCG and avoids the multi-second banner/key-exchange delays that
+# caused the app to stay stuck at "Booting...".
+# Dropbear runs root login by default when root has a password.
+# Ensure dropbear starts in default runlevel.
+ln -sf /etc/init.d/dropbear "${ROOTFS}/etc/runlevels/default/dropbear" 2>/dev/null || true
 
 # â”€â”€ Credentials â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 echo "root:alpine" | chroot "${ROOTFS}" chpasswd

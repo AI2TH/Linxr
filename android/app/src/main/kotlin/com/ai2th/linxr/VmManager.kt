@@ -36,7 +36,7 @@ class VmManager(private val context: Context) {
         get() = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
 
     // Bump when base.qcow2.gz changes (forces re-extraction on next launch)
-    private val ASSETS_VERSION = "v33"
+    private val ASSETS_VERSION = "v34"
 
     // Virtual disk size in GB. Must match DISK_SIZE_GB in scripts/_build_rootfs.sh
     // so the user.qcow2 overlay is the same size as the pre-expanded base filesystem.

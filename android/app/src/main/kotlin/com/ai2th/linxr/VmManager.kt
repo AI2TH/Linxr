@@ -37,6 +37,10 @@ class VmManager(private val context: Context) {
     // Bump when base.qcow2.gz changes (forces re-extraction on next launch)
     private val ASSETS_VERSION = "v33"
 
+    // Virtual disk size in GB. Must match DISK_SIZE_GB in scripts/_build_rootfs.sh
+    // so the user.qcow2 overlay is the same size as the pre-expanded base filesystem.
+    private const val VM_DISK_SIZE_GB = 4L
+
     // -------------------------------------------------------------------------
     // Public API
     // -------------------------------------------------------------------------
@@ -376,18 +380,12 @@ class VmManager(private val context: Context) {
         Log.d(TAG, "Created user.qcow2 at $userImagePath")
     }
 
-    // Returns a virtual disk size (GB). We cap at 4 GB to match the pre-expanded
-    // base filesystem; QCOW2 is sparse so unused space costs nothing. Previously
-    // sizing to available storage (e.g. 32 GB) forced a multi-minute resize2fs
-    // under TCG at first boot, causing boots >3 hours.
+    // Returns the configured virtual disk size in GB. We use a fixed size that
+    // matches the pre-expanded base filesystem; QCOW2 is sparse so unused space
+    // costs nothing. Previously sizing to available storage (e.g. 32 GB) forced
+    // a multi-minute resize2fs under TCG at first boot, causing boots >3 hours.
     private fun availableOverlaySizeGb(): Long {
-        return try {
-            val stat = StatFs(filesDir.absolutePath)
-            val availableGb = (stat.availableBlocksLong * stat.blockSizeLong) / (1024L * 1024 * 1024)
-            ((availableGb - 2L).coerceAtLeast(4L)).coerceAtMost(4L)
-        } catch (_: Exception) {
-            4L
-        }
+        return VM_DISK_SIZE_GB
     }
 
     // Half the device's CPU cores, clamped to [1, cores].

@@ -1,11 +1,19 @@
 #!/bin/sh
 # Runs inside Docker (linux/arm64 Alpine container).
-# Builds a minimal Alpine Linux rootfs with openssh + sudo,
+# Builds a minimal Alpine Linux rootfs with dropbear + sudo,
 # then packages it as base.qcow2.gz in /out.
 set -e
 
+# ---------------------------------------------------------------------------
+# Configurable disk size
+# ---------------------------------------------------------------------------
+# This is the virtual size of the root filesystem baked into base.qcow2.gz.
+# It must be kept in sync with VM_DISK_SIZE_GB in VmManager.kt so the overlay
+# matches the pre-expanded filesystem and avoids a slow resize2fs at boot.
+DISK_SIZE_GB=4
+
 ROOTFS=/tmp/rootfs
-IMAGE_SIZE=4G
+IMAGE_SIZE="${DISK_SIZE_GB}G"
 
 echo "--- Installing build tools ---"
 apk add --no-cache e2fsprogs qemu-img

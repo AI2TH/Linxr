@@ -15,6 +15,10 @@ import java.util.zip.GZIPInputStream
 class VmManager(private val context: Context) {
     companion object {
         private const val TAG = "VmManager"
+
+        // Virtual disk size in GB. Must match DISK_SIZE_GB in scripts/_build_rootfs.sh
+        // so the user.qcow2 overlay is the same size as the pre-expanded base filesystem.
+        private const val VM_DISK_SIZE_GB = 4L
     }
 
     @Volatile private var vmProcess: Process? = null
@@ -37,10 +41,6 @@ class VmManager(private val context: Context) {
 
     // Bump when base.qcow2.gz changes (forces re-extraction on next launch)
     private val ASSETS_VERSION = "v34"
-
-    // Virtual disk size in GB. Must match DISK_SIZE_GB in scripts/_build_rootfs.sh
-    // so the user.qcow2 overlay is the same size as the pre-expanded base filesystem.
-    private const val VM_DISK_SIZE_GB = 4L
 
     // -------------------------------------------------------------------------
     // Public API

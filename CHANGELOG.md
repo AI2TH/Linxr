@@ -336,4 +336,44 @@ reasoning for every change is in
   `stopped → starting → running`, toggles `isLoading`, clears `errorMessage`,
   and invokes the `com.ai2th.linxr/vm` platform channel once.
 
+#### NEW-25. Fix >3 hour first boot and SSH reachability under TCG
+- **Files:** `scripts/_build_rootfs.sh`,
+  `android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt`,
+  `README.md`, `IMPROVE.md`, `PAPER.md`
+- **Commits:** `512db93`, `79570e1`, `e46fe74`, `82dad25`, `08a8511`
+- **Summary:** Multiple changes to make the VM boot in minutes and become
+  reachable over SSH instead of hanging for hours.
+  - Pre-expand the base ext4 filesystem to 4 GB at image-build time and mark
+    `/etc/.disk_expanded`, eliminating the expensive first-boot `resize2fs`
+    under TCG.
+  - Cap the user.qcow2 overlay at 4 GB instead of sizing it to available
+    storage (which produced 32 GB overlays and forced a huge resize).
+  - Switch the QEMU `-drive` cache mode from `writethrough` back to `unsafe`
+    to reduce I/O latency under software emulation.
+  - Replace OpenSSH server with dropbear for a much lighter SSH handshake
+    under TCG.
+  - Remove `docker` and the obsolete `diskexpand` services from the boot
+    runlevels so OpenRC cannot stall on them.
+  - Add OpenRC verbose logging to the serial console for easier future boot
+    diagnostics.
+  - Revert PR-20's `hostfwd=tcp:127.0.0.1:2222-:22` binding back to
+    `hostfwd=tcp::2222-:22` because the loopback-only binding prevented the
+    app and adb-forwarded clients from completing the SSH handshake.
+
+#### NEW-26. Disable Gradle daemon and cap JVM heap to avoid OOM
+- **Files:** `scripts/build_apk.sh`, `scripts/build_aab.sh`
+- **Commit:** `b43e8c9`
+- **Summary:** APK/AAB builds were failing with "Gradle build daemon
+  disappeared unexpectedly" when APK + AAB ran in parallel. Set
+  `GRADLE_OPTS="-Dorg.gradle.daemon=false -Xmx3g"` in both scripts to keep
+  memory usage within Docker/WSL2 limits.
+
+#### NEW-27. Upgrade base image to Alpine Linux 3.24.1
+- **Files:** `scripts/build_qcow2.sh`, `scripts/_build_rootfs.sh`
+- **Commits:** `700c071`, `78ec078`
+- **Summary:** Rebuild `base.qcow2.gz` on Alpine 3.24.1 with kernel
+  6.18.37-0-virt (later 6.18.38). Bakes in the NEW-16/NEW-18 mirror and
+  Docker configs directly into the image instead of relying on the dead-code
+  `init_bootstrap.sh` asset.
+
 [Unreleased]: https://github.com/ai2th/linxr/compare/HEAD...bugs

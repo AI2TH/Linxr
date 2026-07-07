@@ -111,11 +111,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
     else await prefs.setInt(_kRam, value);
   }
 
-  Future<void> _saveDisk(int? value) async {
+  Future<void> _saveDisk(int? value, BuildContext context) async {
+    final oldValue = _diskGb;
     final prefs = await SharedPreferences.getInstance();
     setState(() => _diskGb = value);
     if (value == null) await prefs.remove(_kDisk);
     else await prefs.setInt(_kDisk, value);
+
+    // If the disk size actually changed, remind the user to reset storage.
+    if (oldValue != value && mounted) {
+      final vm = context.read<VmState>();
+      final needsReset = vm.status != 'stopped' ||
+          await VmPlatform.getVmStatus() != 'stopped';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Disk size changed to ${value ?? _autoDiskGb} GB. '
+            'Reset VM Storage to apply.',
+          ),
+          duration: const Duration(seconds: 6),
+          action: SnackBarAction(
+            label: 'Reset',
+            textColor: AppColors.danger,
+            onPressed: () => _resetStorage(vm),
+          ),
+        ),
+      );
+    }
   }
 
   // ── Actions ─────────────────────────────────────────────────────────────────
@@ -287,13 +309,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   valueLabel: _diskGb == null
                       ? 'Auto — $_autoDiskGb GB virtual disk (${_maxDiskGb} GB free on device)'
                       : '$_effectiveDiskGb GB virtual disk (${_maxDiskGb} GB free on device)',
-                  onClearAuto: () => _saveDisk(null),
+                  onClearAuto: () => _saveDisk(null, context),
                   child: _StepSlider(
                     value: _effectiveDiskGb.clamp(8, _maxDiskGb),
                     min: 8,
                     max: _maxDiskGb,
                     step: 8,
-                    onChanged: (v) => _saveDisk(v),
+                    onChanged: (v) => _saveDisk(v, context),
                     labelFn: (v) => '$v GB',
                   ),
                 ),
@@ -509,7 +531,7 @@ class _StepSlider extends StatelessWidget {
             children: [
               _tickLabel(labelFn(min)),
               if (steps >= 2) _tickLabel(labelFn(min + (steps ~/ 2) * step)),
-              if (steps > 0) _tickLabel(labelFn(max)),
+              if (steps > 0 && max != min) _tickLabel(labelFn(max)),
             ],
           ),
         ),

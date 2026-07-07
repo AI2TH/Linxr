@@ -258,14 +258,30 @@ EOF
 chmod +x "${ROOTFS}/etc/init.d/cgroups"
 ln -sf /etc/init.d/cgroups "${ROOTFS}/etc/runlevels/sysinit/cgroups"
 
-# â”€â”€ diskexpand OpenRC service â€” resize2fs runs before sshd â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-# This runs in the boot runlevel (completes before default/sshd starts).
-# It expands the ext4 filesystem to fill whatever virtual disk size was set
-# when user.qcow2 was created (e.g. 8 GB, 50 GB).
-# diskexpand is no longer needed: the base filesystem is built at its final
-# size and marked /etc/.disk_expanded. Leaving the service out avoids any
-# chance of it stalling the boot runlevel under TCG.
-rm -f "${ROOTFS}/etc/runlevels/boot/diskexpand" "${ROOTFS}/etc/init.d/diskexpand"
+# â”€â”€ diskexpand OpenRC service â€” expand fs when overlay > base fs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# The base filesystem is pre-expanded to DISK_SIZE_GB. If the user chooses a
+# larger disk in Settings, the overlay is created at that size but the ext4
+# filesystem inside remains DISK_SIZE_GB. This service expands it to fill the
+# overlay, but only when needed, so the default fast-path boot skips resize2fs.
+cat > "${ROOTFS}/etc/init.d/diskexpand" << 'EOF'
+#!/sbin/openrc-run
+description="Expand filesystem to fill virtual disk"
+depend() {
+    after modules bootmisc
+    use dev
+}
+start() {
+    [ -f /etc/.disk_expanded ] && return 0
+    ebegin "Expanding filesystem to disk size"
+    /usr/sbin/resize2fs /dev/vda >/tmp/resize.log 2>&1
+    local ret=$?
+    /bin/df -h / >> /tmp/resize.log 2>&1
+    [ $ret -eq 0 ] && /bin/touch /etc/.disk_expanded
+    eend 0
+}
+EOF
+chmod +x "${ROOTFS}/etc/init.d/diskexpand"
+ln -sf /etc/init.d/diskexpand "${ROOTFS}/etc/runlevels/boot/diskexpand"
 
 # â”€â”€ inittab â€” ttyAMA0 console â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 cat > "${ROOTFS}/etc/inittab" << 'EOF'
@@ -290,6 +306,33 @@ echo "--- Configuring dropbear ---"
 # Dropbear runs root login by default when root has a password.
 # Ensure dropbear starts in default runlevel.
 ln -sf /etc/init.d/dropbear "${ROOTFS}/etc/runlevels/default/dropbear" 2>/dev/null || true
+
+# â”€â”€ sdcard share service â€” mount Android /sdcard via 9p â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# VmManager exposes the Android external storage directory as a virtio-9p
+# device with mount tag "sdcard". This service mounts it at /mnt/sdcard
+# inside the VM, falling back to a tmpfs placeholder if the host share is
+# unavailable (e.g. permission denied).
+cat > "${ROOTFS}/etc/init.d/sdcardshare" << 'EOF'
+#!/sbin/openrc-run
+description="Mount Android /sdcard share"
+depend() {
+    after modules bootmisc
+    use dev
+}
+start() {
+    ebegin "Mounting /sdcard share"
+    mkdir -p /mnt/sdcard
+    if mount -t 9p -o trans=virtio,version=9p2000.L,uid=0,gid=0,rw sdcard /mnt/sdcard 2>/tmp/sdcard_mount.log; then
+        eend 0
+    else
+        ewarn "sdcard 9p mount failed; using empty placeholder"
+        mount -t tmpfs -o size=1M tmpfs /mnt/sdcard 2>/dev/null || true
+        eend 0
+    fi
+}
+EOF
+chmod +x "${ROOTFS}/etc/init.d/sdcardshare"
+ln -sf /etc/init.d/sdcardshare "${ROOTFS}/etc/runlevels/boot/sdcardshare"
 
 # â”€â”€ Credentials â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 echo "root:alpine" | chroot "${ROOTFS}" chpasswd

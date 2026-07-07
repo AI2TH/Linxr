@@ -4,6 +4,7 @@ import android.app.ActivityManager
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
+import android.os.Environment
 import android.os.PowerManager
 import android.os.StatFs
 import android.util.Log
@@ -257,6 +258,19 @@ class VmManager(private val context: Context) {
             cmd += listOf("-device", "virtio-net-pci,netdev=net0,romfile=")
             cmd += listOf("-device", "virtio-rng-pci")
         }
+
+        // Share Android external storage (/sdcard) with the VM via 9p.
+        // The guest mounts it at /mnt/sdcard using an OpenRC service.
+        val sharedDir = Environment.getExternalStorageDirectory()
+        if (sharedDir != null && sharedDir.exists() && sharedDir.canRead()) {
+            cmd += listOf(
+                "-fsdev", "local,id=sdcard,path=${sharedDir.absolutePath},security_model=none",
+                "-device", "virtio-9p-${if (isArm) "device" else "pci"},fsdev=sdcard,mount_tag=sdcard"
+            )
+            Log.d(TAG, "Sharing ${sharedDir.absolutePath} via 9p")
+        } else {
+            Log.w(TAG, "External storage not readable; skipping 9p share")
+        }
         val serialLog = File(vmDir, "serial.log")
         serialLog.delete()
         cmd += listOf("-display", "none")
@@ -380,11 +394,21 @@ class VmManager(private val context: Context) {
         Log.d(TAG, "Created user.qcow2 at $userImagePath")
     }
 
-    // Returns the configured virtual disk size in GB. We use a fixed size that
-    // matches the pre-expanded base filesystem; QCOW2 is sparse so unused space
-    // costs nothing. Previously sizing to available storage (e.g. 32 GB) forced
-    // a multi-minute resize2fs under TCG at first boot, causing boots >3 hours.
+    // Returns the virtual disk size in GB for the user.qcow2 overlay.
+    // If the user set a disk size in Settings, use it (capped to available
+    // storage). Otherwise fall back to VM_DISK_SIZE_GB, which matches the
+    // pre-expanded base filesystem for a fast first boot.
     private fun availableOverlaySizeGb(): Long {
+        val pref = getFlutterInt("flutter.disk_gb", 0).toLong()
+        if (pref > 0) {
+            return try {
+                val stat = StatFs(filesDir.absolutePath)
+                val availableGb = (stat.availableBlocksLong * stat.blockSizeLong) / (1024L * 1024 * 1024)
+                pref.coerceAtMost(availableGb - 2L).coerceAtLeast(VM_DISK_SIZE_GB)
+            } catch (_: Exception) {
+                VM_DISK_SIZE_GB
+            }
+        }
         return VM_DISK_SIZE_GB
     }
 

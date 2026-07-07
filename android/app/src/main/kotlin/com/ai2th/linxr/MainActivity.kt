@@ -23,6 +23,7 @@ class MainActivity : FlutterActivity() {
     private val executor = Executors.newSingleThreadExecutor()
 
     private val REQUEST_POST_NOTIFICATIONS = 1001
+    private val REQUEST_STORAGE = 1002
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -36,6 +37,16 @@ class MainActivity : FlutterActivity() {
                 )
             }
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) !=
+                PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE),
+                    REQUEST_STORAGE
+                )
+            }
+        }
     }
 
     override fun onRequestPermissionsResult(
@@ -44,10 +55,17 @@ class MainActivity : FlutterActivity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_POST_NOTIFICATIONS) {
-            val granted = grantResults.isNotEmpty() &&
-                grantResults[0] == PackageManager.PERMISSION_GRANTED
-            Log.i(TAG, "POST_NOTIFICATIONS granted=$granted")
+        when (requestCode) {
+            REQUEST_POST_NOTIFICATIONS -> {
+                val granted = grantResults.isNotEmpty() &&
+                    grantResults[0] == PackageManager.PERMISSION_GRANTED
+                Log.i(TAG, "POST_NOTIFICATIONS granted=$granted")
+            }
+            REQUEST_STORAGE -> {
+                val granted = grantResults.isNotEmpty() &&
+                    grantResults[0] == PackageManager.PERMISSION_GRANTED
+                Log.i(TAG, "READ_EXTERNAL_STORAGE granted=$granted")
+            }
         }
     }
 

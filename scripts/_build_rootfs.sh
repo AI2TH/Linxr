@@ -25,7 +25,9 @@ grep -q 'community' /etc/apk/repositories || \
 apk --root "${ROOTFS}" --initdb --no-cache add \
     alpine-base \
     openrc \
-    openssh \
+    dropbear \
+    dropbear-openrc \
+    openssh-client \
     sudo \
     bash \
     shadow \

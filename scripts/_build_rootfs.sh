@@ -271,7 +271,8 @@ depend() {
     use dev
 }
 start() {
-    [ -f /etc/.disk_expanded ] && return 0
+    # Always run resize2fs. On a pre-expanded filesystem it is a fast no-op;
+    # on a larger overlay it expands /dev/vda to fill the virtual disk.
     ebegin "Expanding filesystem to disk size"
     /usr/sbin/resize2fs /dev/vda >/tmp/resize.log 2>&1
     local ret=$?

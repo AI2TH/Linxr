@@ -477,8 +477,14 @@ class VmManager(private val context: Context) {
     }
 
     private fun getFlutterInt(key: String, default: Int): Int {
-        // Read as String to handle all storage formats used by Flutter's
-        // shared_preferences plugin across versions (Long, Int, or String).
-        return flutterPrefs.getString(key, null)?.toIntOrNull() ?: default
+        // Flutter's shared_preferences plugin may store values as Int, Long,
+        // or String depending on version and type. getString() returns null
+        // for non-String entries, so inspect the actual stored value.
+        return when (val value = flutterPrefs.all[key]) {
+            is Int -> value
+            is Long -> value.toInt()
+            is String -> value.toIntOrNull() ?: default
+            else -> default
+        }
     }
 }

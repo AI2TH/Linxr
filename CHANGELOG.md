@@ -376,4 +376,23 @@ reasoning for every change is in
   Docker configs directly into the image instead of relying on the dead-code
   `init_bootstrap.sh` asset.
 
+#### NEW-28. Fix diskexpand so larger overlays actually expand
+- **Files:** `scripts/_build_rootfs.sh`
+- **Commit:** `621960e`
+- **Summary:** The `diskexpand` OpenRC service returned early whenever
+  `/etc/.disk_expanded` existed. Because the base filesystem is pre-expanded
+  and marked at image-build time, this caused the root filesystem to stay at
+  4 GB even when the user chose a larger Disk Cap in Settings. The service
+  now always runs `resize2fs` on boot (a fast no-op when already expanded),
+  so 8 GB / 16 GB overlays are fully usable.
+
+#### NEW-29. Fix SharedPreferences numeric-value reader
+- **Files:** `android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt`
+- **Commit:** `d5bde56`
+- **Summary:** `getFlutterInt()` used `SharedPreferences.getString()`, which
+  returns `null` for values stored as `Int` or `Long`. This made
+  `flutter.disk_gb` and other numeric settings silently ignored. The reader
+  now inspects the actual stored type and handles `Int`, `Long`, and `String`
+  correctly.
+
 [Unreleased]: https://github.com/ai2th/linxr/compare/HEAD...bugs

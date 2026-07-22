@@ -415,4 +415,14 @@ reasoning for every change is in
 - **Commit:** `8c3b9df`
 - **Summary:** Ran a recursive signature-stripping and vermagic-patching script inside the booted VM to update all 884 kernel modules in `/lib/modules/` to `7.1.4-0-0-virt`. Ran `depmod` to update all module dependency index files, shut down the VM cleanly, and streamed the updated `base.qcow2` disk back to the repository's assets directory.
 
+#### NEW-34. Merge Pockr Docker container dashboard into Linxr
+- **Files:** `lib/screens/containers_screen.dart`, `lib/services/vm_platform.dart`, `android/app/build.gradle`, `android/app/src/main/kotlin/com/ai2th/linxr/VmApiClient.kt`, `android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt`, `android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt`, `lib/main.dart`
+- **Commit:** `staged`
+- **Summary:** Ported Pockr's Docker container dashboard capabilities into Linxr. Implemented a host OkHttp REST client (`VmApiClient.kt`), exposed port forwarding on QEMU arguments (`hostfwd=tcp::7081-:7080`), configured security API token injection via command line and firmware configuration, added Kotlin MethodChannel handlers, and created a responsive `ContainersScreen` dashboard.
+
+#### NEW-35. Combine Settings and About tabs
+- **Files:** `lib/screens/settings_screen.dart`, `lib/main.dart`
+- **Commit:** `staged`
+- **Summary:** Merged the Settings and About screens into a single scrollable view. Placed App Logo, Branding, version, and SSH details at the top of the Settings screen. Completely removed lines/dividers, the License card, and the Open Source components/dependencies list, deleting the deprecated `about_screen.dart`.
+
 [Unreleased]: https://github.com/ai2th/linxr/compare/HEAD...bugs

@@ -24,12 +24,42 @@ class VmResourceTest {
     @Before
     fun startVm() {
         Log.i(TAG, ">>> startVm")
+        try { vmManager.stopVm() } catch (_: Exception) {}
+        val userImage = java.io.File(context.filesDir, "vm/user.qcow2")
+        if (!userImage.exists()) {
+            vmManager.resetStorage()
+        }
+        vmManager.overrideVcpu = 1
+        vmManager.overrideRamMb = 512
         vmManager.startVm()
     }
 
     @After
     fun stopVm() {
-        try { vmManager.stopVm() } catch (_: Exception) {}
+        Log.i(TAG, ">>> clean stopVm")
+        try {
+            val session = openSession()
+            val channel = session.openChannel("exec") as ChannelExec
+            channel.setCommand("sync && poweroff")
+            channel.connect()
+            Thread.sleep(500)
+            channel.disconnect()
+            session.disconnect()
+            Log.i(TAG, "Poweroff command sent successfully")
+        } catch (e: Exception) {
+            Log.w(TAG, "Sending poweroff command failed: ${e.message}")
+        }
+        // Wait up to 5 seconds for VM to exit cleanly
+        val deadline = System.currentTimeMillis() + 5000
+        while (System.currentTimeMillis() < deadline && vmManager.isVmRunning()) {
+            try { Thread.sleep(200) } catch (_: Exception) {}
+        }
+        if (vmManager.isVmRunning()) {
+            Log.w(TAG, "VM did not exit cleanly, forcing stopVm...")
+            try { vmManager.stopVm() } catch (_: Exception) {}
+        } else {
+            Log.i(TAG, "VM exited cleanly on its own")
+        }
     }
 
     @Test(timeout = 6_000_000) // 100 min

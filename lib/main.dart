@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'screens/terminal_screen.dart';
-import 'screens/about_screen.dart';
+import 'screens/containers_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/files_screen.dart';
 import 'services/vm_platform.dart';
 import 'theme.dart';
 
@@ -68,8 +69,9 @@ class _MainScreenState extends State<MainScreen> {
   static const _screens = <Widget>[
     _HomeScreen(),
     TerminalScreen(),
+    ContainersScreen(),
+    FilesScreen(),
     SettingsScreen(),
-    AboutScreen(),
   ];
 
   @override
@@ -93,8 +95,9 @@ class _MainScreenState extends State<MainScreen> {
         destinations: const [
           NavigationDestination(icon: Icon(Icons.home), label: 'Home'),
           NavigationDestination(icon: Icon(Icons.terminal), label: 'Terminal'),
+          NavigationDestination(icon: Icon(Icons.widgets), label: 'Containers'),
+          NavigationDestination(icon: Icon(Icons.folder_open), label: 'Files'),
           NavigationDestination(icon: Icon(Icons.settings), label: 'Settings'),
-          NavigationDestination(icon: Icon(Icons.info_outline), label: 'About'),
         ],
       ),
     );

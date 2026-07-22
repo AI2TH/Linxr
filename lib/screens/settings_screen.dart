@@ -1,7 +1,9 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../services/vm_platform.dart';
 import '../theme.dart';
 
@@ -16,18 +18,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // shared_preferences v2+ automatically prepends "flutter." to every key,
   // so use bare key names here — they are stored as "flutter.vcpu_count" etc.,
   // which is what VmManager.kt reads from FlutterSharedPreferences.
-  static const _kVcpu = 'vcpu_count';
-  static const _kRam  = 'ram_mb';
-  static const _kDisk = 'disk_gb';
+  static const _kVcpu      = 'vcpu_count';
+  static const _kRam       = 'ram_mb';
+  static const _kDisk      = 'disk_gb';
+  static const _kSdcardPath = 'sdcard_path';
+
+  // Default shared folder when the user has never picked one.
+  // Matches the value VmManager.kt falls back to when no pref is set.
+  static const _defaultSdcardPath = '/storage/emulated/0/LinxrShare';
 
   DeviceInfo? _device;
   int? _vcpu;   // null = auto
   int? _ramMb;  // null = auto
   int? _diskGb; // null = auto
+  String _sdcardPath = _defaultSdcardPath;
+  final TextEditingController _customPathController = TextEditingController();
   bool _loaded = false;
   bool _resetting = false;
   bool _restarting = false;
   String? _loadError;
+  String _version = '';
 
   // ── Derived ranges from device info ────────────────────────────────────────
 
@@ -67,23 +77,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _customPathController.dispose();
+    super.dispose();
+  }
+
   Future<void> _load() async {
     try {
       final results = await Future.wait([
         VmPlatform.getDeviceInfo(),
         SharedPreferences.getInstance(),
+        PackageInfo.fromPlatform(),
       ]);
       if (!mounted) return;
       final device = results[0] as DeviceInfo;
       final prefs  = results[1] as SharedPreferences;
+      final pkg    = results[2] as PackageInfo;
       setState(() {
         _device = device;
-        final v = prefs.getInt(_kVcpu);
-        final r = prefs.getInt(_kRam);
-        final d = prefs.getInt(_kDisk);
+        _version = pkg.version;
+        int? getIntSafe(String key) {
+          final val = prefs.get(key);
+          if (val is int) return val;
+          if (val is String) return int.tryParse(val);
+          if (val is double) return val.toInt();
+          return null;
+        }
+        final v = getIntSafe(_kVcpu);
+        final r = getIntSafe(_kRam);
+        final d = getIntSafe(_kDisk);
         _vcpu   = (v != null && v > 0) ? v : null;
         _ramMb  = (r != null && r > 0) ? r : null;
         _diskGb = (d != null && d > 0) ? d : null;
+        _sdcardPath = prefs.getString(_kSdcardPath) ?? _defaultSdcardPath;
+        // Seed the custom-path field only when the current path doesn't match
+        // one of the quick options, so the field starts empty for quick picks.
+        if (!_isQuickPath(_sdcardPath)) {
+          _customPathController.text = _sdcardPath;
+        }
         _loaded = true;
       });
     } catch (e) {
@@ -137,6 +169,64 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
       );
+    }
+  }
+
+  // ── Shared folder persistence ──────────────────────────────────────────────
+
+  /// Quick-pick locations offered to the user. Paths are absolute and rooted at
+  /// `/storage/emulated/0/` (the app's external-storage view under
+  /// MANAGE_EXTERNAL_STORAGE). `LinxrShare` is the default created by the app.
+  static const _quickSdcardOptions = <(String, String)>[
+    ('Downloads',  '/storage/emulated/0/Download'),
+    ('Documents',  '/storage/emulated/0/Documents'),
+    ('DCIM',       '/storage/emulated/0/DCIM'),
+    ('LinxrShare', '/storage/emulated/0/LinxrShare'),
+  ];
+
+  static bool _isQuickPath(String path) {
+    for (final (_, p) in _quickSdcardOptions) {
+      if (path == p) return true;
+    }
+    return false;
+  }
+
+  /// Returns true when [path] matches one of the quick options or the default.
+  /// Used to decide which chip is highlighted as currently selected.
+  bool _isPathSelected(String path) => _sdcardPath == path;
+
+  Future<void> _saveSdcardPath(String value, {bool showSnack = true}) async {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty || trimmed == _sdcardPath) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    setState(() => _sdcardPath = trimmed);
+    await prefs.setString(_kSdcardPath, trimmed);
+
+    if (showSnack && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Shared folder will apply on next VM start'),
+          duration: Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
+  Future<void> _pickFolder() async {
+    try {
+      final channel = MethodChannel('com.ai2th.linxr/vm');
+      final String? path = await channel.invokeMethod<String>('pickFolder');
+      if (path != null && path.isNotEmpty) {
+        _customPathController.text = path;
+        await _saveSdcardPath(path);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open system file manager: $e')),
+        );
+      }
     }
   }
 
@@ -220,6 +310,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                // ── App Logo & Info Header ───────────────────────────────────
+                const SizedBox(height: 8),
+                Center(
+                  child: Image.asset(
+                    'assets/ai2th_logo.png',
+                    width: 220,
+                    filterQuality: FilterQuality.high,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Center(
+                  child: Text(
+                    'Linxr VM Manager ${_version.isNotEmpty ? "v$_version" : ""}',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Center(
+                  child: Text(
+                    'root@localhost:2222  ·  pw: alpine',
+                    style: TextStyle(
+                      color: Colors.white38,
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
 
                 // ── Load error banner ────────────────────────────────────────
                 if (_loadError != null) ...[
@@ -323,6 +445,94 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _ResetStorageButton(
                   resetting: _resetting,
                   onReset: () => _resetStorage(vm),
+                ),
+
+                const SizedBox(height: 24),
+                _SectionHeader('Shared Folder (virtio-9p)'),
+                const SizedBox(height: 8),
+                _SettingCard(
+                  icon: Icons.folder_shared,
+                  iconColor: AppColors.primary,
+                  title: 'Shared Folder',
+                  isAuto: false,
+                  valueLabel: _sdcardPath,
+                  onClearAuto: () {},
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final (label, path) in _quickSdcardOptions)
+                            ChoiceChip(
+                              label: Text(label),
+                              selected: _isPathSelected(path),
+                              onSelected: (_) {
+                                _customPathController.text = '';
+                                _saveSdcardPath(path);
+                              },
+                            ),
+                          ChoiceChip(
+                            label: const Text('Custom'),
+                            selected: !_isQuickPath(_sdcardPath),
+                            onSelected: (_) {
+                              // Focus the text field by triggering a rebuild
+                              // via setState, then focus its FocusNode if
+                              // attached. We just refocus after the rebuild.
+                              setState(() {});
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      ElevatedButton.icon(
+                        onPressed: _pickFolder,
+                        icon: const Icon(Icons.folder_open, size: 18),
+                        label: const Text('Open System File Manager'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _customPathController,
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 13),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          hintText: '/storage/emulated/0/MyFolder',
+                          hintStyle: const TextStyle(
+                              color: Colors.white24, fontSize: 13),
+                          filled: true,
+                          fillColor: Colors.black26,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(6),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 10),
+                          suffixIcon: TextButton(
+                            onPressed: () => _saveSdcardPath(
+                                _customPathController.text),
+                            child: const Text('Set',
+                                style: TextStyle(
+                                    color: AppColors.primary,
+                                    fontSize: 12)),
+                          ),
+                        ),
+                        onSubmitted: (v) => _saveSdcardPath(v),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Available to the VM at /mnt/sdcard. Requires '
+                        'MANAGE_EXTERNAL_STORAGE.',
+                        style: TextStyle(color: Colors.white38, fontSize: 11),
+                      ),
+                    ],
+                  ),
                 ),
 
                 const SizedBox(height: 24),

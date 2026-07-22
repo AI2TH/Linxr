@@ -2167,4 +2167,39 @@ Once the rootfs on `/dev/vda` is mounted, post-boot processes load additional ke
 2. Ran `depmod -a 7.1.4-0-0-virt` inside the VM to rebuild the dependency trees and binary indexes.
 3. Shut down the VM and streamed the updated `base.qcow2` virtual disk back to the repository's assets directory.
 
+---
+
+## NEW-34. Merge Pockr Docker container dashboard into Linxr
+
+**Commit:** `staged`
+**Files:** `lib/screens/containers_screen.dart`, `lib/services/vm_platform.dart`, `android/app/build.gradle`, `android/app/src/main/kotlin/com/ai2th/linxr/VmApiClient.kt`, `android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt`, `android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt`, `lib/main.dart`
+
+### Problem
+
+The guest container management functions were split between two separate apps: Linxr (which loaded the VM and managed settings) and Pockr (which had container management UI). The goal was to unify these features inside Linxr so that the user does not need to switch applications.
+
+### Fix
+
+1. Integrated the Kotlin `VmApiClient` connecting to `hostfwd` port 7081.
+2. Added okhttp and gson dependencies in `build.gradle`.
+3. Created `containers_screen.dart` displaying running containers, starting containers via image/command, viewing uvicorn/fastapi server logs, and stopping containers.
+4. Added channel handlers in `MainActivity.kt` and `VmManager.kt` delegating calls to `VmApiClient`.
+
+---
+
+## NEW-35. Combine Settings and About tabs
+
+**Commit:** `staged`
+**Files:** `lib/screens/settings_screen.dart`, `lib/main.dart`
+
+### Problem
+
+The Settings screen and About screen were separate screens in different tabs. The user wanted to simplify the tab layout, removing divider lines, the license card, and the open source dependencies list card.
+
+### Fix
+
+1. Merged the branding and app info (name, version, port, password) at the top of the Settings screen.
+2. Completely removed divider lines, license metadata, and dependencies cards.
+3. Cleaned up and deleted `about_screen.dart` and updated `main.dart` to use the new layout.
+
 

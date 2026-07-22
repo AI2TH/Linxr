@@ -10,6 +10,7 @@ import android.os.StatFs
 import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
+import java.util.UUID
 import java.util.zip.GZIPInputStream
 
 class VmManager(private val context: Context) {
@@ -36,7 +37,6 @@ class VmManager(private val context: Context) {
     // libqemu_img.so = qemu-img
     private val nativeLibDir: File
         get() = File(context.applicationInfo.nativeLibraryDir)
-
     private val flutterPrefs: SharedPreferences
         get() = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
 
@@ -46,6 +46,35 @@ class VmManager(private val context: Context) {
     var overrideVcpu: Int? = null
     var overrideRamMb: Int? = null
 
+    private val appPrefs: SharedPreferences
+        get() = context.getSharedPreferences("vm_app_prefs", Context.MODE_PRIVATE)
+
+    private val token: String by lazy { getOrCreateToken() }
+
+    val apiClient: VmApiClient by lazy { VmApiClient(token) }
+
+    private fun getOrCreateToken(): String {
+        var t = appPrefs.getString("api_token", null)
+        if (t == null) {
+            t = UUID.randomUUID().toString()
+            appPrefs.edit().putString("api_token", t).apply()
+            Log.d(TAG, "Generated new API token")
+        }
+        return t
+    }
+
+    fun startContainer(image: String, name: String, cmd: List<String>) =
+        apiClient.startContainer(image, name, cmd)
+
+    fun stopContainer(name: String) = apiClient.stopContainer(name)
+
+    fun listContainers(): List<Map<String, Any>> = apiClient.listContainers()
+
+    fun getLogs(name: String, tail: Int): String = apiClient.getLogs(name, tail)
+
+    fun vmExec(cmd: String): Map<String, Any> = apiClient.vmExec(cmd)
+
+    fun checkHealth(): Boolean = apiClient.checkHealth()
     // -------------------------------------------------------------------------
     // Public API
     // -------------------------------------------------------------------------
@@ -244,7 +273,9 @@ class VmManager(private val context: Context) {
             cmd += listOf("-device", "virtio-blk-pci,drive=user")
         }
 
-        // SSH forward only: host 2222 → guest 22
+        // SSH + Container API port forwards:
+        // host 2222 -> guest 22 (SSH)
+        // host 7081 -> guest 7080 (REST API)
         // SLIRP DNS override: bypass QEMU's single-threaded DNS proxy (10.0.2.3)
         // and advertise Cloudflare DNS (1.1.1.1) directly via DHCP.
         // Fixes npm install DNS timeouts and sshd reverse-lookup delays.
@@ -252,7 +283,7 @@ class VmManager(private val context: Context) {
             "user,id=net0," +
             "dns=1.1.1.1," +
             "dnssearch=lan," +
-            "hostfwd=tcp::2222-:22"
+            "hostfwd=tcp::2222-:22,hostfwd=tcp::7081-:7080"
         )
 
         if (isArm) {
@@ -282,6 +313,7 @@ class VmManager(private val context: Context) {
         serialLog.delete()
         cmd += listOf("-display", "none")
         cmd += listOf("-serial", "file:${serialLog.absolutePath}")
+        cmd += listOf("-fw_cfg", "name=opt/api_token,string=$token")
 
         val kernel = File(vmDir, "vmlinuz-virt")
         val initrd  = File(vmDir, "initramfs-virt")
@@ -291,7 +323,7 @@ class VmManager(private val context: Context) {
             cmd += listOf("-append",
                 "console=ttyAMA0 root=/dev/vda rootfstype=ext4 rootflags=ro,noatime,nodiratime " +
                 "hostname=linxr modules=virtio_blk,virtio_mmio,virtio_net,ext4 nowatchdog " +
-                "module.sig_enforce=0 cgroup_no_v1=all fastboot")
+                "module.sig_enforce=0 cgroup_no_v1=all fastboot api_token=$token")
         }
         return cmd
     }
@@ -345,7 +377,9 @@ class VmManager(private val context: Context) {
 
         // Bootstrap script
         runCatching { extractAsset("bootstrap/init_bootstrap.sh", File(bootstrapDir, "init_bootstrap.sh")) }
-            .onFailure { Log.w(TAG, "Bootstrap asset not found: ${it.message}") }
+            .onFailure { Log.w(TAG, "init_bootstrap.sh asset not found: ${it.message}") }
+        runCatching { extractAsset("bootstrap/api_server.py", File(bootstrapDir, "api_server.py")) }
+            .onFailure { Log.w(TAG, "api_server.py asset not found: ${it.message}") }
 
         File(filesDir, "assets_extracted.$ASSETS_VERSION").createNewFile()
         Log.d(TAG, "Assets extracted ($ASSETS_VERSION)")

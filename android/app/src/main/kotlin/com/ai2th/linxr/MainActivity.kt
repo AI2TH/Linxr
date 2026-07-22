@@ -123,6 +123,82 @@ class MainActivity : FlutterActivity() {
                         }
                     }
 
+                    "checkHealth" -> executor.execute {
+                        try {
+                            val healthy = vmManager.checkHealth()
+                            if (!isFinishing) runOnUiThread { result.success(healthy) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.success(false) }
+                        }
+                    }
+
+                    "startContainer" -> executor.execute {
+                        try {
+                            val image = call.argument<String>("image")
+                                ?: return@execute runOnUiThread {
+                                    result.error("CONTAINER_START_ERROR", "image required", null)
+                                }
+                            val name = call.argument<String>("name")
+                                ?: return@execute runOnUiThread {
+                                    result.error("CONTAINER_START_ERROR", "name required", null)
+                                }
+                            val cmd = call.argument<List<String>>("cmd") ?: emptyList()
+                            vmManager.startContainer(image, name, cmd)
+                            if (!isFinishing) runOnUiThread { result.success(null) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("CONTAINER_START_ERROR", e.message, null) }
+                        }
+                    }
+
+                    "stopContainer" -> executor.execute {
+                        try {
+                            val name = call.argument<String>("name")
+                                ?: return@execute runOnUiThread {
+                                    result.error("CONTAINER_STOP_ERROR", "name required", null)
+                                }
+                            vmManager.stopContainer(name)
+                            if (!isFinishing) runOnUiThread { result.success(null) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("CONTAINER_STOP_ERROR", e.message, null) }
+                        }
+                    }
+
+                    "listContainers" -> executor.execute {
+                        try {
+                            val containers = vmManager.listContainers()
+                            if (!isFinishing) runOnUiThread { result.success(containers) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("CONTAINER_LIST_ERROR", e.message, null) }
+                        }
+                    }
+
+                    "getLogs" -> executor.execute {
+                        try {
+                            val name = call.argument<String>("name")
+                                ?: return@execute runOnUiThread {
+                                    result.error("LOGS_ERROR", "name required", null)
+                                }
+                            val tail = call.argument<Int>("tail") ?: 100
+                            val logs = vmManager.getLogs(name, tail)
+                            if (!isFinishing) runOnUiThread { result.success(logs) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("LOGS_ERROR", e.message, null) }
+                        }
+                    }
+
+                    "vmExec" -> executor.execute {
+                        try {
+                            val cmd = call.argument<String>("cmd")
+                                ?: return@execute runOnUiThread {
+                                    result.error("VM_EXEC_ERROR", "cmd required", null)
+                                }
+                            val output = vmManager.vmExec(cmd)
+                            if (!isFinishing) runOnUiThread { result.success(output) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("VM_EXEC_ERROR", e.message, null) }
+                        }
+                    }
+
                     else -> result.notImplemented()
                 }
             }

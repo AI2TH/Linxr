@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:async';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart';
@@ -42,6 +43,15 @@ class VmPlatform {
     await _channel.invokeMethod('resetStorage');
   }
 
+  static Future<bool> requestAllFilesAccess() async {
+    try {
+      final bool? result = await _channel.invokeMethod<bool>('requestAllFilesAccess');
+      return result ?? false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
   static Future<bool> pingSsh() async {
     SSHClient? client;
     try {
@@ -63,6 +73,73 @@ class VmPlatform {
       client?.close();
     }
   }
+
+  static Future<void> startContainer(
+      String image, String name, List<String> cmd) async {
+    try {
+      await _channel.invokeMethod('startContainer', {
+        'image': image,
+        'name': name,
+        'cmd': cmd,
+      });
+    } on PlatformException catch (e) {
+      debugPrint("Failed to start container: ${e.message}");
+      rethrow;
+    }
+  }
+
+  static Future<void> stopContainer(String name) async {
+    try {
+      await _channel.invokeMethod('stopContainer', {'name': name});
+    } on PlatformException catch (e) {
+      debugPrint("Failed to stop container: ${e.message}");
+      rethrow;
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> listContainers() async {
+    try {
+      final List<dynamic>? result = await _channel.invokeMethod('listContainers');
+      if (result == null) return [];
+      return result.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    } on PlatformException catch (e) {
+      debugPrint("Failed to list containers: ${e.message}");
+      return [];
+    }
+  }
+
+  static Future<Map<String, dynamic>> vmExec(String cmd) async {
+    try {
+      final result = await _channel.invokeMethod('vmExec', {'cmd': cmd});
+      return Map<String, dynamic>.from(result as Map);
+    } on PlatformException catch (e) {
+      debugPrint("Failed to vmExec: ${e.message}");
+      rethrow;
+    }
+  }
+
+  static Future<String> getLogs(String name, int tail) async {
+    try {
+      final String? result = await _channel.invokeMethod<String>('getLogs', {
+        'name': name,
+        'tail': tail,
+      });
+      return result ?? '';
+    } on PlatformException catch (e) {
+      debugPrint("Failed to get logs: ${e.message}");
+      return '';
+    }
+  }
+
+  static Future<bool> checkHealth() async {
+    try {
+      final bool? result = await _channel.invokeMethod<bool>('checkHealth');
+      return result ?? false;
+    } on PlatformException catch (e) {
+      debugPrint("Failed to check health: ${e.message}");
+      return false;
+    }
+  }
 }
 
 class DeviceInfo {
@@ -80,6 +157,7 @@ class VmState extends ChangeNotifier {
   String _status = 'stopped';
   bool _isLoading = false;
   String? _errorMessage;
+  bool _isHealthy = false;
 
   Timer? _pollTimer;
   Timer? _sshPingTimer;
@@ -90,6 +168,7 @@ class VmState extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   bool get isRunning => _status == 'running';
   bool get isBooting => _status == 'booting';
+  bool get isHealthy => _isHealthy;
 
   Future<void> startVm() async {
     if (_status == 'running' || _status == 'booting' || _status == 'starting') return;
@@ -175,8 +254,10 @@ class VmState extends ChangeNotifier {
       _isPolling = true;
       try {
         final s = await VmPlatform.getVmStatus();
-        if (s != _status) {
+        final h = s == 'running' ? await VmPlatform.checkHealth() : false;
+        if (s != _status || h != _isHealthy) {
           _status = s;
+          _isHealthy = h;
           notifyListeners();
         }
       } finally {
@@ -188,6 +269,7 @@ class VmState extends ChangeNotifier {
   void _stopPolling() {
     _pollTimer?.cancel();
     _pollTimer = null;
+    _isHealthy = false;
   }
 
   @override

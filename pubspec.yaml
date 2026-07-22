@@ -13,7 +13,12 @@ dependencies:
   dartssh2: ^2.8.2
   xterm: ^4.0.0
   shared_preferences: ^2.2.0
-  package_info_plus: ^8.0.0
+  package_info_plus: 8.0.0
+  path_provider: 2.0.15
+  url_launcher: ^6.3.0
+
+dependency_overrides:
+  path_provider_android: 2.2.10
 
 dev_dependencies:
   flutter_test:

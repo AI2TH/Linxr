@@ -23,6 +23,7 @@ class VmManager(private val context: Context) {
 
     @Volatile private var vmProcess: Process? = null
     @Volatile private var isRunning = false
+    fun isVmRunning(): Boolean = isRunning
     private var wakelock: PowerManager.WakeLock? = null
 
     private val filesDir: File get() = context.filesDir
@@ -40,7 +41,10 @@ class VmManager(private val context: Context) {
         get() = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
 
     // Bump when base.qcow2.gz changes (forces re-extraction on next launch)
-    private val ASSETS_VERSION = "v35"
+    private val ASSETS_VERSION = "v50"
+
+    var overrideVcpu: Int? = null
+    var overrideRamMb: Int? = null
 
     // -------------------------------------------------------------------------
     // Public API
@@ -69,8 +73,8 @@ class VmManager(private val context: Context) {
         }
 
         val qemuBin = resolveQemuBinary()
-        var vcpu  = getFlutterInt("flutter.vcpu_count", dynamicVcpu())
-        var ramMb = getFlutterInt("flutter.ram_mb", dynamicRamMb())
+        var vcpu  = overrideVcpu ?: getFlutterInt("flutter.vcpu_count", dynamicVcpu())
+        var ramMb = overrideRamMb ?: getFlutterInt("flutter.ram_mb", dynamicRamMb())
         if (isEmulator()) {
             Log.d(TAG, "Running on emulator: forcing vcpu=1, ram=512MB to conserve host resources")
             vcpu = 1
@@ -217,7 +221,7 @@ class VmManager(private val context: Context) {
         val isArm = isArm64()
         if (isArm) {
             cmd += listOf("-machine", "virt")
-            cmd += listOf("-cpu", "max")
+            cmd += listOf("-cpu", "cortex-a57")
         } else {
             cmd += listOf("-machine", "q35")
             cmd += listOf("-cpu", "qemu64")
@@ -261,7 +265,10 @@ class VmManager(private val context: Context) {
 
         // Share Android external storage (/sdcard) with the VM via 9p.
         // The guest mounts it at /mnt/sdcard using an OpenRC service.
-        val sharedDir = Environment.getExternalStorageDirectory()
+        // The path comes from the `flutter.sdcard_path` SharedPreferences key
+        // (set by the Settings screen). Falls back to external storage root if
+        // unset or unreadable; creates the configured directory if missing.
+        val sharedDir = resolveSharedDir()
         if (sharedDir != null && sharedDir.exists() && sharedDir.canRead()) {
             cmd += listOf(
                 "-fsdev", "local,id=sdcard,path=${sharedDir.absolutePath},security_model=none",
@@ -282,9 +289,9 @@ class VmManager(private val context: Context) {
             cmd += listOf("-kernel", kernel.absolutePath)
             cmd += listOf("-initrd", initrd.absolutePath)
             cmd += listOf("-append",
-                "console=ttyAMA0 root=/dev/vda rootfstype=ext4 rootflags=rw " +
-                "modules=virtio_blk,virtio_mmio,virtio_net,ext4 nowatchdog " +
-                "cgroup_no_v1=all fastboot")
+                "console=ttyAMA0 root=/dev/vda rootfstype=ext4 rootflags=ro,noatime,nodiratime " +
+                "hostname=linxr modules=virtio_blk,virtio_mmio,virtio_net,ext4 nowatchdog " +
+                "module.sig_enforce=0 cgroup_no_v1=all fastboot")
         }
         return cmd
     }
@@ -412,9 +419,8 @@ class VmManager(private val context: Context) {
         return VM_DISK_SIZE_GB
     }
 
-    // Half the device's CPU cores, clamped to [1, cores].
-    private fun dynamicVcpu(): Int =
-        (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
+    // 1 vCPU default for TCG emulation to eliminate multi-threaded TCG lock contention
+    private fun dynamicVcpu(): Int = 1
 
     // 25% of device total RAM in MB, clamped to [512, totalRam].
     private fun dynamicRamMb(): Int {
@@ -486,5 +492,45 @@ class VmManager(private val context: Context) {
             is String -> value.toIntOrNull() ?: default
             else -> default
         }
+    }
+
+    private fun getFlutterString(key: String, default: String): String {
+        // Flutter's shared_preferences plugin stores strings as String entries;
+        // getString() returns null if missing or if the underlying type is not
+        // a String (e.g. Set<String> for List<String> prefs). We read .all
+        // directly so we can also accept the edge case where a value is stored
+        // under a non-String type.
+        return when (val value = flutterPrefs.all[key]) {
+            is String -> value
+            else -> default
+        }
+    }
+
+    /**
+     * Returns the directory that should be shared with the VM via 9p.
+     * Reads `flutter.sdcard_path` from SharedPreferences (set by the Settings
+     * screen). Falls back to `Environment.getExternalStorageDirectory()` when
+     * the pref is unset, blank, or the configured path is unreadable.
+     *
+     * If a configured path is set but does not yet exist, it is created so
+     * QEMU can pass it to `-fsdev local,path=...` without failing on a
+     * missing directory.
+     */
+    private fun resolveSharedDir(): File? {
+        val configured = getFlutterString("flutter.sdcard_path", "").trim()
+        if (configured.isNotEmpty()) {
+            val f = File(configured)
+            if (!f.exists()) {
+                val created = f.mkdirs()
+                Log.d(TAG, "Configured sdcard path '$configured' missing, mkdirs=$created")
+            }
+            if (f.exists() && f.canRead()) {
+                return f
+            }
+            Log.w(TAG, "Configured sdcard path '$configured' unreadable, falling back")
+        }
+        val fallback = Environment.getExternalStorageDirectory()
+        if (fallback != null && !fallback.exists()) fallback.mkdirs()
+        return fallback
     }
 }

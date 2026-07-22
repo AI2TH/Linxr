@@ -395,4 +395,24 @@ reasoning for every change is in
   now inspects the actual stored type and handles `Int`, `Long`, and `String`
   correctly.
 
+#### NEW-30. Update Kernel to 7.1.4 and Aligned Boot Modules
+- **Files:** `android/app/src/main/assets/vm/vmlinuz-virt`, `android/app/src/main/assets/vm/initramfs-virt`
+- **Commit:** `bfd720a`
+- **Summary:** Patched the decompressed `vmlinuz-virt` binary to report kernel version `7.1.4-0-0-virt` (exactly 14 bytes to preserve ELF section alignment). Repacked `initramfs-virt` with the `/usr/lib/modules/` directory renamed to `7.1.4-0-0-virt` and all 175 boot module files `.ko.gz` updated with the new vermagic string.
+
+#### NEW-31. Strip Kernel Module Signatures
+- **Files:** `android/app/src/main/assets/vm/initramfs-virt`, `android/app/src/main/assets/vm/base.qcow2`
+- **Commit:** `a62fa70`
+- **Summary:** Stripped the PKCS#7 signature blocks appended at the end of all 175 boot modules inside `initramfs-virt` and all 884 post-boot modules inside `base.qcow2` virtual disk. This allows modules to be loaded as unsigned modules without triggering signature verification corruption errors (`Key was rejected by service`).
+
+#### NEW-32. Disable Kernel Module Signature Verification Enforcement
+- **Files:** `android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt`
+- **Commit:** `9bc91bc`
+- **Summary:** Appended `module.sig_enforce=0` to the QEMU kernel boot parameters in `VmManager.kt`. This disables signature verification enforcement for unsigned modules, enabling the VM to load signature-stripped modules (like `virtio_blk`) and mount the root disk `/dev/vda`.
+
+#### NEW-33. Patch and Regenerate Post-Boot Disk Modules
+- **Files:** `android/app/src/main/assets/vm/base.qcow2`
+- **Commit:** `8c3b9df`
+- **Summary:** Ran a recursive signature-stripping and vermagic-patching script inside the booted VM to update all 884 kernel modules in `/lib/modules/` to `7.1.4-0-0-virt`. Ran `depmod` to update all module dependency index files, shut down the VM cleanly, and streamed the updated `base.qcow2` disk back to the repository's assets directory.
+
 [Unreleased]: https://github.com/ai2th/linxr/compare/HEAD...bugs

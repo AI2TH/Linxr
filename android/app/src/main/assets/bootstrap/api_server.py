@@ -121,27 +121,35 @@ class VmExecRequest(BaseModel):
 @app.get("/health")
 async def health_check():
     """Health check — no auth required so the app can poll before token is verified."""
+    runtime_ok = False
+    version = "unknown"
+    status = "degraded"
+
     try:
         result = subprocess.run(
             ["docker", "info"],
-            capture_output=True, text=True, timeout=5
+            capture_output=True, text=True, timeout=2
         )
         runtime_ok = result.returncode == 0
+        if runtime_ok:
+            status = "ok"
+    except Exception as e:
+        logger.warning("Docker info check failed or timed out: %s", e)
 
+    try:
         ver = subprocess.run(
             ["docker", "--version"],
-            capture_output=True, text=True, timeout=5
+            capture_output=True, text=True, timeout=2
         )
         version = ver.stdout.strip() if ver.returncode == 0 else "unknown"
-
-        return {
-            "status": "ok" if runtime_ok else "degraded",
-            "runtime": "docker",
-            "version": version,
-        }
     except Exception as e:
-        logger.error("Health check error: %s", e)
-        return JSONResponse(status_code=503, content={"status": "error", "message": str(e)})
+        pass
+
+    return {
+        "status": status,
+        "runtime": "docker",
+        "version": version,
+    }
 
 
 @app.get("/containers", dependencies=[Depends(require_auth)])

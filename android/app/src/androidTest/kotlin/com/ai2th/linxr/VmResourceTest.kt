@@ -25,10 +25,15 @@ class VmResourceTest {
     fun startVm() {
         Log.i(TAG, ">>> startVm")
         try { vmManager.stopVm() } catch (_: Exception) {}
+        
+        // Configure disk limit to 8GB to test volume expansion
+        val prefs = context.getSharedPreferences("FlutterSharedPreferences", android.content.Context.MODE_PRIVATE)
+        prefs.edit().putLong("flutter.disk_gb", 8L).commit()
+
         val userImage = java.io.File(context.filesDir, "vm/user.qcow2")
-        if (!userImage.exists()) {
-            vmManager.resetStorage()
-        }
+        userImage.delete() // Force clean recreation at 8GB
+        vmManager.resetStorage()
+
         vmManager.overrideVcpu = 1
         vmManager.overrideRamMb = 512
         vmManager.startVm()

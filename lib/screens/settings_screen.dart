@@ -49,11 +49,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return max(512, (total ~/ 512) * 512);
   }
 
-  // Free storage minus 2 GB headroom, rounded to nearest 8 GB step, min 8
+  // Free storage minus 2 GB headroom, min 8
   int get _maxDiskGb {
     final free = _device?.freeStorageGb ?? 32;
-    final usable = max(8, free - 2);
-    return (usable ~/ 8) * 8;
+    return max(8, free - 2);
   }
 
   // Auto defaults — mirrors VmManager.kt logic
@@ -429,14 +428,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   title: 'Disk Cap',
                   isAuto: _diskGb == null,
                   valueLabel: _diskGb == null
-                      ? 'Auto — $_autoDiskGb GB virtual disk (${_maxDiskGb} GB free on device)'
-                      : '$_effectiveDiskGb GB virtual disk (${_maxDiskGb} GB free on device)',
+                      ? 'Auto — $_autoDiskGb GB virtual disk (${_device?.freeStorageGb ?? 32} GB free on device)'
+                      : '$_effectiveDiskGb GB virtual disk (${_device?.freeStorageGb ?? 32} GB free on device)',
                   onClearAuto: () => _saveDisk(null, context),
                   child: _StepSlider(
                     value: _effectiveDiskGb.clamp(8, _maxDiskGb),
                     min: 8,
                     max: _maxDiskGb,
-                    step: 8,
+                    step: 1,
                     onChanged: (v) => _saveDisk(v, context),
                     labelFn: (v) => '$v GB',
                   ),

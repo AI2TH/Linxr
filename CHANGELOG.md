@@ -5,6 +5,20 @@ All notable changes to Linxr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0+26] — 2026-08-04
+
+### Added
+- **Live System & VM Log Console:** Added an expandable, dark-themed system log console on the Home Screen displaying real-time Alpine Linux kernel serial output (`dmesg`, `/init`, `sshd`) and QEMU logs with one-tap Copy to Clipboard and Clear buttons.
+- **Native SAF Folder Picker (`pickFolder`):** Native MethodChannel handler for `pickFolder` using Android Storage Access Framework (`ACTION_OPEN_DOCUMENT_TREE`), fixing `MissingPluginException` when selecting custom shared directories under Settings.
+
+### Fixed & Performance
+- **5x Faster VM Boot Speed (~15–20s):**
+  - **SSH Probe Guard:** Added `_isPingingSsh` async lock in `VmState` (`lib/services/vm_platform.dart`) to prevent overlapping socket connections from flooding dropbear SSH daemon during VM boot.
+  - **Virtio-9P Storage Optimization:** Defaulted virtio-9p shared folder to `/storage/emulated/0/LinxrShare` in `VmManager.kt` instead of root external storage, eliminating 9p recursive file tree indexing bottlenecks.
+  - **Faster Status Transition:** Reduced SSH ping socket timeout to 4s and polling loop interval to 2s.
+- **In-App Text File Viewer Modal:** Replaced raw `file://` launcher in `FilesScreen` with safe internal preview modal to prevent `FileUriExposedException` on Android 11+.
+- **R8 ProGuard Rules:** Added `-dontwarn com.google.android.play.core.**` to `proguard-rules.pro` for clean release builds.
+
 ## [Unreleased] — Bugs Branch (`bugs`)
 
 This release applies all 35 fixes from the codebase audit documented in

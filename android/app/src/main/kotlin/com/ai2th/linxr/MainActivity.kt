@@ -8,6 +8,9 @@ import android.os.Bundle
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import android.app.Activity
+import android.net.Uri
+import android.provider.DocumentsContract
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -24,6 +27,8 @@ class MainActivity : FlutterActivity() {
 
     private val REQUEST_POST_NOTIFICATIONS = 1001
     private val REQUEST_STORAGE = 1002
+    private val REQUEST_PICK_FOLDER = 1003
+    private var pendingFolderResult: MethodChannel.Result? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -199,9 +204,69 @@ class MainActivity : FlutterActivity() {
                         }
                     }
 
+                    "getVmLogs" -> {
+                        val logs = vmManager.getVmLogs()
+                        result.success(logs)
+                    }
+
+                    "clearVmLogs" -> {
+                        vmManager.clearVmLogs()
+                        result.success(true)
+                    }
+
+                    "pickFolder" -> {
+                        pendingFolderResult = result
+                        try {
+                            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+                            intent.addFlags(
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                            )
+                            startActivityForResult(intent, REQUEST_PICK_FOLDER)
+                        } catch (e: Exception) {
+                            pendingFolderResult?.error("PICK_FOLDER_ERROR", e.message, null)
+                            pendingFolderResult = null
+                        }
+                    }
+
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_PICK_FOLDER) {
+            if (resultCode == Activity.RESULT_OK && data?.data != null) {
+                val uri = data.data!!
+                val path = parseDocumentTreeUri(uri)
+                pendingFolderResult?.success(path)
+            } else {
+                pendingFolderResult?.success(null)
+            }
+            pendingFolderResult = null
+        }
+    }
+
+    private fun parseDocumentTreeUri(uri: Uri): String? {
+        return try {
+            val docId = DocumentsContract.getTreeDocumentId(uri)
+            val split = docId.split(":")
+            val type = split[0]
+            if (type.equals("primary", ignoreCase = true)) {
+                if (split.size > 1) {
+                    "/storage/emulated/0/" + split[1]
+                } else {
+                    "/storage/emulated/0"
+                }
+            } else {
+                "/storage/" + type + "/" + (if (split.size > 1) split[1] else "")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error parsing document tree URI: ${e.message}")
+            null
+        }
     }
 
     override fun onDestroy() {

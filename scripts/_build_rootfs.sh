@@ -49,7 +49,9 @@ apk --root "${ROOTFS}" --initdb --no-cache add \
     kmod \
     nodejs \
     npm \
-    py3-pip
+    py3-pip \
+    py3-fastapi \
+    uvicorn
 
 # ---------------------------------------------------------------------------
 # Package mirror configuration (NEW-16) — baked into base.qcow2
@@ -101,7 +103,8 @@ mkdir -p "${ROOTFS}/proc" \
          "${ROOTFS}/root" \
          "${ROOTFS}/etc/sudoers.d" \
          "${ROOTFS}/etc/docker" \
-         "${ROOTFS}/lib/modules"
+         "${ROOTFS}/lib/modules" \
+         "${ROOTFS}/mnt/sdcard"
 
 mknod -m 666 "${ROOTFS}/dev/null"    c 1 3 2>/dev/null || true
 mknod -m 666 "${ROOTFS}/dev/zero"    c 1 5 2>/dev/null || true
@@ -372,6 +375,7 @@ mount -t tmpfs -o mode=0755 tmpfs /run
 # Ensure modules are loaded
 modprobe 9p 2>/dev/null || true
 modprobe 9pnet_virtio 2>/dev/null || true
+modprobe overlay 2>/dev/null || true
 
 # Mount tmpfs on writeable system paths (directories already exist in Alpine)
 mount -t tmpfs tmpfs /tmp
@@ -379,22 +383,57 @@ mount -t tmpfs tmpfs /run
 mount -t tmpfs tmpfs /var/log
 mount -t tmpfs tmpfs /var/run
 
+# Mount cgroup2 and create device nodes for Docker
+mkdir -p /sys/fs/cgroup
+mount -t cgroup2 cgroup2 /sys/fs/cgroup
+[ -c /dev/fuse ] || mknod -m 666 /dev/fuse c 10 229
+mkdir -p /dev/net
+[ -c /dev/net/tun ] || mknod -m 666 /dev/net/tun c 10 200
+
 # Setup network interfaces statically (SLIRP)
 ip link set dev lo up
 ip link set dev eth0 up
 ip addr add 10.0.2.15/24 dev eth0
 ip route add default via 10.0.2.2
 
+# Remount root filesystem read-write for user and resize2fs use
+mount -o remount,rw /
+for i in 1 2 3 4 5; do
+    if touch /etc/.rw_check 2>/dev/null; then
+        rm -f /etc/.rw_check
+        break
+    fi
+    sleep 0.1
+done
+
 # Mount shared sdcard folder
 mkdir -p /mnt/sdcard
 mount -t 9p -o trans=virtio,version=9p2000.L,uid=0,gid=0,rw sdcard /mnt/sdcard 2>/tmp/sdcard_mount.log || true
 
-# Remount root filesystem read-write for user and resize2fs use
-mount -o remount,rw /
+# Copy bootstrap files from shared folder to guest root
+if [ -d /mnt/sdcard/bootstrap ]; then
+    mkdir -p /bootstrap
+    cp -r /mnt/sdcard/bootstrap/. /bootstrap/
+    chmod +x /bootstrap/*.sh 2>/dev/null || true
+    chmod +x /bootstrap/*.py 2>/dev/null || true
+fi
+
+# Run init_bootstrap.sh in the background
+if [ -f /bootstrap/init_bootstrap.sh ]; then
+    sh /bootstrap/init_bootstrap.sh >/var/log/bootstrap.log 2>&1 &
+fi
+
+# Start API server in the background
+if [ -f /bootstrap/api_server.py ]; then
+    python3 -u /bootstrap/api_server.py >/var/log/api_server.log 2>&1 &
+fi
 
 # Start Dropbear SSH
 touch /var/log/lastlog
 /usr/sbin/dropbear -E -p 22
+
+# Start Docker daemon in the background
+dockerd --data-root /var/lib/docker --log-level warn >/tmp/dockerd.log 2>&1 &
 
 echo "Linxr VM booted successfully in seconds!"
 while true; do

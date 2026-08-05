@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -641,21 +642,43 @@ class _FilesScreenState extends State<FilesScreen> with WidgetsBindingObserver {
                     onTap: () async {
                       if (entity is File) {
                         try {
-                          final uri = Uri.file(entity.path);
-                          final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-                          if (!launched && mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Could not open file'),
-                                backgroundColor: AppColors.danger,
-                              ),
-                            );
+                          final file = entity as File;
+                          final bytes = await file.readAsBytes();
+                          String textContent;
+                          try {
+                            textContent = utf8.decode(bytes);
+                            if (textContent.length > 5000) {
+                              textContent = '${textContent.substring(0, 5000)}\n\n[Truncated...]';
+                            }
+                          } catch (_) {
+                            textContent = 'Binary file (Size: ${bytes.length} bytes)';
                           }
+
+                          if (!mounted) return;
+                          showDialog(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              backgroundColor: AppColors.surface,
+                              title: Text(name, style: const TextStyle(color: Colors.white)),
+                              content: SingleChildScrollView(
+                                child: Text(
+                                  textContent,
+                                  style: const TextStyle(color: Colors.white70, fontFamily: 'monospace', fontSize: 13),
+                                ),
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.of(context).pop(),
+                                  child: const Text('Close', style: TextStyle(color: AppColors.primary)),
+                                ),
+                              ],
+                            ),
+                          );
                         } catch (e) {
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text('Error opening file: $e'),
+                                content: Text('Error reading file: $e'),
                                 backgroundColor: AppColors.danger,
                               ),
                             );

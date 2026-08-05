@@ -41,7 +41,7 @@ class VmManager(private val context: Context) {
         get() = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
 
     // Bump when base.qcow2.gz changes (forces re-extraction on next launch)
-    private val ASSETS_VERSION = "v50"
+    private val ASSETS_VERSION = "v51"
 
     var overrideVcpu: Int? = null
     var overrideRamMb: Int? = null
@@ -99,6 +99,10 @@ class VmManager(private val context: Context) {
         if (freshExtraction) {
             Log.d(TAG, "Assets not ready, extracting...")
             extractAssets()
+        } else {
+            // Always re-extract bootstrap scripts to ensure they are up to date with the current APK
+            runCatching { extractAsset("bootstrap/init_bootstrap.sh", File(bootstrapDir, "init_bootstrap.sh")) }
+            runCatching { extractAsset("bootstrap/api_server.py", File(bootstrapDir, "api_server.py")) }
         }
 
         val qemuBin = resolveQemuBinary()
@@ -121,6 +125,21 @@ class VmManager(private val context: Context) {
             createUserImage(userImage.absolutePath, baseImage.absolutePath)
         } else {
             Log.d(TAG, "Reusing existing user.qcow2 (state preserved)")
+        }
+
+        // Copy bootstrap files and write token to the shared folder for guest VM access
+        val sharedDir = resolveSharedDir()
+        if (sharedDir != null && sharedDir.exists() && sharedDir.canWrite()) {
+            val guestBootstrapDir = File(sharedDir, "bootstrap")
+            guestBootstrapDir.mkdirs()
+            try {
+                File(bootstrapDir, "init_bootstrap.sh").copyTo(File(guestBootstrapDir, "init_bootstrap.sh"), overwrite = true)
+                File(bootstrapDir, "api_server.py").copyTo(File(guestBootstrapDir, "api_server.py"), overwrite = true)
+                File(guestBootstrapDir, "token").writeText(token)
+                Log.d(TAG, "Successfully prepared guest bootstrap files and token in shared folder: ${guestBootstrapDir.absolutePath}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to prepare guest bootstrap files: ${e.message}", e)
+            }
         }
 
         val cmd = buildQemuCommand(
@@ -163,12 +182,14 @@ class VmManager(private val context: Context) {
         }
 
         isRunning = true
+        addLog("[Linxr] Starting Alpine Linux VM...")
 
         // Drain QEMU stdout/stderr on a daemon thread to prevent pipe buffer deadlock
         Thread {
             try {
                 vmProcess?.inputStream?.bufferedReader()?.forEachLine { line ->
                     Log.d("QEMU", line)
+                    addLog(line)
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "QEMU output reader closed: ${e.message}")
@@ -176,6 +197,41 @@ class VmManager(private val context: Context) {
         }.apply { isDaemon = true; start() }
 
         Log.d(TAG, "VM process launched")
+    }
+
+    private val logBuffer = java.util.Collections.synchronizedList(mutableListOf<String>())
+
+    fun getVmLogs(): List<String> {
+        val result = mutableListOf<String>()
+        synchronized(logBuffer) {
+            result.addAll(logBuffer)
+        }
+        val serialFile = File(vmDir, "serial.log")
+        if (serialFile.exists()) {
+            try {
+                val lines = serialFile.readLines()
+                val tail = if (lines.size > 200) lines.takeLast(200) else lines
+                result.addAll(tail)
+            } catch (e: Exception) {
+                // ignore concurrent read errors
+            }
+        }
+        return result
+    }
+
+    fun clearVmLogs() {
+        synchronized(logBuffer) { logBuffer.clear() }
+        val serialFile = File(vmDir, "serial.log")
+        if (serialFile.exists()) {
+            runCatching { serialFile.writeText("") }
+        }
+    }
+
+    private fun addLog(line: String) {
+        synchronized(logBuffer) {
+            if (logBuffer.size >= 500) logBuffer.removeAt(0)
+            logBuffer.add(line)
+        }
     }
 
     @Synchronized
@@ -562,6 +618,11 @@ class VmManager(private val context: Context) {
                 return f
             }
             Log.w(TAG, "Configured sdcard path '$configured' unreadable, falling back")
+        }
+        val defaultFolder = File(Environment.getExternalStorageDirectory(), "LinxrShare")
+        if (!defaultFolder.exists()) defaultFolder.mkdirs()
+        if (defaultFolder.exists() && defaultFolder.canRead()) {
+            return defaultFolder
         }
         val fallback = Environment.getExternalStorageDirectory()
         if (fallback != null && !fallback.exists()) fallback.mkdirs()

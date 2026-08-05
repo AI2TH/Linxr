@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'screens/terminal_screen.dart';
 import 'screens/containers_screen.dart';
@@ -115,17 +117,21 @@ class _HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Linxr'), centerTitle: false),
-      body: const Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _StatusCard(),
-            SizedBox(height: 16),
-            _SshInfoCard(),
-            SizedBox(height: 16),
-            _ControlButton(),
-          ],
+      body: const SingleChildScrollView(
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _StatusCard(),
+              SizedBox(height: 16),
+              _SshInfoCard(),
+              SizedBox(height: 16),
+              _ControlButton(),
+              SizedBox(height: 16),
+              _SystemLogConsole(),
+            ],
+          ),
         ),
       ),
     );
@@ -288,11 +294,161 @@ class _ControlButton extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         const Text(
-          'Boot + SSH ready takes 2–4 min',
+          'Boot + SSH ready takes ~15–30 sec',
           textAlign: TextAlign.center,
           style: TextStyle(color: Colors.white38, fontSize: 12),
         ),
       ],
+    );
+  }
+}
+
+class _SystemLogConsole extends StatefulWidget {
+  const _SystemLogConsole();
+
+  @override
+  State<_SystemLogConsole> createState() => _SystemLogConsoleState();
+}
+
+class _SystemLogConsoleState extends State<_SystemLogConsole> {
+  bool _isExpanded = false;
+  List<String> _logs = [];
+  Timer? _timer;
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchLogs();
+    _timer = Timer.periodic(const Duration(seconds: 2), (_) => _fetchLogs());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetchLogs() async {
+    final newLogs = await VmPlatform.getVmLogs();
+    if (mounted && newLogs.length != _logs.length) {
+      setState(() {
+        _logs = newLogs;
+      });
+      if (_scrollController.hasClients && _isExpanded) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = context.watch<VmState>();
+    final isBooting = vm.isBooting;
+
+    // Auto-expand logs while booting
+    final showLogs = _isExpanded || isBooting;
+
+    return Card(
+      color: AppColors.surface,
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            onTap: () {
+              setState(() {
+                _isExpanded = !_isExpanded;
+              });
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  const Icon(Icons.bug_report_outlined, color: Colors.white70, size: 18),
+                  const SizedBox(width: 8),
+                  Text(
+                    'System & VM Logs (${_logs.length})',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.copy, size: 16, color: Colors.white54),
+                    tooltip: 'Copy logs',
+                    onPressed: _logs.isEmpty
+                        ? null
+                        : () {
+                            Clipboard.setData(ClipboardData(text: _logs.join('\n')));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Logs copied to clipboard'),
+                                duration: Duration(seconds: 2),
+                              ),
+                            );
+                          },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, size: 16, color: Colors.white54),
+                    tooltip: 'Clear logs',
+                    onPressed: _logs.isEmpty
+                        ? null
+                        : () async {
+                            await VmPlatform.clearVmLogs();
+                            setState(() {
+                              _logs.clear();
+                            });
+                          },
+                  ),
+                  Icon(
+                    showLogs ? Icons.expand_less : Icons.expand_more,
+                    color: Colors.white54,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (showLogs)
+            Container(
+              height: 180,
+              decoration: const BoxDecoration(
+                color: Colors.black45,
+                border: Border(top: BorderSide(color: Colors.white10)),
+              ),
+              child: _logs.isEmpty
+                  ? const Center(
+                      child: Text(
+                        'No logs recorded yet.',
+                        style: TextStyle(color: Colors.white38, fontSize: 12),
+                      ),
+                    )
+                  : ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.all(10),
+                      itemCount: _logs.length,
+                      itemBuilder: (context, index) {
+                        return SelectableText(
+                          _logs[index],
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 11,
+                            color: Colors.white70,
+                            height: 1.3,
+                          ),
+                        );
+                      },
+                    ),
+            ),
+        ],
+      ),
     );
   }
 }

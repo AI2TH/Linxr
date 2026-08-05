@@ -2187,19 +2187,62 @@ The guest container management functions were split between two separate apps: L
 
 ---
 
-## NEW-35. Combine Settings and About tabs
+## NEW-36. Implement native pickFolder Storage Access Framework handler
 
-**Commit:** `staged`
-**Files:** `lib/screens/settings_screen.dart`, `lib/main.dart`
+**Files:** `android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt`
 
 ### Problem
 
-The Settings screen and About screen were separate screens in different tabs. The user wanted to simplify the tab layout, removing divider lines, the license card, and the open source dependencies list card.
+Tapping "Open System File Manager" in Settings threw `MissingPluginException(No implementation found for method pickFolder on channel com.ai2th.linxr/vm)` because Dart called `channel.invokeMethod('pickFolder')` but Kotlin lacked the method channel handler.
 
 ### Fix
 
-1. Merged the branding and app info (name, version, port, password) at the top of the Settings screen.
-2. Completely removed divider lines, license metadata, and dependencies cards.
-3. Cleaned up and deleted `about_screen.dart` and updated `main.dart` to use the new layout.
+Implemented `"pickFolder"` handler in `MainActivity.kt` using `Intent.ACTION_OPEN_DOCUMENT_TREE` and added `onActivityResult` callback to parse tree URIs (`primary:subfolder` -> `/storage/emulated/0/subfolder`).
+
+---
+
+## NEW-37. Async lock guard and timeout optimization for SSH VM status ping
+
+**Files:** `lib/services/vm_platform.dart`
+
+### Problem
+
+`VmState._startSshPing()` ran `Timer.periodic(Duration(seconds: 3))` while `pingSsh()` was awaiting SSH authentication with a 25s timeout. This launched dozens of concurrent SSH connection attempts every 3 seconds, overwhelming dropbear sshd in guest Alpine Linux and causing VM boot time to take over 5 minutes.
+
+### Fix
+
+1. Added `_isPingingSsh` boolean guard in `_startSshPing()` to prevent concurrent SSH ping probes.
+2. Reduced socket connect timeout to 4s and auth timeout to 5s in `pingSsh()`.
+3. Reduced timer interval to 2s for instant UI status transitions to `Running` once VM is ready.
+
+---
+
+## NEW-38. Default virtio-9p shared folder to LinxrShare directory
+
+**Files:** `android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt`
+
+### Problem
+
+`resolveSharedDir()` fell back to `Environment.getExternalStorageDirectory()` (`/storage/emulated/0`) when no custom folder path was set in SharedPreferences. Mounting root external storage via virtio-9p caused QEMU to hang while recursively indexing tens of thousands of files on Android.
+
+### Fix
+
+Defaulted fallback shared directory to `/storage/emulated/0/LinxrShare` in `resolveSharedDir()`, ensuring fast 9p mounts without indexing root storage.
+
+---
+
+## NEW-39. Expandable Live System & VM Log Console on Home Screen
+
+**Files:** `lib/main.dart`, `lib/services/vm_platform.dart`, `android/app/src/main/kotlin/com/ai2th/linxr/VmManager.kt`, `android/app/src/main/kotlin/com/ai2th/linxr/MainActivity.kt`
+
+### Problem
+
+Users had no visual visibility into Linux kernel boot progress or system errors during VM startup, relying solely on an uninformative loading spinner.
+
+### Fix
+
+1. Added `getVmLogs()` in `VmManager.kt` reading both internal log buffer and `/data/user/0/com.ai2th.linxr/files/vm/serial.log` (real-time kernel serial output).
+2. Added `"getVmLogs"` and `"clearVmLogs"` MethodChannel handlers in `MainActivity.kt` and `VmPlatform`.
+3. Built `_SystemLogConsole` widget in `main.dart` displaying live kernel boot logs with auto-expansion during booting, one-tap Copy to Clipboard, and Clear buttons.
 
 

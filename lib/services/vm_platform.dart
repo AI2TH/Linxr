@@ -43,6 +43,23 @@ class VmPlatform {
     await _channel.invokeMethod('resetStorage');
   }
 
+  static Future<List<String>> getVmLogs() async {
+    try {
+      final List<dynamic>? raw = await _channel.invokeMethod<List<dynamic>>('getVmLogs');
+      return raw?.cast<String>() ?? [];
+    } on PlatformException {
+      return [];
+    }
+  }
+
+  static Future<void> clearVmLogs() async {
+    try {
+      await _channel.invokeMethod('clearVmLogs');
+    } on PlatformException {
+      // ignore
+    }
+  }
+
   static Future<bool> requestAllFilesAccess() async {
     try {
       final bool? result = await _channel.invokeMethod<bool>('requestAllFilesAccess');
@@ -58,14 +75,14 @@ class VmPlatform {
       final socket = await SSHSocket.connect(
         SshDefaults.host,
         SshDefaults.port,
-        timeout: const Duration(seconds: 3),
+        timeout: const Duration(seconds: 10),
       );
       client = SSHClient(
         socket,
         username: SshDefaults.username,
         onPasswordRequest: () => SshDefaults.password,
       );
-      await client.authenticated.timeout(const Duration(seconds: 4));
+      await client.authenticated.timeout(const Duration(seconds: 25));
       return true;
     } catch (_) {
       return false;
@@ -190,21 +207,29 @@ class VmState extends ChangeNotifier {
     }
   }
 
+  bool _isPingingSsh = false;
+
   void _startSshPing() {
     _sshPingTimer?.cancel();
-    _sshPingTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
+    _sshPingTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
       if (_status != 'booting') {
         _sshPingTimer?.cancel();
         _sshPingTimer = null;
         return;
       }
-      final alive = await VmPlatform.pingSsh();
-      if (alive) {
-        _status = 'running';
-        _sshPingTimer?.cancel();
-        _sshPingTimer = null;
-        _startPolling();
-        notifyListeners();
+      if (_isPingingSsh) return;
+      _isPingingSsh = true;
+      try {
+        final alive = await VmPlatform.pingSsh();
+        if (alive) {
+          _status = 'running';
+          _sshPingTimer?.cancel();
+          _sshPingTimer = null;
+          _startPolling();
+          notifyListeners();
+        }
+      } finally {
+        _isPingingSsh = false;
       }
     });
   }

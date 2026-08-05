@@ -72,8 +72,8 @@ cp -r /workspace/android/app/src/main/jniLibs/.         android/app/src/main/jni
     cp /workspace/android/app/debug.keystore android/app/debug.keystore || true
 
 echo ""
-echo "--- Step 2b: Fix Gradle wrapper to 8.3 ---"
-sed -i "s|distributionUrl=.*|distributionUrl=https\://services.gradle.org/distributions/gradle-8.3-all.zip|" \
+echo "--- Step 2b: Fix Gradle wrapper to 8.11.1 ---"
+sed -i "s|distributionUrl=.*|distributionUrl=https\://services.gradle.org/distributions/gradle-8.11.1-all.zip|" \
     android/gradle/wrapper/gradle-wrapper.properties
 
 printf "flutter.sdk=/opt/flutter\nsdk.dir=/opt/android-sdk\n" > android/local.properties

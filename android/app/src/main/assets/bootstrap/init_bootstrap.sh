@@ -5,6 +5,9 @@
 
 echo "=== Alpine VM Bootstrap Starting ==="
 
+# Remove slow Go CLI plugins immediately to prevent docker CLI from hanging on TCG CPU
+rm -rf /usr/libexec/docker/cli-plugins 2>/dev/null || true
+
 # ---------------------------------------------------------------------------
 # Package mirror configuration (NEW-16)
 # ---------------------------------------------------------------------------
@@ -16,25 +19,41 @@ echo "=== Alpine VM Bootstrap Starting ==="
 LINXR_APK_MIRROR="${LINXR_APK_MIRROR:-mirrors.aliyun.com/alpine/v3.19}"
 LINXR_APK_FALLBACK="dl-cdn.alpinelinux.org/alpine/v3.19"
 
-# Test mirror reachability (3s timeout); fall back if needed.
-# Check both aarch64 (phone) and x86_64 (emulator) index files.
-if wget -q -T 3 -O /dev/null "https://${LINXR_APK_MIRROR}/main/aarch64/APKINDEX.tar.gz" 2>/dev/null \
-|| wget -q -T 3 -O /dev/null "https://${LINXR_APK_MIRROR}/main/x86_64/APKINDEX.tar.gz" 2>/dev/null; then
-    APK_HOST="$LINXR_APK_MIRROR"
-    echo "Using fast Alpine mirror: https://$APK_HOST"
-else
-    APK_HOST="$LINXR_APK_FALLBACK"
-    echo "Fast mirror unreachable, falling back to: https://$APK_HOST"
+# Check if we need to install anything
+NEEDS_INSTALL=0
+if ! command -v resize2fs >/dev/null 2>&1; then
+    NEEDS_INSTALL=1
+fi
+if ! command -v sshd >/dev/null 2>&1 && ! command -v dropbear >/dev/null 2>&1; then
+    NEEDS_INSTALL=1
+fi
+if ! command -v sudo >/dev/null 2>&1; then
+    NEEDS_INSTALL=1
 fi
 
-# Rewrite /etc/apk/repositories to use the selected mirror
-cat > /etc/apk/repositories <<REPOEOF
+if [ "$NEEDS_INSTALL" -eq 1 ]; then
+    # Test mirror reachability (3s timeout); fall back if needed.
+    # Check both aarch64 (phone) and x86_64 (emulator) index files.
+    if wget -q -T 3 -O /dev/null "https://${LINXR_APK_MIRROR}/main/aarch64/APKINDEX.tar.gz" 2>/dev/null \
+    || wget -q -T 3 -O /dev/null "https://${LINXR_APK_MIRROR}/main/x86_64/APKINDEX.tar.gz" 2>/dev/null; then
+        APK_HOST="$LINXR_APK_MIRROR"
+        echo "Using fast Alpine mirror: https://$APK_HOST"
+    else
+        APK_HOST="$LINXR_APK_FALLBACK"
+        echo "Fast mirror unreachable, falling back to: https://$APK_HOST"
+    fi
+
+    # Rewrite /etc/apk/repositories to use the selected mirror
+    cat > /etc/apk/repositories <<REPOEOF
 https://${APK_HOST}/main
 https://${APK_HOST}/community
 REPOEOF
 
-apk update 2>/dev/null || true
-echo "Alpine repositories configured."
+    apk update 2>/dev/null || true
+    echo "Alpine repositories configured."
+else
+    echo "All bootstrap requirements met. Skipping mirror configuration and apk update."
+fi
 
 # ---------------------------------------------------------------------------
 # Expand filesystem to fill the virtual disk
@@ -55,68 +74,70 @@ echo "Root password set to: alpine"
 # ---------------------------------------------------------------------------
 # Install and configure OpenSSH
 # ---------------------------------------------------------------------------
-if ! command -v sshd >/dev/null 2>&1; then
+if ! command -v sshd >/dev/null 2>&1 && ! command -v dropbear >/dev/null 2>&1; then
     echo "Installing openssh..."
     apk add --no-cache openssh
 fi
 
-# Generate host keys if missing
-if [ ! -f /etc/ssh/ssh_host_rsa_key ]; then
-    ssh-keygen -A
+if command -v sshd >/dev/null 2>&1; then
+    # Generate host keys if missing
+    if [ ! -f /etc/ssh/ssh_host_rsa_key ]; then
+        ssh-keygen -A
+    fi
+
+    # Allow root login with password
+    sed -i 's/#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+    sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+
+    # Ensure the settings are present (append if not already set)
+    grep -q "^PermitRootLogin yes" /etc/ssh/sshd_config \
+        || echo "PermitRootLogin yes" >> /etc/ssh/sshd_config
+    grep -q "^PasswordAuthentication yes" /etc/ssh/sshd_config \
+        || echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
+
+    # ---------------------------------------------------------------------------
+    # SSH performance tuning for SLIRP/TCG environment
+    # ---------------------------------------------------------------------------
+    # UseDNS no:    Disables reverse DNS lookup on client IP.
+    #               DEFAULT is "yes" — causes 2-5s delay per connection because
+    #               the lookup goes through QEMU's single-threaded SLIRP DNS proxy.
+    #               This is the SINGLE BIGGEST latency fix for terminal slowness.
+    #
+    # GSSAPIAuthentication no:  Disables Kerberos/GSSAPI auth negotiation.
+    #               No GSSAPI libs on Alpine, so this just adds timeout delays.
+    #
+    # Compression no:  Disable SSH compression — all traffic is localhost, so
+    #               compression just wastes emulated CPU cycles.
+    #
+    # ClientAliveInterval 15:   Sends keepalive every 15s to detect dead connections.
+    #
+    # MaxStartups 10:3:20:  Accept up to 10 unauthenticated connections before
+    #               rate-limiting. Prevents drops when opening multiple tabs.
+    #
+    # LoginGraceTime 30:  Reduced from 120s — frees sshd resources faster.
+
+    grep -q "^UseDNS" /etc/ssh/sshd_config \
+        && sed -i 's/^UseDNS.*/UseDNS no/' /etc/ssh/sshd_config \
+        || echo "UseDNS no" >> /etc/ssh/sshd_config
+
+    grep -q "^GSSAPIAuthentication" /etc/ssh/sshd_config \
+        && sed -i 's/^GSSAPIAuthentication.*/GSSAPIAuthentication no/' /etc/ssh/sshd_config \
+        || echo "GSSAPIAuthentication no" >> /etc/ssh/sshd_config
+
+    grep -q "^Compression" /etc/ssh/sshd_config \
+        || echo "Compression no" >> /etc/ssh/sshd_config
+
+    grep -q "^ClientAliveInterval" /etc/ssh/sshd_config \
+        || echo "ClientAliveInterval 15" >> /etc/ssh/sshd_config
+
+    grep -q "^MaxStartups" /etc/ssh/sshd_config \
+        || echo "MaxStartups 10:3:20" >> /etc/ssh/sshd_config
+
+    grep -q "^LoginGraceTime" /etc/ssh/sshd_config \
+        || echo "LoginGraceTime 30" >> /etc/ssh/sshd_config
+
+    echo "sshd performance tuning applied."
 fi
-
-# Allow root login with password
-sed -i 's/#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
-sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
-
-# Ensure the settings are present (append if not already set)
-grep -q "^PermitRootLogin yes" /etc/ssh/sshd_config \
-    || echo "PermitRootLogin yes" >> /etc/ssh/sshd_config
-grep -q "^PasswordAuthentication yes" /etc/ssh/sshd_config \
-    || echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
-
-# ---------------------------------------------------------------------------
-# SSH performance tuning for SLIRP/TCG environment
-# ---------------------------------------------------------------------------
-# UseDNS no:    Disables reverse DNS lookup on client IP.
-#               DEFAULT is "yes" — causes 2-5s delay per connection because
-#               the lookup goes through QEMU's single-threaded SLIRP DNS proxy.
-#               This is the SINGLE BIGGEST latency fix for terminal slowness.
-#
-# GSSAPIAuthentication no:  Disables Kerberos/GSSAPI auth negotiation.
-#               No GSSAPI libs on Alpine, so this just adds timeout delays.
-#
-# Compression no:  Disable SSH compression — all traffic is localhost, so
-#               compression just wastes emulated CPU cycles.
-#
-# ClientAliveInterval 15:   Sends keepalive every 15s to detect dead connections.
-#
-# MaxStartups 10:3:20:  Accept up to 10 unauthenticated connections before
-#               rate-limiting. Prevents drops when opening multiple tabs.
-#
-# LoginGraceTime 30:  Reduced from 120s — frees sshd resources faster.
-
-grep -q "^UseDNS" /etc/ssh/sshd_config \
-    && sed -i 's/^UseDNS.*/UseDNS no/' /etc/ssh/sshd_config \
-    || echo "UseDNS no" >> /etc/ssh/sshd_config
-
-grep -q "^GSSAPIAuthentication" /etc/ssh/sshd_config \
-    && sed -i 's/^GSSAPIAuthentication.*/GSSAPIAuthentication no/' /etc/ssh/sshd_config \
-    || echo "GSSAPIAuthentication no" >> /etc/ssh/sshd_config
-
-grep -q "^Compression" /etc/ssh/sshd_config \
-    || echo "Compression no" >> /etc/ssh/sshd_config
-
-grep -q "^ClientAliveInterval" /etc/ssh/sshd_config \
-    || echo "ClientAliveInterval 15" >> /etc/ssh/sshd_config
-
-grep -q "^MaxStartups" /etc/ssh/sshd_config \
-    || echo "MaxStartups 10:3:20" >> /etc/ssh/sshd_config
-
-grep -q "^LoginGraceTime" /etc/ssh/sshd_config \
-    || echo "LoginGraceTime 30" >> /etc/ssh/sshd_config
-
-echo "sshd performance tuning applied."
 
 # ---------------------------------------------------------------------------
 # Network hardening for SLIRP user-mode networking (Issue #19)
@@ -194,10 +215,12 @@ echo "Network tuning applied."
 # fetch timeout can still expire under load. Pre-configure npm to retry
 # more aggressively. Only runs if npm/Node.js is installed.
 if command -v npm >/dev/null 2>&1 || [ -d /usr/lib/node_modules ]; then
-    npm config set registry https://registry.npmmirror.com        2>/dev/null || true
-    npm config set fetch-retry-maxtimeout 120000 2>/dev/null || true
-    npm config set fetch-retry-mintimeout 20000  2>/dev/null || true
-    npm config set fetch-retries 5               2>/dev/null || true
+    cat > /root/.npmrc <<'NPMEOF'
+registry=https://registry.npmmirror.com
+fetch-retry-maxtimeout=120000
+fetch-retry-mintimeout=20000
+fetch-retries=5
+NPMEOF
     echo "npm registry set to npmmirror.com + retry config for SLIRP."
 fi
 
@@ -234,17 +257,31 @@ fi
 # ---------------------------------------------------------------------------
 # Start SSH daemon
 # ---------------------------------------------------------------------------
-echo "Starting sshd..."
-/usr/sbin/sshd
-
-# Verify sshd is listening
-sleep 1
-if pgrep sshd >/dev/null 2>&1; then
-    echo "=== SSH is ready on port 22 ==="
-    echo "=== Connect: ssh root@localhost -p 2222 ==="
-    echo "=== Password: alpine ==="
+echo "Starting SSH daemon..."
+if command -v sshd >/dev/null 2>&1; then
+    /usr/sbin/sshd
+    sleep 1
+    if pgrep sshd >/dev/null 2>&1; then
+        echo "=== OpenSSH is ready on port 22 ==="
+    else
+        echo "ERROR: sshd failed to start"
+        exit 1
+    fi
+elif command -v dropbear >/dev/null 2>&1; then
+    if pgrep dropbear >/dev/null 2>&1; then
+        echo "=== Dropbear is already running on port 22 ==="
+    else
+        /usr/sbin/dropbear -E -p 22
+        sleep 1
+        if pgrep dropbear >/dev/null 2>&1; then
+            echo "=== Dropbear started on port 22 ==="
+        else
+            echo "ERROR: dropbear failed to start"
+            exit 1
+        fi
+    fi
 else
-    echo "ERROR: sshd failed to start"
+    echo "ERROR: No SSH daemon (sshd or dropbear) found"
     exit 1
 fi
 
@@ -262,6 +299,9 @@ fi
 # Fix: configure daemon.json with vfs storage driver (no kernel module needed),
 # disable iptables and bridge networking (not needed for single-VM use case).
 if command -v dockerd >/dev/null 2>&1; then
+    # Remove slow Go CLI plugins to prevent docker CLI from hanging on emulated CPU
+    rm -rf /usr/libexec/docker/cli-plugins 2>/dev/null || true
+
     echo "Configuring Docker daemon for QEMU virt environment..."
     mkdir -p /etc/docker
 
@@ -283,16 +323,28 @@ DOCKEREOF
     # Clean any previous docker state from failed overlay2 attempts
     rm -rf /var/lib/docker/* 2>/dev/null || true
 
-    # Start dockerd via OpenRC if the init script exists.
-    # Note: the OpenRC service is named 'docker' not 'dockerd'.
-    if [ -f /etc/init.d/docker ]; then
-        rc-service docker start >/var/log/dockerd.log 2>&1
-        echo "Docker started via rc-service docker (logging to /var/log/dockerd.log)"
-    else
-        # Fallback: start dockerd directly in background with logging
-        dockerd > /var/log/dockerd.log 2>&1 &
-        echo "Docker started directly (logging to /var/log/dockerd.log)"
-    fi
+    # Clean up any stale docker/containerd processes and state/sockets
+    pkill -9 dockerd || true
+    pkill -9 containerd || true
+    rm -f /var/run/docker.pid /var/run/docker/containerd/containerd.pid /run/containerd/containerd.sock /var/run/docker.sock
+
+    # Start containerd manually first to avoid dockerd timeout on slow TCG
+    echo "Starting containerd daemon..."
+    containerd >/var/log/containerd.log 2>&1 &
+    # Wait up to 30 seconds for containerd socket
+    CONTAINERD_READY=0
+    for i in $(seq 1 30); do
+        if [ -S /run/containerd/containerd.sock ]; then
+            CONTAINERD_READY=1
+            echo "containerd socket is ready after ${i}s"
+            break
+        fi
+        sleep 1
+    done
+
+    # Start dockerd directly in background pointing to containerd
+    echo "Starting Docker daemon..."
+    dockerd --containerd=/run/containerd/containerd.sock > /var/log/dockerd.log 2>&1 &
 
     # Poll for /var/run/docker.sock — dockerd creates it when fully initialized.
     # vfs driver + containerd init can take 10-15s under TCG emulation.

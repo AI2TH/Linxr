@@ -44,3 +44,6 @@
 # Keep our own Kotlin classes.
 -keep class com.ai2th.linxr.** { *; }
 
+# Suppress warnings for missing Play Core split install classes in Flutter deferred components
+-dontwarn com.google.android.play.core.**
+

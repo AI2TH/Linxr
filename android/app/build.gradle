@@ -50,7 +50,7 @@ android {
     defaultConfig {
         applicationId "com.ai2th.linxr"
         minSdk 26
-        targetSdk 35
+        targetSdk 36
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"

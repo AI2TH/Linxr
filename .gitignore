@@ -33,7 +33,16 @@ android/app/src/main/assets/vm/vmlinuz-virt
 .vscode/
 
 # Docker build cache
-docker/
 guest/
 
+# Kimchi session state
+.kimchi/
+
 # Build artifacts
+build/
+
+# VM base image (large binary, built locally via build_qcow2.sh)
+android/app/src/main/assets/vm/base.qcow2
+
+# Generated Android plugin registrant
+android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java

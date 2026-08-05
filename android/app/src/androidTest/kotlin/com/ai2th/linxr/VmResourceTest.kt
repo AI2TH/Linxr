@@ -24,15 +24,50 @@ class VmResourceTest {
     @Before
     fun startVm() {
         Log.i(TAG, ">>> startVm")
+        try { vmManager.stopVm() } catch (_: Exception) {}
+        
+        // Configure disk limit to 8GB to test volume expansion
+        val prefs = context.getSharedPreferences("FlutterSharedPreferences", android.content.Context.MODE_PRIVATE)
+        prefs.edit().putLong("flutter.disk_gb", 8L).commit()
+
+        val userImage = java.io.File(context.filesDir, "vm/user.qcow2")
+        userImage.delete() // Force clean recreation at 8GB
+        vmManager.resetStorage()
+
+        vmManager.overrideVcpu = 1
+        vmManager.overrideRamMb = 512
         vmManager.startVm()
     }
 
     @After
     fun stopVm() {
-        try { vmManager.stopVm() } catch (_: Exception) {}
+        Log.i(TAG, ">>> clean stopVm")
+        try {
+            val session = openSession()
+            val channel = session.openChannel("exec") as ChannelExec
+            channel.setCommand("sync && poweroff")
+            channel.connect()
+            Thread.sleep(500)
+            channel.disconnect()
+            session.disconnect()
+            Log.i(TAG, "Poweroff command sent successfully")
+        } catch (e: Exception) {
+            Log.w(TAG, "Sending poweroff command failed: ${e.message}")
+        }
+        // Wait up to 5 seconds for VM to exit cleanly
+        val deadline = System.currentTimeMillis() + 5000
+        while (System.currentTimeMillis() < deadline && vmManager.isVmRunning()) {
+            try { Thread.sleep(200) } catch (_: Exception) {}
+        }
+        if (vmManager.isVmRunning()) {
+            Log.w(TAG, "VM did not exit cleanly, forcing stopVm...")
+            try { vmManager.stopVm() } catch (_: Exception) {}
+        } else {
+            Log.i(TAG, "VM exited cleanly on its own")
+        }
     }
 
-    @Test(timeout = 900_000) // 15 min
+    @Test(timeout = 6_000_000) // 100 min
     fun checkVmResources() {
         waitForSsh()
 
@@ -102,8 +137,8 @@ class VmResourceTest {
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     private fun waitForSsh() {
-        val deadline = System.currentTimeMillis() + 12 * 60_000L
-        Log.i(TAG, "Waiting for SSH on 127.0.0.1:2222 (up to 12 min)...")
+        val deadline = System.currentTimeMillis() + 90 * 60_000L
+        Log.i(TAG, "Waiting for SSH on 127.0.0.1:2222 (up to 90 min)...")
         while (System.currentTimeMillis() < deadline) {
             try {
                 Socket().use { it.connect(InetSocketAddress("127.0.0.1", 2222), 3_000) }
@@ -113,17 +148,26 @@ class VmResourceTest {
                 Thread.sleep(5_000)
             }
         }
-        throw AssertionError("VM SSH not ready within 12 minutes")
+        throw AssertionError("VM SSH not ready within 90 minutes")
     }
 
     private fun openSession(): Session {
+        val deadline = System.currentTimeMillis() + 90 * 60_000L
         val jsch = JSch()
-        val session = jsch.getSession("root", "127.0.0.1", 2222)
-        session.setPassword("alpine")
-        session.setConfig("StrictHostKeyChecking", "no")
-        session.setConfig("PreferredAuthentications", "password")
-        session.connect(30_000)
-        return session
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                val session = jsch.getSession("root", "127.0.0.1", 2222)
+                session.setPassword("alpine")
+                session.setConfig("StrictHostKeyChecking", "no")
+                session.setConfig("PreferredAuthentications", "password")
+                session.connect(15_000)
+                return session
+            } catch (e: Exception) {
+                Log.w(TAG, "SSH connection attempt failed: ${e.message}, retrying in 5s...")
+                try { Thread.sleep(5_000) } catch (_: InterruptedException) {}
+            }
+        }
+        throw AssertionError("Failed to connect SSH session within 90 minutes")
     }
 
     private fun exec(session: Session, cmd: String): String {

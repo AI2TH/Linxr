@@ -1,0 +1,41 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    unzip \
+    xz-utils \
+    zip \
+    libglu1-mesa \
+    openjdk-17-jdk-headless \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Android SDK
+ENV ANDROID_HOME=/opt/android-sdk
+RUN mkdir -p ${ANDROID_HOME}/cmdline-tools && \
+    curl -o /tmp/cmdline-tools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip && \
+    unzip /tmp/cmdline-tools.zip -d ${ANDROID_HOME}/cmdline-tools && \
+    mv ${ANDROID_HOME}/cmdline-tools/cmdline-tools ${ANDROID_HOME}/cmdline-tools/latest && \
+    rm /tmp/cmdline-tools.zip
+
+ENV PATH=$PATH:${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools
+
+# Accept Android Licenses and Install SDK Platform/Build-Tools
+RUN yes | sdkmanager --licenses && \
+    sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+# Install Flutter SDK
+ENV FLUTTER_HOME=/opt/flutter
+RUN curl -o /tmp/flutter.tar.xz https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.22.2-stable.tar.xz && \
+    tar -xf /tmp/flutter.tar.xz -C /opt && \
+    rm /tmp/flutter.tar.xz
+
+ENV PATH=$PATH:${FLUTTER_HOME}/bin
+
+# Run Flutter doctor to pre-download artifacts
+RUN git config --global --add safe.directory /opt/flutter && \
+    flutter doctor && \
+    flutter precache --android

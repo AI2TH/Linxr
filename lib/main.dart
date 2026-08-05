@@ -1,9 +1,13 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'screens/terminal_screen.dart';
-import 'screens/about_screen.dart';
+import 'screens/containers_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/files_screen.dart';
 import 'services/vm_platform.dart';
+import 'theme.dart';
 
 void main() {
   runApp(
@@ -24,25 +28,25 @@ class AlpineApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.dark(
-          primary: const Color(0xFF0D6EFD),
-          secondary: const Color(0xFF20C997),
-          surface: const Color(0xFF1A1D23),
+          primary: AppColors.primary,
+          secondary: AppColors.secondary,
+          surface: AppColors.surface,
         ),
-        scaffoldBackgroundColor: const Color(0xFF0E1117),
+        scaffoldBackgroundColor: AppColors.background,
         appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF0E1117),
+          backgroundColor: AppColors.background,
           foregroundColor: Colors.white,
           elevation: 0,
         ),
         navigationBarTheme: NavigationBarThemeData(
-          backgroundColor: const Color(0xFF111827),
-          indicatorColor: const Color(0xFF0D6EFD).withOpacity(0.2),
+          backgroundColor: AppColors.navRail,
+          indicatorColor: AppColors.primary.withOpacity(0.2),
           labelTextStyle: WidgetStateProperty.all(
             const TextStyle(color: Colors.white70, fontSize: 11),
           ),
           iconTheme: WidgetStateProperty.resolveWith((states) {
             if (states.contains(WidgetState.selected)) {
-              return const IconThemeData(color: Color(0xFF0D6EFD));
+              return const IconThemeData(color: AppColors.primary);
             }
             return IconThemeData(color: Colors.white.withOpacity(0.4));
           }),
@@ -67,8 +71,9 @@ class _MainScreenState extends State<MainScreen> {
   static const _screens = <Widget>[
     _HomeScreen(),
     TerminalScreen(),
+    ContainersScreen(),
+    FilesScreen(),
     SettingsScreen(),
-    AboutScreen(),
   ];
 
   @override
@@ -92,8 +97,9 @@ class _MainScreenState extends State<MainScreen> {
         destinations: const [
           NavigationDestination(icon: Icon(Icons.home), label: 'Home'),
           NavigationDestination(icon: Icon(Icons.terminal), label: 'Terminal'),
+          NavigationDestination(icon: Icon(Icons.widgets), label: 'Containers'),
+          NavigationDestination(icon: Icon(Icons.folder_open), label: 'Files'),
           NavigationDestination(icon: Icon(Icons.settings), label: 'Settings'),
-          NavigationDestination(icon: Icon(Icons.info_outline), label: 'About'),
         ],
       ),
     );
@@ -111,17 +117,21 @@ class _HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Linxr'), centerTitle: false),
-      body: const Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _StatusCard(),
-            SizedBox(height: 16),
-            _SshInfoCard(),
-            SizedBox(height: 16),
-            _ControlButton(),
-          ],
+      body: const SingleChildScrollView(
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _StatusCard(),
+              SizedBox(height: 16),
+              _SshInfoCard(),
+              SizedBox(height: 16),
+              _ControlButton(),
+              SizedBox(height: 16),
+              _SystemLogConsole(),
+            ],
+          ),
         ),
       ),
     );
@@ -136,15 +146,15 @@ class _StatusCard extends StatelessWidget {
     final vm = context.watch<VmState>();
 
     final (label, color, icon) = switch (vm.status) {
-      'running'  => ('Running', const Color(0xFF20C997), Icons.check_circle),
-      'booting'  => ('Booting...', const Color(0xFFFFC107), Icons.hourglass_top),
-      'starting' => ('Starting...', const Color(0xFFFFC107), Icons.hourglass_top),
-      'error'    => ('Error', const Color(0xFFDC3545), Icons.error),
+      'running'  => ('Running', AppColors.secondary, Icons.check_circle),
+      'booting'  => ('Booting...', AppColors.warning, Icons.hourglass_top),
+      'starting' => ('Starting...', AppColors.warning, Icons.hourglass_top),
+      'error'    => ('Error', AppColors.danger, Icons.error),
       _          => ('Stopped', Colors.white38, Icons.stop_circle_outlined),
     };
 
     return Card(
-      color: const Color(0xFF1A1D23),
+      color: AppColors.surface,
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Row(
@@ -167,7 +177,7 @@ class _StatusCard extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(vm.errorMessage!,
                         style: const TextStyle(
-                            color: Color(0xFFDC3545), fontSize: 12)),
+                            color: AppColors.danger, fontSize: 12)),
                   ),
               ],
             ),
@@ -186,7 +196,7 @@ class _SshInfoCard extends StatelessWidget {
     final isRunning = context.watch<VmState>().isRunning;
 
     return Card(
-      color: const Color(0xFF1A1D23),
+      color: AppColors.surface,
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -194,7 +204,7 @@ class _SshInfoCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.terminal, color: Color(0xFF0D6EFD), size: 20),
+                const Icon(Icons.terminal, color: AppColors.primary, size: 20),
                 const SizedBox(width: 8),
                 Text('Shell Access',
                     style: Theme.of(context)
@@ -221,7 +231,7 @@ class _SshInfoCard extends StatelessWidget {
                 style: TextStyle(
                   fontFamily: 'monospace',
                   fontSize: 12,
-                  color: isRunning ? const Color(0xFF20C997) : Colors.white38,
+                  color: isRunning ? AppColors.secondary : Colors.white38,
                 ),
               ),
             ),
@@ -264,7 +274,7 @@ class _ControlButton extends StatelessWidget {
         icon: const Icon(Icons.stop),
         label: const Text('Stop VM'),
         style: FilledButton.styleFrom(
-          backgroundColor: const Color(0xFFDC3545),
+          backgroundColor: AppColors.danger,
           padding: const EdgeInsets.symmetric(vertical: 14),
         ),
       );
@@ -278,17 +288,167 @@ class _ControlButton extends StatelessWidget {
           icon: const Icon(Icons.play_arrow),
           label: const Text('Start VM'),
           style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF0D6EFD),
+            backgroundColor: AppColors.primary,
             padding: const EdgeInsets.symmetric(vertical: 14),
           ),
         ),
         const SizedBox(height: 8),
         const Text(
-          'Boot + SSH ready takes 2–4 min',
+          'Boot + SSH ready takes ~15–30 sec',
           textAlign: TextAlign.center,
           style: TextStyle(color: Colors.white38, fontSize: 12),
         ),
       ],
+    );
+  }
+}
+
+class _SystemLogConsole extends StatefulWidget {
+  const _SystemLogConsole();
+
+  @override
+  State<_SystemLogConsole> createState() => _SystemLogConsoleState();
+}
+
+class _SystemLogConsoleState extends State<_SystemLogConsole> {
+  bool _isExpanded = false;
+  List<String> _logs = [];
+  Timer? _timer;
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchLogs();
+    _timer = Timer.periodic(const Duration(seconds: 2), (_) => _fetchLogs());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetchLogs() async {
+    final newLogs = await VmPlatform.getVmLogs();
+    if (mounted && newLogs.length != _logs.length) {
+      setState(() {
+        _logs = newLogs;
+      });
+      if (_scrollController.hasClients && _isExpanded) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = context.watch<VmState>();
+    final isBooting = vm.isBooting;
+
+    // Auto-expand logs while booting
+    final showLogs = _isExpanded || isBooting;
+
+    return Card(
+      color: AppColors.surface,
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            onTap: () {
+              setState(() {
+                _isExpanded = !_isExpanded;
+              });
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  const Icon(Icons.bug_report_outlined, color: Colors.white70, size: 18),
+                  const SizedBox(width: 8),
+                  Text(
+                    'System & VM Logs (${_logs.length})',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.copy, size: 16, color: Colors.white54),
+                    tooltip: 'Copy logs',
+                    onPressed: _logs.isEmpty
+                        ? null
+                        : () {
+                            Clipboard.setData(ClipboardData(text: _logs.join('\n')));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Logs copied to clipboard'),
+                                duration: Duration(seconds: 2),
+                              ),
+                            );
+                          },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, size: 16, color: Colors.white54),
+                    tooltip: 'Clear logs',
+                    onPressed: _logs.isEmpty
+                        ? null
+                        : () async {
+                            await VmPlatform.clearVmLogs();
+                            setState(() {
+                              _logs.clear();
+                            });
+                          },
+                  ),
+                  Icon(
+                    showLogs ? Icons.expand_less : Icons.expand_more,
+                    color: Colors.white54,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (showLogs)
+            Container(
+              height: 180,
+              decoration: const BoxDecoration(
+                color: Colors.black45,
+                border: Border(top: BorderSide(color: Colors.white10)),
+              ),
+              child: _logs.isEmpty
+                  ? const Center(
+                      child: Text(
+                        'No logs recorded yet.',
+                        style: TextStyle(color: Colors.white38, fontSize: 12),
+                      ),
+                    )
+                  : ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.all(10),
+                      itemCount: _logs.length,
+                      itemBuilder: (context, index) {
+                        return SelectableText(
+                          _logs[index],
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 11,
+                            color: Colors.white70,
+                            height: 1.3,
+                          ),
+                        );
+                      },
+                    ),
+            ),
+        ],
+      ),
     );
   }
 }

@@ -24,16 +24,16 @@ mkdir -p "${OUTPUT_DIR}"
 echo "=== Building Alpine Linux base.qcow2 for Linxr ==="
 echo "Platform : linux/arm64 (aarch64)"
 echo "Packages : openssh + sudo + bash"
-echo "Output   : ${OUTPUT_DIR}/base.qcow2.gz"
+echo "Output   : "${OUTPUT_DIR}"/base.qcow2.gz"
 echo ""
 
 docker run --rm \
     --platform linux/arm64 \
     -v "${OUTPUT_DIR}:/out" \
     -v "${SCRIPT_DIR}/_build_rootfs.sh:/build.sh:ro" \
-    alpine:3.19 \
+    alpine:3.24 \
     sh /build.sh
 
 echo ""
-echo "=== base.qcow2.gz ready: $(du -sh ${OUTPUT_DIR}/base.qcow2.gz | cut -f1) ==="
+echo "=== base.qcow2.gz ready: $(du -sh "${OUTPUT_DIR}"/base.qcow2.gz | cut -f1) ==="
 echo "Rebuild APK: ./scripts/build_apk.sh"

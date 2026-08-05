@@ -12,31 +12,10 @@
 #
 # Requirements: Docker only. No Flutter, Java, or Android SDK on the host.
 
-set -e
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+source "${SCRIPT_DIR}/_build_common.sh"
+
 BUILD_TYPE="${1:-debug}"
-IMAGE_NAME="linxr-builder"
-OUTPUT_DIR="${PROJECT_ROOT}/build"
-
-if ! command -v docker &>/dev/null; then
-    echo "ERROR: Docker is required."
-    exit 1
-fi
-
-mkdir -p "${OUTPUT_DIR}"
-
-# ── Build the builder image if it doesn't exist ───────────────────────────────
-if ! docker image inspect "${IMAGE_NAME}" &>/dev/null; then
-    echo "=== Building Docker build environment (first run — ~10 min) ==="
-    docker build \
-        --platform linux/amd64 \
-        -f "${PROJECT_ROOT}/docker/Dockerfile.build" \
-        -t "${IMAGE_NAME}" \
-        "${PROJECT_ROOT}"
-    echo ""
-fi
 
 echo "=== Building Flutter APK (${BUILD_TYPE}) inside Docker ==="
 echo "Project : ${PROJECT_ROOT}"
@@ -81,8 +60,10 @@ cp    /workspace/android/gradle.properties              android/gradle.propertie
 rm -rf android/app/src/main/kotlin/
 cp -r /workspace/android/app/src/main/kotlin            android/app/src/main/
 
-[ -d /workspace/android/app/src/androidTest ] && \
-    cp -r /workspace/android/app/src/androidTest        android/app/src/ || true
+if [ -d /workspace/android/app/src/androidTest ]; then
+    rm -rf android/app/src/androidTest
+    cp -r /workspace/android/app/src/androidTest android/app/src/
+fi
 
 cp -r /workspace/android/app/src/main/res/.             android/app/src/main/res/
 
@@ -96,8 +77,8 @@ cp -r /workspace/android/app/src/main/jniLibs/.         android/app/src/main/jni
     cp /workspace/android/app/debug.keystore android/app/debug.keystore || true
 
 echo ""
-echo "--- Step 2b: Fix Gradle wrapper to 8.3 ---"
-sed -i "s|distributionUrl=.*|distributionUrl=https\://services.gradle.org/distributions/gradle-8.3-all.zip|" \
+echo "--- Step 2b: Fix Gradle wrapper to 8.11.1 ---"
+sed -i "s|distributionUrl=.*|distributionUrl=https\://services.gradle.org/distributions/gradle-8.11.1-all.zip|" \
     android/gradle/wrapper/gradle-wrapper.properties
 
 printf "flutter.sdk=/opt/flutter\nsdk.dir=/opt/android-sdk\n" > android/local.properties
@@ -112,7 +93,8 @@ dart run flutter_launcher_icons
 
 echo ""
 echo "--- Step 4: flutter build apk ('"${BUILD_TYPE}"') ---"
-flutter build apk --'"${BUILD_TYPE}"' 2>&1 || true
+export GRADLE_OPTS="-Dorg.gradle.daemon=false -Xmx3g"
+flutter build apk --'"${BUILD_TYPE}"' 2>&1
 
 echo ""
 echo "--- Step 5: Copy APK to output ---"

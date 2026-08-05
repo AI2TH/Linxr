@@ -1,7 +1,7 @@
 name: linxr
 description: Linxr — bare Alpine Linux on Android, no root required
 publish_to: 'none'
-version: 2.0.1+23
+version: 3.0.0+26
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -12,9 +12,13 @@ dependencies:
   provider: ^6.1.1
   dartssh2: ^2.8.2
   xterm: ^4.0.0
-  cupertino_icons: ^1.0.2
   shared_preferences: ^2.2.0
-  package_info_plus: ^8.0.0
+  package_info_plus: 8.0.0
+  path_provider: 2.0.15
+  url_launcher: ^6.3.0
+
+dependency_overrides:
+  path_provider_android: 2.2.10
 
 dev_dependencies:
   flutter_test:

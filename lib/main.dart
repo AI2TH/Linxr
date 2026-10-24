@@ -4,12 +4,52 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'screens/terminal_screen.dart';
 import 'screens/containers_screen.dart';
+import 'screens/marketplace_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/files_screen.dart';
 import 'services/vm_platform.dart';
 import 'theme.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    debugPrint('Linxr Startup FlutterError: ${details.exceptionAsString()}');
+  };
+
+  ErrorWidget.builder = (FlutterErrorDetails details) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF1E1E1E),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error_outline, color: Colors.amber, size: 48),
+                const SizedBox(height: 16),
+                const Text(
+                  'Linxr Encountered an Issue',
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  details.exceptionAsString(),
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  textAlign: TextAlign.center,
+                  maxLines: 6,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  };
+
   runApp(
     ChangeNotifierProvider(
       create: (_) => VmState(),
@@ -67,21 +107,38 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
-
-  static const _screens = <Widget>[
-    _HomeScreen(),
-    TerminalScreen(),
-    ContainersScreen(),
-    FilesScreen(),
-    SettingsScreen(),
-  ];
+  final Set<int> _loadedIndices = {0};
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<VmState>().refreshStatus();
+      if (mounted) {
+        context.read<VmState>().refreshStatus();
+      }
     });
+  }
+
+  Widget _buildScreen(int index) {
+    if (!_loadedIndices.contains(index)) {
+      return const SizedBox.shrink();
+    }
+    switch (index) {
+      case 0:
+        return const _HomeScreen();
+      case 1:
+        return const TerminalScreen();
+      case 2:
+        return const ContainersScreen();
+      case 3:
+        return const MarketplaceScreen();
+      case 4:
+        return const FilesScreen();
+      case 5:
+        return const SettingsScreen();
+      default:
+        return const SizedBox.shrink();
+    }
   }
 
   @override
@@ -89,15 +146,21 @@ class _MainScreenState extends State<MainScreen> {
     return Scaffold(
       body: IndexedStack(
         index: _selectedIndex,
-        children: _screens,
+        children: List.generate(6, (i) => _buildScreen(i)),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
-        onDestinationSelected: (i) => setState(() => _selectedIndex = i),
+        onDestinationSelected: (i) {
+          setState(() {
+            _loadedIndices.add(i);
+            _selectedIndex = i;
+          });
+        },
         destinations: const [
           NavigationDestination(icon: Icon(Icons.home), label: 'Home'),
           NavigationDestination(icon: Icon(Icons.terminal), label: 'Terminal'),
           NavigationDestination(icon: Icon(Icons.widgets), label: 'Containers'),
+          NavigationDestination(icon: Icon(Icons.storefront), label: 'Marketplace'),
           NavigationDestination(icon: Icon(Icons.folder_open), label: 'Files'),
           NavigationDestination(icon: Icon(Icons.settings), label: 'Settings'),
         ],

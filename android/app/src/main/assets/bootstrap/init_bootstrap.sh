@@ -11,13 +11,10 @@ rm -rf /usr/libexec/docker/cli-plugins 2>/dev/null || true
 # ---------------------------------------------------------------------------
 # Package mirror configuration (NEW-16)
 # ---------------------------------------------------------------------------
-# Use a fast mirror (mirrors.aliyun.com) instead of the default
-# dl-cdn.alpinelinux.org. The Aliyun CDN has PoPs across Asia and
-# dramatically reduces apk download times over SLIRP networking.
-# If the mirror is unreachable, fall back to the official CDN.
-# Override at build time by setting LINXR_APK_MIRROR before this runs.
-LINXR_APK_MIRROR="${LINXR_APK_MIRROR:-mirrors.aliyun.com/alpine/v3.19}"
-LINXR_APK_FALLBACK="dl-cdn.alpinelinux.org/alpine/v3.19"
+cat > /etc/apk/repositories <<REPOEOF
+https://dl-cdn.alpinelinux.org/alpine/v3.20/main
+https://dl-cdn.alpinelinux.org/alpine/v3.20/community
+REPOEOF
 
 # Check if we need to install anything
 NEEDS_INSTALL=0
@@ -30,40 +27,28 @@ fi
 if ! command -v sudo >/dev/null 2>&1; then
     NEEDS_INSTALL=1
 fi
+if ! command -v curl >/dev/null 2>&1; then
+    NEEDS_INSTALL=1
+fi
 
 if [ "$NEEDS_INSTALL" -eq 1 ]; then
-    # Test mirror reachability (3s timeout); fall back if needed.
-    # Check both aarch64 (phone) and x86_64 (emulator) index files.
-    if wget -q -T 3 -O /dev/null "https://${LINXR_APK_MIRROR}/main/aarch64/APKINDEX.tar.gz" 2>/dev/null \
-    || wget -q -T 3 -O /dev/null "https://${LINXR_APK_MIRROR}/main/x86_64/APKINDEX.tar.gz" 2>/dev/null; then
-        APK_HOST="$LINXR_APK_MIRROR"
-        echo "Using fast Alpine mirror: https://$APK_HOST"
-    else
-        APK_HOST="$LINXR_APK_FALLBACK"
-        echo "Fast mirror unreachable, falling back to: https://$APK_HOST"
-    fi
-
-    # Rewrite /etc/apk/repositories to use the selected mirror
-    cat > /etc/apk/repositories <<REPOEOF
-https://${APK_HOST}/main
-https://${APK_HOST}/community
-REPOEOF
-
     apk update 2>/dev/null || true
-    echo "Alpine repositories configured."
-else
-    echo "All bootstrap requirements met. Skipping mirror configuration and apk update."
+    apk add --no-cache curl 2>/dev/null || true
 fi
 
 # ---------------------------------------------------------------------------
 # Expand filesystem to fill the virtual disk
 # ---------------------------------------------------------------------------
-echo "Expanding filesystem to fill disk..."
-if ! command -v resize2fs >/dev/null 2>&1; then
-    apk add --no-cache e2fsprogs >/dev/null 2>&1 || true
+if [ ! -f /etc/.disk_expanded ]; then
+    echo "Expanding filesystem to fill disk..."
+    if ! command -v resize2fs >/dev/null 2>&1; then
+        apk add --no-cache e2fsprogs >/dev/null 2>&1 || true
+    fi
+    resize2fs /dev/vda 2>/dev/null && touch /etc/.disk_expanded || true
+    echo "Disk expansion complete: $(df -h / | awk 'NR==2{print $2}') total"
+else
+    echo "Filesystem already expanded, skipping resize2fs."
 fi
-resize2fs /dev/vda 2>/dev/null || true
-echo "Disk expansion complete: $(df -h / | awk 'NR==2{print $2}') total"
 
 # ---------------------------------------------------------------------------
 # Set root password
@@ -149,12 +134,13 @@ fi
 echo "Tuning network stack for SLIRP compatibility..."
 
 # --- DNS resilience ---
-# Force Cloudflare + Google DNS as fallback in case QEMU's DHCP-advertised
-# DNS (set via -netdev dns=) doesn't take effect or user runs older QEMU.
+# Fast Cloudflare DNS (1.1.1.1 / 1.0.0.1) with Google DNS (8.8.8.8 / 8.8.4.4) fallback.
 cat > /etc/resolv.conf <<'DNSEOF'
 nameserver 1.1.1.1
+nameserver 1.0.0.1
 nameserver 8.8.8.8
-options timeout:5 attempts:3 rotate
+nameserver 8.8.4.4
+options timeout:2 attempts:2
 DNSEOF
 
 # --- TCP buffer sizes ---
@@ -189,9 +175,29 @@ sysctl -w net.ipv4.tcp_keepalive_probes=5      2>/dev/null || true
 # a host socket; large npm installs can exhaust defaults.
 sysctl -w net.netfilter.nf_conntrack_max=16384 2>/dev/null || true
 
+# --- IPv6, MTU, and MSS tuning for mobile carrier & QEMU SLIRP ---
+# QEMU SLIRP only routes IPv4. Dual-stack clients hang on IPv6 DNS/connect timeouts.
+# Lowering MTU to 1200 prevents TLS Client Hello drops over cellular/Wi-Fi virtio paths.
+sysctl -w net.ipv6.conf.all.disable_ipv6=1      2>/dev/null || true
+sysctl -w net.ipv6.conf.default.disable_ipv6=1  2>/dev/null || true
+sysctl -w net.ipv4.tcp_mtu_probing=2            2>/dev/null || true
+ip link set eth0 mtu 1200                       2>/dev/null || true
+
+# nftables MSS clamping and IPv6 immediate reject
+nft add table ip filter 2>/dev/null || true
+nft 'add chain ip filter output { type filter hook output priority 0 ; policy accept ; }' 2>/dev/null || true
+nft add rule ip filter output tcp flags syn tcp option maxseg size set 1160 2>/dev/null || true
+
+nft add table ip6 filter 2>/dev/null || true
+nft 'add chain ip6 filter output { type filter hook output priority 0 ; policy accept ; }' 2>/dev/null || true
+nft add rule ip6 filter output reject 2>/dev/null || true
+
 # --- Persist for subsequent boots ---
 cat >> /etc/sysctl.conf <<'SYSEOF'
 # Linxr SLIRP network tuning
+net.ipv6.conf.all.disable_ipv6=1
+net.ipv6.conf.default.disable_ipv6=1
+net.ipv4.tcp_mtu_probing=2
 net.core.rmem_max=4194304
 net.core.wmem_max=4194304
 net.core.rmem_default=1048576
@@ -313,57 +319,57 @@ if command -v dockerd >/dev/null 2>&1; then
   "storage-driver": "vfs",
   "iptables": false,
   "bridge": "none",
-  "registry-mirrors": [
-    "https://docker.m.daocloud.io",
-    "https://mirror.ccs.tencentyun.com"
-  ]
+  "mtu": 1200,
+  "dns": ["1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4"]
 }
 DOCKEREOF
 
-    # Clean any previous docker state from failed overlay2 attempts
-    rm -rf /var/lib/docker/* 2>/dev/null || true
-
-    # Clean up any stale docker/containerd processes and state/sockets
-    pkill -9 dockerd || true
-    pkill -9 containerd || true
-    rm -f /var/run/docker.pid /var/run/docker/containerd/containerd.pid /run/containerd/containerd.sock /var/run/docker.sock
-
-    # Start containerd manually first to avoid dockerd timeout on slow TCG
-    echo "Starting containerd daemon..."
-    containerd >/var/log/containerd.log 2>&1 &
-    # Wait up to 30 seconds for containerd socket
-    CONTAINERD_READY=0
-    for i in $(seq 1 30); do
-        if [ -S /run/containerd/containerd.sock ]; then
-            CONTAINERD_READY=1
-            echo "containerd socket is ready after ${i}s"
-            break
-        fi
-        sleep 1
-    done
-
-    # Start dockerd directly in background pointing to containerd
-    echo "Starting Docker daemon..."
-    dockerd --containerd=/run/containerd/containerd.sock > /var/log/dockerd.log 2>&1 &
-
-    # Poll for /var/run/docker.sock — dockerd creates it when fully initialized.
-    # vfs driver + containerd init can take 10-15s under TCG emulation.
-    echo "Waiting for Docker socket..."
-    DOCKER_READY=0
-    for i in $(seq 1 30); do
-        if [ -S /var/run/docker.sock ]; then
-            DOCKER_READY=1
-            echo "Docker socket ready after ${i}s"
-            break
-        fi
-        sleep 1
-    done
-
-    if [ "$DOCKER_READY" -eq 1 ]; then
-        echo "=== Docker daemon is running ==="
+    if pgrep dockerd >/dev/null 2>&1 && [ -S /var/run/docker.sock ]; then
+        echo "=== Docker daemon is already running ==="
     else
-        echo "WARNING: Docker socket not ready after 30s. Check /var/log/dockerd.log"
-        tail -5 /var/log/dockerd.log 2>/dev/null || true
+        # Only clean docker state on very first bootstrap, NOT on every restart
+        if [ ! -f /etc/docker/.initialized ]; then
+            rm -rf /var/lib/docker/* 2>/dev/null || true
+            touch /etc/docker/.initialized
+        fi
+
+        # Clean up stale pid/sock files
+        rm -f /var/run/docker.pid /var/run/docker/containerd/containerd.pid /run/containerd/containerd.sock /var/run/docker.sock
+
+        if ! pgrep containerd >/dev/null 2>&1; then
+            echo "Starting containerd daemon..."
+            containerd >/var/log/containerd.log 2>&1 &
+            for i in $(seq 1 15); do
+                if [ -S /run/containerd/containerd.sock ]; then
+                    echo "containerd socket is ready after ${i}s"
+                    break
+                fi
+                sleep 1
+            done
+        fi
+
+        # Start dockerd directly in background pointing to containerd
+        echo "Starting Docker daemon..."
+        dockerd --containerd=/run/containerd/containerd.sock > /var/log/dockerd.log 2>&1 &
+
+        # Poll for /var/run/docker.sock — dockerd creates it when fully initialized.
+        echo "Waiting for Docker socket..."
+        DOCKER_READY=0
+        for i in $(seq 1 20); do
+            if [ -S /var/run/docker.sock ]; then
+                DOCKER_READY=1
+                echo "Docker socket ready after ${i}s"
+                break
+            fi
+            sleep 1
+        done
+
+        if [ "$DOCKER_READY" -eq 1 ]; then
+            echo "=== Docker daemon is running ==="
+        else
+            echo "WARNING: Docker socket not ready after 20s. Check /var/log/dockerd.log"
+            tail -5 /var/log/dockerd.log 2>/dev/null || true
+        fi
     fi
 fi
 

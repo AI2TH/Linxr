@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:async';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart';
@@ -30,9 +29,9 @@ class VmPlatform {
       final Map<Object?, Object?> raw =
           await _channel.invokeMethod('getDeviceInfo');
       return DeviceInfo(
-        cores:         (raw['cores']         as int?) ?? 4,
-        totalRamMb:    (raw['totalRamMb']    as int?) ?? 4096,
-        freeStorageGb: (raw['freeStorageGb'] as int?) ?? 32,
+        cores:         (raw['cores']         as num?)?.toInt() ?? 4,
+        totalRamMb:    (raw['totalRamMb']    as num?)?.toInt() ?? 4096,
+        freeStorageGb: (raw['freeStorageGb'] as num?)?.toInt() ?? 32,
       );
     } on PlatformException {
       return const DeviceInfo(cores: 4, totalRamMb: 4096, freeStorageGb: 32);
@@ -92,12 +91,21 @@ class VmPlatform {
   }
 
   static Future<void> startContainer(
-      String image, String name, List<String> cmd) async {
+    String image,
+    String name,
+    List<String> cmd, {
+    List<Map<String, dynamic>> ports = const [],
+    List<Map<String, String>> env = const [],
+    String network = 'host',
+  }) async {
     try {
       await _channel.invokeMethod('startContainer', {
         'image': image,
         'name': name,
         'cmd': cmd,
+        'ports': ports,
+        'env': env,
+        'network': network,
       });
     } on PlatformException catch (e) {
       debugPrint("Failed to start container: ${e.message}");

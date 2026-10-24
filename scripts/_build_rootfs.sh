@@ -24,11 +24,15 @@ mkdir -p "${ROOTFS}/etc/apk/keys"
 cp /etc/apk/keys/* "${ROOTFS}/etc/apk/keys/"
 cp /etc/apk/repositories "${ROOTFS}/etc/apk/"
 # docker and fuse-overlayfs are in community â€” ensure it's enabled
+ALPINE_RELEASE=$(cut -d. -f1,2 /etc/alpine-release 2>/dev/null || echo "3.20")
+ALPINE_BRANCH="v${ALPINE_RELEASE}"
+echo "Detected Alpine branch: ${ALPINE_BRANCH}"
+
 grep -q 'community' "${ROOTFS}/etc/apk/repositories" || \
-    echo "https://dl-cdn.alpinelinux.org/alpine/v3.24/community" >> "${ROOTFS}/etc/apk/repositories"
+    echo "https://dl-cdn.alpinelinux.org/alpine/${ALPINE_BRANCH}/community" >> "${ROOTFS}/etc/apk/repositories"
 # host container also needs community for the --root apk calls
 grep -q 'community' /etc/apk/repositories || \
-    echo "https://dl-cdn.alpinelinux.org/alpine/v3.24/community" >> /etc/apk/repositories
+    echo "https://dl-cdn.alpinelinux.org/alpine/${ALPINE_BRANCH}/community" >> /etc/apk/repositories
 
 apk --root "${ROOTFS}" --initdb --no-cache add \
     alpine-base \
@@ -51,7 +55,15 @@ apk --root "${ROOTFS}" --initdb --no-cache add \
     npm \
     py3-pip \
     py3-fastapi \
-    uvicorn
+    uvicorn \
+    curl \
+    ca-certificates \
+    tar \
+    findutils \
+    coreutils \
+    socat \
+    conntrack-tools \
+    git
 
 # ---------------------------------------------------------------------------
 # Package mirror configuration (NEW-16) — baked into base.qcow2
@@ -59,8 +71,8 @@ apk --root "${ROOTFS}" --initdb --no-cache add \
 # Use Aliyun CDN for faster apk downloads over SLIRP. Fallback to official CDN.
 # Reachability test is done at image-build time; if Aliyun is unreachable,
 # the official CDN is used instead.
-LINXR_APK_MIRROR="${LINXR_APK_MIRROR:-mirrors.aliyun.com/alpine/v3.24}"
-LINXR_APK_FALLBACK="dl-cdn.alpinelinux.org/alpine/v3.24"
+LINXR_APK_MIRROR="${LINXR_APK_MIRROR:-mirrors.aliyun.com/alpine/${ALPINE_BRANCH}}"
+LINXR_APK_FALLBACK="dl-cdn.alpinelinux.org/alpine/${ALPINE_BRANCH}"
 if wget -q -T 3 -O /dev/null "https://${LINXR_APK_MIRROR}/main/aarch64/APKINDEX.tar.gz" 2>/dev/null \
 || wget -q -T 3 -O /dev/null "https://${LINXR_APK_MIRROR}/main/x86_64/APKINDEX.tar.gz" 2>/dev/null; then
     APK_HOST="$LINXR_APK_MIRROR"
@@ -383,10 +395,12 @@ mount -t tmpfs tmpfs /run
 mount -t tmpfs tmpfs /var/log
 mount -t tmpfs tmpfs /var/run
 
-# Mount cgroup2 and create device nodes for Docker
+# Mount cgroup2 and create device nodes for Docker and Kubernetes (k3s)
 mkdir -p /sys/fs/cgroup
 mount -t cgroup2 cgroup2 /sys/fs/cgroup
+printf '+cpuset +cpu +io +memory +hugetlb +pids\n' > /sys/fs/cgroup/cgroup.subtree_control 2>/dev/null || true
 [ -c /dev/fuse ] || mknod -m 666 /dev/fuse c 10 229
+[ -c /dev/kmsg ] || mknod -m 660 /dev/kmsg c 1 11
 mkdir -p /dev/net
 [ -c /dev/net/tun ] || mknod -m 666 /dev/net/tun c 10 200
 

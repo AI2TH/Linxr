@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/vm_platform.dart';
 import '../theme.dart';
+import 'marketplace_screen.dart';
 
 class ContainerInfo {
   final String name;
@@ -91,6 +92,16 @@ class _ContainersScreenState extends State<ContainersScreen> {
         centerTitle: false,
         actions: [
           IconButton(
+            icon: const Icon(Icons.storefront),
+            tooltip: 'Marketplace',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const MarketplaceScreen()),
+              ).then((_) => _loadContainers());
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadContainers,
           ),
@@ -141,22 +152,42 @@ class _ContainersScreenState extends State<ContainersScreen> {
 
   Widget _buildEmptyState() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.inbox, size: 64, color: Colors.grey[400]),
-          const SizedBox(height: 16),
-          Text(
-            'No containers running',
-            style: TextStyle(fontSize: 18, color: Colors.grey[600]),
-          ),
-          const SizedBox(height: 8),
-          TextButton.icon(
-            onPressed: _loadContainers,
-            icon: const Icon(Icons.refresh),
-            label: const Text('Refresh'),
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.inbox, size: 64, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            Text(
+              'No containers running',
+              style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const MarketplaceScreen()),
+                ).then((_) => _loadContainers());
+              },
+              icon: const Icon(Icons.storefront, size: 18),
+              label: const Text('Browse Marketplace'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextButton.icon(
+              onPressed: _loadContainers,
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('Refresh'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -256,6 +287,7 @@ class _ContainersScreenState extends State<ContainersScreen> {
     final imageController = TextEditingController(text: 'busybox');
     final nameController = TextEditingController();
     final cmdController = TextEditingController(text: 'echo hello');
+    final portController = TextEditingController();
 
     showModalBottomSheet(
       context: context,
@@ -298,6 +330,8 @@ class _ContainersScreenState extends State<ContainersScreen> {
               _dialogField(nameController, 'Name (optional)', 'Auto-generated if empty'),
               const SizedBox(height: 12),
               _dialogField(cmdController, 'Command', 'e.g., echo hello'),
+              const SizedBox(height: 12),
+              _dialogField(portController, 'Port Mapping (optional)', 'e.g., 8080:80'),
               const SizedBox(height: 20),
               Row(
                 children: [
@@ -326,9 +360,20 @@ class _ContainersScreenState extends State<ContainersScreen> {
                         final cmd = cmdController.text.trim().split(' ')
                             .where((s) => s.isNotEmpty)
                             .toList();
+
+                        List<Map<String, dynamic>> ports = [];
+                        if (portController.text.trim().contains(':')) {
+                          final parts = portController.text.trim().split(':');
+                          final hostPort = int.tryParse(parts[0]);
+                          final containerPort = int.tryParse(parts[1]);
+                          if (hostPort != null && containerPort != null) {
+                            ports.add({'host': hostPort, 'container': containerPort});
+                          }
+                        }
+
                         Navigator.pop(sheetCtx);
                         try {
-                          await VmPlatform.startContainer(image, name, cmd);
+                          await VmPlatform.startContainer(image, name, cmd, ports: ports);
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(

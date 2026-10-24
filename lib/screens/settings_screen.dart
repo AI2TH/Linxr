@@ -152,8 +152,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // If the disk size actually changed, remind the user to reset storage.
     if (oldValue != value && mounted) {
       final vm = context.read<VmState>();
-      final needsReset = vm.status != 'stopped' ||
-          await VmPlatform.getVmStatus() != 'stopped';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(

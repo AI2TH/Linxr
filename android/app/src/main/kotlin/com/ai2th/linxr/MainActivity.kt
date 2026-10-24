@@ -5,6 +5,8 @@ import android.content.pm.PackageManager
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.Settings
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -23,34 +25,36 @@ class MainActivity : FlutterActivity() {
     }
     private val CHANNEL = "com.ai2th.linxr/vm"
     private val vmManager get() = (applicationContext as AlpineApp).vmManager
-    private val executor = Executors.newSingleThreadExecutor()
+    private val executor = Executors.newCachedThreadPool()
 
-    private val REQUEST_POST_NOTIFICATIONS = 1001
-    private val REQUEST_STORAGE = 1002
+    private val REQUEST_PERMISSIONS = 1001
     private val REQUEST_PICK_FOLDER = 1003
     private var pendingFolderResult: MethodChannel.Result? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val permsToRequest = mutableListOf<String>()
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
                 PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
-                    REQUEST_POST_NOTIFICATIONS
-                )
+                permsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+
+        if (Build.VERSION.SDK_INT in Build.VERSION_CODES.M until Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) !=
                 PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE),
-                    REQUEST_STORAGE
-                )
+                permsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
             }
+        }
+
+        if (permsToRequest.isNotEmpty()) {
+            ActivityCompat.requestPermissions(
+                this,
+                permsToRequest.toTypedArray(),
+                REQUEST_PERMISSIONS
+            )
         }
     }
 
@@ -60,16 +64,10 @@ class MainActivity : FlutterActivity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        when (requestCode) {
-            REQUEST_POST_NOTIFICATIONS -> {
-                val granted = grantResults.isNotEmpty() &&
-                    grantResults[0] == PackageManager.PERMISSION_GRANTED
-                Log.i(TAG, "POST_NOTIFICATIONS granted=$granted")
-            }
-            REQUEST_STORAGE -> {
-                val granted = grantResults.isNotEmpty() &&
-                    grantResults[0] == PackageManager.PERMISSION_GRANTED
-                Log.i(TAG, "READ_EXTERNAL_STORAGE granted=$granted")
+        if (requestCode == REQUEST_PERMISSIONS) {
+            for (i in permissions.indices) {
+                val granted = grantResults.getOrNull(i) == PackageManager.PERMISSION_GRANTED
+                Log.i(TAG, "Permission ${permissions[i]} granted=$granted")
             }
         }
     }
@@ -148,7 +146,10 @@ class MainActivity : FlutterActivity() {
                                     result.error("CONTAINER_START_ERROR", "name required", null)
                                 }
                             val cmd = call.argument<List<String>>("cmd") ?: emptyList()
-                            vmManager.startContainer(image, name, cmd)
+                            val ports = call.argument<List<Map<String, Any>>>("ports") ?: emptyList()
+                            val env = call.argument<List<Map<String, String>>>("env") ?: emptyList()
+                            val network = call.argument<String>("network") ?: "host"
+                            vmManager.startContainer(image, name, cmd, ports, env, network)
                             if (!isFinishing) runOnUiThread { result.success(null) }
                         } catch (e: Exception) {
                             if (!isFinishing) runOnUiThread { result.error("CONTAINER_START_ERROR", e.message, null) }
@@ -227,6 +228,27 @@ class MainActivity : FlutterActivity() {
                         } catch (e: Exception) {
                             pendingFolderResult?.error("PICK_FOLDER_ERROR", e.message, null)
                             pendingFolderResult = null
+                        }
+                    }
+
+                    "requestAllFilesAccess" -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            if (!Environment.isExternalStorageManager()) {
+                                try {
+                                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                                        data = Uri.parse("package:$packageName")
+                                    }
+                                    startActivity(intent)
+                                } catch (e: Exception) {
+                                    val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                                    startActivity(intent)
+                                }
+                                result.success(false)
+                            } else {
+                                result.success(true)
+                            }
+                        } else {
+                            result.success(true)
                         }
                     }
 

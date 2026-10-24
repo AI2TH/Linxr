@@ -5,6 +5,34 @@ All notable changes to Linxr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0+27] — 2026-10-24
+
+### Added
+- **1-Click Marketplace & Recipe Catalog (`MarketplaceScreen`):**
+  - Integrated dedicated Marketplace tab featuring curated container stacks (k3s Kubernetes, Ollama AI LLM Engine, Nginx, Redis, PostgreSQL, VS Code Server, Portainer, Node.js, Python, Tailscale, Rust, Go).
+  - Built-in Recipe execution engine supporting both Docker containers and native VM automation scripts with real-time execution modal and streaming logs.
+  - Remote Community Marketplace Sync: Direct synchronization with [`AI2TH/linxr-marketplace`](https://github.com/AI2TH/linxr-marketplace) to pull new and updated recipes dynamically without needing app updates.
+  - Custom Recipe Builder & JSON Importer/Exporter: Create custom recipes, import from shared JSON, or export and share recipes with the community.
+- **Ollama AI LLM Engine Runtime:**
+  - Lightweight CPU-optimized ARM64 runtime (`alpine/ollama:latest`) replacing oversized images to run smoothly within Android memory and disk constraints.
+  - Full Ollama REST API integration accessible at `http://127.0.0.1:11434`.
+- **Web App Port Forwarding for Mobile Browsers:**
+  - Added automatic QEMU SLIRP user-mode port forwards for ports `8080`, `3000`, `8000`, `5000`, `8443`, `9000`, `8088->80`, and `11434`.
+  - Enables direct access to VM web applications and dashboards in Google Chrome or mobile browsers on Android via `http://localhost:<PORT>`.
+- **Containers Screen Integration:**
+  - Added direct Marketplace shortcut in ContainersScreen AppBar and Empty State view.
+  - Added port mapping support in the Run Container bottom sheet dialog.
+
+### Changed & Infrastructure
+- **Docker Daemon & DNS Networking:**
+  - Configured IPv4 precedence (`sysctl net.ipv6.conf.all.disable_ipv6=1`), MTU 1200, and dual DNS servers in Alpine VM `/etc/docker/daemon.json` for reliable registry pulls over mobile and QEMU SLIRP interfaces.
+- **Kernel Update & Rootfs Modernization:**
+  - Updated `scripts/_build_rootfs.sh` and `scripts/build_qcow2.sh` with dynamic Alpine branch detection (`ALPINE_BRANCH`).
+  - Added essential packages for Kubernetes, container tooling, and scripting: `curl`, `ca-certificates`, `tar`, `findutils`, `coreutils`, `socat`, `conntrack-tools`, `git`.
+  - Updated `/sbin/init` to configure cgroup2 subtree controllers (`+cpuset +cpu +io +memory +hugetlb +pids`) and create `/dev/kmsg` for k3s kubelet support.
+- **Android MethodChannel & API Client:**
+  - Enhanced `startContainer` in `VmApiClient.kt`, `VmManager.kt`, and `MainActivity.kt` to support custom port mappings, environment variables, and network mode.
+
 ## [3.0.0+26] — 2026-08-04
 
 ### Added

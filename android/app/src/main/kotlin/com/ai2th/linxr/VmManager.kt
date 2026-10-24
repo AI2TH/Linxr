@@ -63,8 +63,14 @@ class VmManager(private val context: Context) {
         return t
     }
 
-    fun startContainer(image: String, name: String, cmd: List<String>) =
-        apiClient.startContainer(image, name, cmd)
+    fun startContainer(
+        image: String,
+        name: String,
+        cmd: List<String>,
+        ports: List<Map<String, Any>> = emptyList(),
+        env: List<Map<String, String>> = emptyList(),
+        network: String = "host"
+    ) = apiClient.startContainer(image, name, cmd, ports, env, network)
 
     fun stopContainer(name: String) = apiClient.stopContainer(name)
 
@@ -239,6 +245,11 @@ class VmManager(private val context: Context) {
         Log.d(TAG, "stopVm()")
         if (wakelock?.isHeld == true) wakelock?.release()
         wakelock = null
+        try {
+            apiClient.vmExec("sync")
+        } catch (e: Exception) {
+            Log.w(TAG, "Sync before stopVm failed or timed out: ${e.message}")
+        }
         vmProcess?.let { proc ->
             proc.destroy()  // SIGTERM first
             if (!proc.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
@@ -335,11 +346,36 @@ class VmManager(private val context: Context) {
         // SLIRP DNS override: bypass QEMU's single-threaded DNS proxy (10.0.2.3)
         // and advertise Cloudflare DNS (1.1.1.1) directly via DHCP.
         // Fixes npm install DNS timeouts and sshd reverse-lookup delays.
+        // SSH, REST API, and web development port forwards for Chrome/browser:
+        // host 2222  -> guest 22    (SSH)
+        // host 7081  -> guest 7080  (REST API)
+        // host 8080  -> guest 8080  (Nginx / web apps)
+        // host 3000  -> guest 3000  (Node.js / React / Next.js)
+        // host 8000  -> guest 8000  (Python / FastAPI / Django)
+        // host 5000  -> guest 5000  (Flask / dev servers)
+        // host 8443  -> guest 8443  (VS Code Server / code-server)
+        // host 9000  -> guest 9000  (Portainer)
+        // host 8088  -> guest 80    (HTTP port 80 mapped to 8088)
+        // host 11434 -> guest 11434 (Ollama AI API)
+        val defaultPortForwards = listOf(
+            "hostfwd=tcp::2222-:22",
+            "hostfwd=tcp::7081-:7080",
+            "hostfwd=tcp::8080-:8080",
+            "hostfwd=tcp::3000-:3000",
+            "hostfwd=tcp::8000-:8000",
+            "hostfwd=tcp::5000-:5000",
+            "hostfwd=tcp::8443-:8443",
+            "hostfwd=tcp::9000-:9000",
+            "hostfwd=tcp::8088-:80",
+            "hostfwd=tcp::11434-:11434"
+        ).joinToString(",")
+
         cmd += listOf("-netdev",
             "user,id=net0," +
-            "dns=1.1.1.1," +
+            "ipv6=off," +
+            "dns=8.8.8.8," +
             "dnssearch=lan," +
-            "hostfwd=tcp::2222-:22,hostfwd=tcp::7081-:7080"
+            defaultPortForwards
         )
 
         if (isArm) {

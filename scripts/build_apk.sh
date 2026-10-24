@@ -12,7 +12,7 @@
 #
 # Requirements: Docker only. No Flutter, Java, or Android SDK on the host.
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && (pwd -W 2>/dev/null || pwd))"
 source "${SCRIPT_DIR}/_build_common.sh"
 
 BUILD_TYPE="${1:-debug}"
@@ -22,10 +22,11 @@ echo "Project : ${PROJECT_ROOT}"
 echo "Output  : ${OUTPUT_DIR}/linxr-${BUILD_TYPE}.apk"
 echo ""
 
-docker run --rm \
+"${CONTAINER_CMD:-docker}" run --rm \
     --platform linux/amd64 \
     -v "${PROJECT_ROOT}:/workspace:ro" \
     -v "${OUTPUT_DIR}:/out" \
+    -v "${GRADLE_DIR}:/root/.gradle" \
     "${IMAGE_NAME}" \
     bash -c '
 set -e
@@ -78,7 +79,7 @@ cp -r /workspace/android/app/src/main/jniLibs/.         android/app/src/main/jni
 
 echo ""
 echo "--- Step 2b: Fix Gradle wrapper to 8.11.1 ---"
-sed -i "s|distributionUrl=.*|distributionUrl=https\://services.gradle.org/distributions/gradle-8.11.1-all.zip|" \
+sed -i "s|distributionUrl=.*|distributionUrl=https\://services.gradle.org/distributions/gradle-8.11.1-bin.zip|" \
     android/gradle/wrapper/gradle-wrapper.properties
 
 printf "flutter.sdk=/opt/flutter\nsdk.dir=/opt/android-sdk\n" > android/local.properties
@@ -93,8 +94,8 @@ dart run flutter_launcher_icons
 
 echo ""
 echo "--- Step 4: flutter build apk ('"${BUILD_TYPE}"') ---"
-export GRADLE_OPTS="-Dorg.gradle.daemon=false -Xmx3g"
-flutter build apk --'"${BUILD_TYPE}"' 2>&1
+export GRADLE_OPTS="-Dorg.gradle.daemon=false -Xmx3g -Dorg.gradle.internal.http.connectionTimeout=60000 -Dorg.gradle.internal.http.socketTimeout=60000"
+flutter build apk --'"${BUILD_TYPE}"' --no-tree-shake-icons 2>&1
 
 echo ""
 echo "--- Step 5: Copy APK to output ---"

@@ -6,9 +6,12 @@ Linxr runs a full Alpine Linux 3.20 environment on Linux Kernel 6.18-virt inside
 
 ---
 
-## 🚀 Features in v3.0.0
+## 🚀 Features in v3.1.0
 
-- **Upgraded Linux Stack** — Alpine Linux 3.20 with Linux Kernel 6.18-virt, OpenRC init, OpenSSH, `sudo`, `bash`, and full `apk` package repository access.
+- **1-Click Marketplace & Recipe Store** — Discover and 1-click deploy curated container stacks (k3s Kubernetes, Nginx, Redis, PostgreSQL, VS Code Server, Ollama AI, Portainer, Node.js, Python, Tailscale) or write, import, and share your own custom community recipes.
+- **Chrome & Web Browser Port Forwarding** — Automatic port forwarding (`8080`, `3000`, `8000`, `5000`, `8443`, `9000`, `8088->80`, `11434`) letting you test web applications and dashboards in Chrome directly on your phone.
+- **Upgraded Linux & Kernel Stack** — Alpine Linux with Linux Kernel 6.18-virt, OpenRC init, OpenSSH, `sudo`, `bash`, and full `apk` package repository access.
+- **Native Docker & Kubernetes Engine** — Complete Docker container management and k3s Kubernetes runtime support with cgroup2 subtree controllers and `/dev/kmsg` support.
 - **Native Docker Dashboard (Pockr Merged)** — Complete Docker container management under the **Containers** tab (pull images, launch containers, stream live container logs).
 - **Live System & VM Serial Log Console** — Real-time kernel serial logs (`dmesg`, `init`, `sshd`) streaming directly on the Home screen for 100% boot transparency.
 - **Virtio-9P Storage & SAF Folder Picker** — Direct POSIX storage sharing at `/storage/emulated/0/LinxrShare` mounted inside guest VM at `/mnt/sdcard`, plus Android Storage Access Framework (SAF) folder picker in Settings.

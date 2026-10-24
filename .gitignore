@@ -46,3 +46,7 @@ android/app/src/main/assets/vm/base.qcow2
 
 # Generated Android plugin registrant
 android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+
+# Local marketplace repo working copy
+linxr-marketplace/
+

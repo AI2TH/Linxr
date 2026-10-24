@@ -20,11 +20,11 @@ class VmApiClient(private val token: String) {
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    // docker pull (300s) + docker run (30s) + buffer = 360s
+    // docker pull & run for mobile TCG emulation (supports large 5.5GB images like Ollama that take 30min+)
     private val containerClient = OkHttpClient.Builder()
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(360, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(2400, TimeUnit.SECONDS) // 40 minutes timeout for heavy downloads/extractions
+        .writeTimeout(60, TimeUnit.SECONDS)
         .build()
 
     private fun Request.Builder.withAuth(): Request.Builder =
@@ -48,11 +48,25 @@ class VmApiClient(private val token: String) {
         }
     }
 
-    fun startContainer(image: String, name: String, cmd: List<String>) {
+    fun startContainer(
+        image: String,
+        name: String,
+        cmd: List<String>,
+        ports: List<Map<String, Any>> = emptyList(),
+        env: List<Map<String, String>> = emptyList(),
+        network: String = "host"
+    ) {
         val json = JsonObject().apply {
             addProperty("image", image)
             addProperty("name", name)
             add("cmd", gson.toJsonTree(cmd))
+            if (ports.isNotEmpty()) {
+                add("ports", gson.toJsonTree(ports))
+            }
+            if (env.isNotEmpty()) {
+                add("env", gson.toJsonTree(env))
+            }
+            addProperty("network", network)
         }
 
         val body = gson.toJson(json).toRequestBody("application/json".toMediaType())
@@ -125,7 +139,7 @@ class VmApiClient(private val token: String) {
             .post(body)
             .build()
 
-        val response = client.newCall(request).execute()
+        val response = containerClient.newCall(request).execute()
         if (!response.isSuccessful) {
             val err = response.body?.string() ?: response.code.toString()
             response.close()
@@ -133,8 +147,18 @@ class VmApiClient(private val token: String) {
         }
         val jsonStr = response.body?.string() ?: "{}"
         response.close()
-        @Suppress("UNCHECKED_CAST")
-        return gson.fromJson(jsonStr, Map::class.java) as Map<String, Any>
+        val jsonObject = com.google.gson.JsonParser.parseString(jsonStr).asJsonObject
+        val result = mutableMapOf<String, Any>()
+        if (jsonObject.has("stdout") && !jsonObject.get("stdout").isJsonNull) {
+            result["stdout"] = jsonObject.get("stdout").asString
+        }
+        if (jsonObject.has("stderr") && !jsonObject.get("stderr").isJsonNull) {
+            result["stderr"] = jsonObject.get("stderr").asString
+        }
+        if (jsonObject.has("exitCode") && !jsonObject.get("exitCode").isJsonNull) {
+            result["exitCode"] = jsonObject.get("exitCode").asInt
+        }
+        return result
     }
 
     fun getLogs(name: String, tail: Int): String {

@@ -373,4 +373,27 @@ DOCKEREOF
     fi
 fi
 
+# ---------------------------------------------------------------------------
+# K3s Kubernetes RSA Acceleration & Client Tuning (NEW-24)
+# ---------------------------------------------------------------------------
+# On emulated TCG CPU architectures, default ECDSA P-256 scalar multiplication
+# in Go takes ~4.5s per handshake (causing 10s mTLS timeout cascade failures).
+# Pre-configure K3s to enforce fast RSA 2048 ciphers, disable WatchList feature
+# gate, and set GODEBUG=tlsmlkem=0 to prevent post-quantum ML-KEM handshake delays.
+mkdir -p /etc/rancher/k3s
+cat > /etc/rancher/k3s/config.yaml <<'K3SEOF'
+write-kubeconfig-mode: "644"
+kube-apiserver-arg:
+  - "feature-gates=WatchList=false"
+  - "enable-priority-and-fairness=false"
+  - "tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305"
+K3SEOF
+
+# Disable Go ML-KEM for kubectl and internal clients to prevent handshake timeouts
+mkdir -p /etc/profile.d
+cat > /etc/profile.d/k3s.sh <<'PROFEIO'
+export GODEBUG="tlsmlkem=0"
+PROFEIO
+chmod +x /etc/profile.d/k3s.sh
+
 echo "=== Bootstrap Complete ==="

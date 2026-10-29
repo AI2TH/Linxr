@@ -317,7 +317,7 @@ class VmManager(private val context: Context) {
         val isArm = isArm64()
         if (isArm) {
             cmd += listOf("-machine", "virt")
-            cmd += listOf("-cpu", "cortex-a57")
+            cmd += listOf("-cpu", "cortex-a76")
         } else {
             cmd += listOf("-machine", "q35")
             cmd += listOf("-cpu", "qemu64")
@@ -546,7 +546,7 @@ class VmManager(private val context: Context) {
     }
 
     // 1 vCPU default for TCG emulation to eliminate multi-threaded TCG lock contention
-    private fun dynamicVcpu(): Int = 1
+    private fun dynamicVcpu(): Int = (Runtime.getRuntime().availableProcessors() / 2).coerceIn(2, 4)
 
     // 25% of device total RAM in MB, clamped to [512, totalRam].
     private fun dynamicRamMb(): Int {

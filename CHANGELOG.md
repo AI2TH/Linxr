@@ -5,6 +5,35 @@ All notable changes to Linxr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0+28] — 2026-11-01
+
+### Added
+- **FastTrack OCI Daemonless Container Runtime (`crun` + `podman` + `buildah`):**
+  - Instant container execution via `crun` directly with Linux namespaces, eliminating the heavy background daemon overhead on mobile CPUs.
+  - Drops VM idle CPU tax from ~80% down to **<1%**, dramatically extending battery life and reducing thermal throttling.
+  - Dual-Mode Container Engine Selector in the Containers tab: 1-tap switching between **FastTrack OCI** (daemonless, recommended for mobile) and **Docker Daemon** (on-demand compatibility).
+  - Sub-second VM ready state: `init_bootstrap.sh` skips 20s socket poll when FastTrack is active.
+- **Multi-vCPU Multi-Threaded TCG (`cortex-a76`):**
+  - Upgraded QEMU CPU model from `cortex-a57` to `cortex-a76` with parallel multi-threaded TCG (`-accel tcg,thread=multi -smp 4`).
+  - Utilizes both big Cortex-A76 cores and Cortex-A55 efficiency cores for high compilation and CI/CD throughput.
+- **Container Lifecycle Dashboard & Resource Management:**
+  - Full container management: start existing stopped containers, restart, force delete, inspect live configuration, and dynamically update resources (`--restart`, `--memory`, `--cpus`).
+  - Export and import container snapshots as `.tar` archives in the virtio-9p shared folder (`/mnt/sdcard/linxr-exports/`).
+  - Save and load container images to/from `.tar` files in shared storage.
+- **Custom Port Forwarding & LAN Security Hardening:**
+  - Dynamic host-to-guest port mapping UI with duplicate port collision prevention.
+  - Secure by default: binds QEMU `hostfwd` to loopback (`127.0.0.1`), preventing unauthorized root SSH exposure on public Wi-Fi. Adds an explicit "Allow LAN access" toggle when external access is needed.
+  - Real-time LAN IP detection with copy-to-clipboard.
+
+### Fixed
+- **Terminal 25s Auto-Execution Bug:**
+  - Removed the periodic CR byte (`\r`) keep-alive probe in `terminal_screen.dart` that was spontaneously executing unfinished shell commands and breaking terminal editors (`nano`, `vi`).
+  - Added a dedicated, highlighted **Enter** key button on the mobile helper keyboard.
+- **K3s / Kubernetes TLS Handshake Timeout:**
+  - Resolved Go elliptic curve scalar multiplication bottleneck (`p256_arm64.s`) under QEMU TCG by configuring RSA 2048 cluster certificates and `GODEBUG=tlsmlkem=0`. Handshake latency dropped from ~11s down to ~15ms.
+- **Storage Access Permission Guard:**
+  - Added `hasAllFilesAccess` check and `requestAllFilesAccess` (`MANAGE_EXTERNAL_STORAGE`) with warning banner, ensuring 9p shared folders mount with read/write access on Android 11+.
+
 ## [3.1.0+27] — 2026-10-24
 
 ### Added

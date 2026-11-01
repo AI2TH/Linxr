@@ -329,6 +329,26 @@ class MainActivity : FlutterActivity() {
                         result.success(vmManager.getPortForwards())
                     }
 
+                    "addPortForward" -> {
+                        val host = call.argument<Int>("host")
+                        val guest = call.argument<Int>("guest")
+                        val desc = call.argument<String>("desc") ?: ""
+                        if (host == null || guest == null || host !in 1..65535 || guest !in 1..65535) {
+                            result.error("PORT_ADD_ERROR", "host and guest ports must be 1-65535", null)
+                        } else {
+                            result.success(vmManager.addPortForward(host, guest, desc))
+                        }
+                    }
+
+                    "removePortForward" -> {
+                        val host = call.argument<Int>("host")
+                        if (host == null) {
+                            result.error("PORT_REMOVE_ERROR", "host required", null)
+                        } else {
+                            result.success(vmManager.removePortForward(host))
+                        }
+                    }
+
                     "getLanIp" -> {
                         result.success(vmManager.getLanIp())
                     }

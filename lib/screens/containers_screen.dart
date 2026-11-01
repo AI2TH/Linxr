@@ -98,6 +98,46 @@ class _ContainersScreenState extends State<ContainersScreen> {
     );
   }
 
+  /// Shows a blocking, non-dismissible progress dialog while [action] runs.
+  /// Prevents the UI from looking frozen during slow container operations.
+  Future<T> _runWithProgress<T>(String message, Future<T> Function() action) async {
+    BuildContext? progressCtx;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        progressCtx = ctx;
+        return AlertDialog(
+          backgroundColor: AppColors.surface,
+          content: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              ),
+              const SizedBox(width: 20),
+              Flexible(
+                child: Text(
+                  message,
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    try {
+      return await action();
+    } finally {
+      if (progressCtx != null && progressCtx!.mounted) {
+        Navigator.of(progressCtx!).pop();
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final vmState = context.watch<VmState>();
@@ -320,7 +360,7 @@ class _ContainersScreenState extends State<ContainersScreen> {
 
   Future<void> _startContainer(String name) async {
     try {
-      await VmPlatform.startExistingContainer(name);
+      await _runWithProgress('Starting $name…', () => VmPlatform.startExistingContainer(name));
       _showSnack('Started $name', color: AppColors.secondary);
       _loadContainers();
     } catch (e) {
@@ -330,7 +370,7 @@ class _ContainersScreenState extends State<ContainersScreen> {
 
   Future<void> _restartContainer(String name) async {
     try {
-      await VmPlatform.restartContainer(name);
+      await _runWithProgress('Restarting $name…', () => VmPlatform.restartContainer(name));
       _showSnack('Restarted $name', color: AppColors.secondary);
       _loadContainers();
     } catch (e) {
@@ -340,7 +380,7 @@ class _ContainersScreenState extends State<ContainersScreen> {
 
   Future<void> _stopContainer(String name) async {
     try {
-      await VmPlatform.stopContainer(name);
+      await _runWithProgress('Stopping $name…', () => VmPlatform.stopContainer(name));
       _showSnack('Container stopped');
       _loadContainers();
     } catch (e) {
@@ -374,7 +414,7 @@ class _ContainersScreenState extends State<ContainersScreen> {
     if (confirmed != true) return;
 
     try {
-      await VmPlatform.deleteContainer(name);
+      await _runWithProgress('Deleting $name…', () => VmPlatform.deleteContainer(name));
       _showSnack('Deleted $name');
       _loadContainers();
     } catch (e) {
@@ -384,8 +424,10 @@ class _ContainersScreenState extends State<ContainersScreen> {
 
   Future<void> _exportContainer(String name) async {
     try {
-      _showSnack('Exporting $name…');
-      final file = await VmPlatform.exportContainer(name);
+      final file = await _runWithProgress(
+        'Exporting $name… (may take a while)',
+        () => VmPlatform.exportContainer(name),
+      );
       if (!mounted) return;
       _showSnack(
         'Exported to $_defaultSharePath/linxr-exports/$file',
@@ -514,12 +556,12 @@ class _ContainersScreenState extends State<ContainersScreen> {
                         final memoryMb = int.tryParse(memoryController.text.trim());
                         final cpus = double.tryParse(cpusController.text.trim());
                         try {
-                          await VmPlatform.updateContainer(
-                            name,
-                            restartPolicy: restartPolicy.isEmpty ? null : restartPolicy,
-                            memoryMb: memoryMb,
-                            cpus: cpus,
-                          );
+                          await _runWithProgress('Applying config…', () => VmPlatform.updateContainer(
+                                name,
+                                restartPolicy: restartPolicy.isEmpty ? null : restartPolicy,
+                                memoryMb: memoryMb,
+                                cpus: cpus,
+                              ));
                           _showSnack('Config updated', color: AppColors.secondary);
                           _loadContainers();
                         } catch (e) {
@@ -546,7 +588,7 @@ class _ContainersScreenState extends State<ContainersScreen> {
 
   Future<void> _showPortsSheet() async {
     final lanIp = await VmPlatform.getLanIp();
-    final ports = await VmPlatform.getPortForwards();
+    List<Map<String, dynamic>> ports = await VmPlatform.getPortForwards();
     final prefs = await SharedPreferences.getInstance();
     var lanAccess = prefs.getBool(_kLanAccess) ?? false;
     if (!mounted) return;
@@ -568,11 +610,36 @@ class _ContainersScreenState extends State<ContainersScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Port Forwarding',
-                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Port Forwarding',
+                          style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add, color: AppColors.primary),
+                        tooltip: 'Add custom port',
+                        onPressed: () async {
+                          final added = await _showAddPortDialog();
+                          if (added == null) return;
+                          try {
+                            ports = await VmPlatform.addPortForward(
+                              added['host'] as int,
+                              added['guest'] as int,
+                              added['desc'] as String,
+                            );
+                            setSheetState(() {});
+                            _showSnack('Port added — restart VM to apply', color: AppColors.secondary);
+                          } catch (e) {
+                            _showSnack('Error: $e', color: AppColors.danger);
+                          }
+                        },
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 4),
                   Row(
                     children: [
                       const Icon(Icons.wifi, size: 18, color: AppColors.primary),
@@ -620,7 +687,7 @@ class _ContainersScreenState extends State<ContainersScreen> {
                   const Divider(color: Colors.white10),
                   const SizedBox(height: 4),
                   ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 260),
+                    constraints: const BoxConstraints(maxHeight: 280),
                     child: ListView(
                       shrinkWrap: true,
                       children: [
@@ -637,11 +704,30 @@ class _ContainersScreenState extends State<ContainersScreen> {
                               '${p['desc'] ?? ''}',
                               style: const TextStyle(color: Colors.white38, fontSize: 11),
                             ),
+                            trailing: (p['custom'] == true)
+                                ? IconButton(
+                                    icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.danger),
+                                    tooltip: 'Remove',
+                                    onPressed: () async {
+                                      try {
+                                        ports = await VmPlatform.removePortForward((p['host'] as num).toInt());
+                                        setSheetState(() {});
+                                        _showSnack('Port removed — restart VM to apply', color: AppColors.secondary);
+                                      } catch (e) {
+                                        _showSnack('Error: $e', color: AppColors.danger);
+                                      }
+                                    },
+                                  )
+                                : null,
                           ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'New ports take effect on next VM start.',
+                    style: TextStyle(color: Colors.white38, fontSize: 11),
+                  ),
                 ],
               ),
             );
@@ -649,6 +735,51 @@ class _ContainersScreenState extends State<ContainersScreen> {
         );
       },
     ).then((_) => setState(() {}));
+  }
+
+  Future<Map<String, dynamic>?> _showAddPortDialog() async {
+    final hostController = TextEditingController();
+    final guestController = TextEditingController();
+    final descController = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Add Port Forward', style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _dialogField(hostController, 'Host port', 'e.g. 8085 (phone port)'),
+            const SizedBox(height: 12),
+            _dialogField(guestController, 'Guest port', 'e.g. 80 (port inside VM)'),
+            const SizedBox(height: 12),
+            _dialogField(descController, 'Description', 'e.g. myapp'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return null;
+
+    final host = int.tryParse(hostController.text.trim());
+    final guest = int.tryParse(guestController.text.trim());
+    if (host == null || guest == null || host < 1 || host > 65535 || guest < 1 || guest > 65535) {
+      _showSnack('Ports must be within 1-65535', color: AppColors.danger);
+      return null;
+    }
+    final desc = descController.text.trim();
+    return {'host': host, 'guest': guest, 'desc': desc.isEmpty ? 'Custom' : desc};
   }
 
   // ── Images & backup (save/load) ──────────────────────────────────────────
@@ -776,8 +907,10 @@ class _ContainersScreenState extends State<ContainersScreen> {
 
   Future<void> _saveImage(String image) async {
     try {
-      _showSnack('Saving image $image…');
-      final file = await VmPlatform.saveImage(image);
+      final file = await _runWithProgress(
+        'Saving image $image… (may take a while)',
+        () => VmPlatform.saveImage(image),
+      );
       _showSnack('Saved to $_defaultSharePath/linxr-exports/$file', color: AppColors.secondary);
     } catch (e) {
       _showSnack('Error: $e', color: AppColors.danger);
@@ -814,9 +947,8 @@ class _ContainersScreenState extends State<ContainersScreen> {
       ),
     );
     if (result == null || result.isEmpty) return;
-    _showSnack('Loading image…');
     try {
-      await VmPlatform.loadImage(result);
+      await _runWithProgress('Loading image (may take a while)…', () => VmPlatform.loadImage(result));
       _showSnack('Image loaded', color: AppColors.secondary);
     } catch (e) {
       _showSnack('Error: $e', color: AppColors.danger);
@@ -878,7 +1010,8 @@ class _ContainersScreenState extends State<ContainersScreen> {
                         }
                         _showSnack('Importing…');
                         try {
-                          await VmPlatform.importContainer(name, file);
+                          await _runWithProgress('Importing (may take a while)…',
+                              () => VmPlatform.importContainer(name, file));
                           _showSnack('Imported as image $name', color: AppColors.secondary);
                         } catch (e) {
                           _showSnack('Error: $e', color: AppColors.danger);
@@ -992,7 +1125,8 @@ class _ContainersScreenState extends State<ContainersScreen> {
 
                         Navigator.pop(sheetCtx);
                         try {
-                          await VmPlatform.startContainer(image, name, cmd, ports: ports);
+                          await _runWithProgress('Starting $image…',
+                              () => VmPlatform.startContainer(image, name, cmd, ports: ports));
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(

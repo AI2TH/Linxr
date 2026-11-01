@@ -277,6 +277,28 @@ class VmPlatform {
     }
   }
 
+  static Future<List<Map<String, dynamic>>> addPortForward(
+    int host,
+    int guest,
+    String desc,
+  ) async {
+    final List<dynamic>? result = await _channel.invokeMethod('addPortForward', {
+      'host': host,
+      'guest': guest,
+      'desc': desc,
+    });
+    if (result == null) return [];
+    return result.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  static Future<List<Map<String, dynamic>>> removePortForward(int host) async {
+    final List<dynamic>? result = await _channel.invokeMethod('removePortForward', {
+      'host': host,
+    });
+    if (result == null) return [];
+    return result.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
   static Future<String> getLanIp() async {
     try {
       final String? result = await _channel.invokeMethod<String>('getLanIp');

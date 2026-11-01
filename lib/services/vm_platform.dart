@@ -68,6 +68,15 @@ class VmPlatform {
     }
   }
 
+  static Future<bool> hasAllFilesAccess() async {
+    try {
+      final bool? result = await _channel.invokeMethod<bool>('hasAllFilesAccess');
+      return result ?? false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
   static Future<bool> pingSsh() async {
     SSHClient? client;
     try {

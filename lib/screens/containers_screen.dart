@@ -48,17 +48,44 @@ class ContainersScreen extends StatefulWidget {
   State<ContainersScreen> createState() => _ContainersScreenState();
 }
 
-class _ContainersScreenState extends State<ContainersScreen> {
+class _ContainersScreenState extends State<ContainersScreen> with WidgetsBindingObserver {
   static const _kLanAccess = 'lan_access';
   static const _defaultSharePath = '/storage/emulated/0/LinxrShare';
 
   List<ContainerInfo> _containers = [];
   bool _isLoading = false;
+  bool _hasFilesAccess = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadContainers();
+    _checkFilesAccess();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkFilesAccess();
+    }
+  }
+
+  Future<void> _checkFilesAccess() async {
+    final has = await VmPlatform.hasAllFilesAccess();
+    if (mounted) setState(() => _hasFilesAccess = has);
+  }
+
+  Future<void> _requestFilesAccess() async {
+    await VmPlatform.requestAllFilesAccess();
+    // The system settings page is opened; re-check on return to app.
+    await _checkFilesAccess();
   }
 
   Future<void> _loadContainers() async {
@@ -174,13 +201,20 @@ class _ContainersScreenState extends State<ContainersScreen> {
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : !vmState.isRunning
-              ? _buildVmNotRunningState()
-              : _containers.isEmpty
-                  ? _buildEmptyState()
-                  : _buildContainerList(),
+      body: Column(
+        children: [
+          if (!_hasFilesAccess) _buildFilesAccessBanner(),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : !vmState.isRunning
+                    ? _buildVmNotRunningState()
+                    : _containers.isEmpty
+                        ? _buildEmptyState()
+                        : _buildContainerList(),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: ready ? () => _showAddContainerDialog() : null,
         backgroundColor: ready
@@ -188,6 +222,33 @@ class _ContainersScreenState extends State<ContainersScreen> {
             : Colors.grey.withOpacity(0.4),
         tooltip: ready ? 'Run container' : 'VM / Docker not ready',
         child: const Icon(Icons.add, color: Colors.white),
+      ),
+    );
+  }
+
+  Widget _buildFilesAccessBanner() {
+    return Container(
+      width: double.infinity,
+      color: AppColors.warning.withOpacity(0.12),
+      padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+      child: Row(
+        children: [
+          const Icon(Icons.folder_off, color: AppColors.warning, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Container management needs "All files access" to read/write the shared '
+              'folder (export/import and the container API).',
+              style: const TextStyle(color: Colors.white, fontSize: 12),
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: _requestFilesAccess,
+            style: TextButton.styleFrom(foregroundColor: AppColors.primary),
+            child: const Text('Grant'),
+          ),
+        ],
       ),
     );
   }

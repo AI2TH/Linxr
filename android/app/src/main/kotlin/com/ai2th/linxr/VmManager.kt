@@ -756,6 +756,17 @@ class VmManager(private val context: Context) {
     }
 
     /**
+     * Whether the app currently has "All files access" (MANAGE_EXTERNAL_STORAGE).
+     * Container management — and the app's 9p shared folder — depend on writing to
+     * external storage outside the app-specific directory. On Android 11+ this
+     * requires the user to grant "All files access" in system settings; on older
+     * versions the legacy READ/WRITE_EXTERNAL_STORAGE permissions apply.
+     */
+    fun hasAllFilesAccess(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
+    }
+
+    /**
      * Returns the directory that should be shared with the VM via 9p.
      * Reads `flutter.sdcard_path` from SharedPreferences (set by the Settings
      * screen). Falls back to `Environment.getExternalStorageDirectory()` when

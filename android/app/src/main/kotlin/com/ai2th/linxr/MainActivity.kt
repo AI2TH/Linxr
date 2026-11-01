@@ -353,6 +353,10 @@ class MainActivity : FlutterActivity() {
                         result.success(vmManager.getLanIp())
                     }
 
+                    "hasAllFilesAccess" -> {
+                        result.success(vmManager.hasAllFilesAccess())
+                    }
+
                     "vmExec" -> executor.execute {
                         try {
                             val cmd = call.argument<String>("cmd")

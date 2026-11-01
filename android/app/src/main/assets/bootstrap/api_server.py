@@ -177,6 +177,26 @@ def _safe_filename(name):
     return safe.strip("._-") or "export"
 
 
+def _resolve_share_file(file_name: str) -> str:
+    """Safely resolve tar archive from shared folder or exports directory, preventing traversal."""
+    if not file_name:
+        return ""
+    clean = os.path.basename(file_name.strip())
+    # 1. Direct shared folder root
+    p1 = os.path.join(GUEST_SHARE_DIR, clean)
+    if os.path.isfile(p1):
+        return p1
+    # 2. Exports subfolder
+    p2 = os.path.join(EXPORT_DIR, clean)
+    if os.path.isfile(p2):
+        return p2
+    # 3. Explicit subpath without directory traversal
+    p3 = os.path.normpath(os.path.join(GUEST_SHARE_DIR, file_name.strip()))
+    if p3.startswith(GUEST_SHARE_DIR) and os.path.isfile(p3):
+        return p3
+    return ""
+
+
 class VmApiHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -585,9 +605,9 @@ class VmApiHandler(BaseHTTPRequestHandler):
             if not name or not file_name:
                 self._send_error(400, "name and file required")
                 return
-            src = os.path.join(GUEST_SHARE_DIR, file_name)
-            if not os.path.isfile(src):
-                self._send_error(404, f"File not found in shared folder: {file_name}")
+            src = _resolve_share_file(file_name)
+            if not src:
+                self._send_error(404, f"File not found in shared folder or linxr-exports: {file_name}")
                 return
             rc, out, err = _run_docker(["docker", "import", src, name], timeout=2400)
             if rc != 0:
@@ -624,9 +644,9 @@ class VmApiHandler(BaseHTTPRequestHandler):
             if not file_name:
                 self._send_error(400, "file required")
                 return
-            src = os.path.join(GUEST_SHARE_DIR, file_name)
-            if not os.path.isfile(src):
-                self._send_error(404, f"File not found in shared folder: {file_name}")
+            src = _resolve_share_file(file_name)
+            if not src:
+                self._send_error(404, f"File not found in shared folder or linxr-exports: {file_name}")
                 return
             rc, out, err = _run_docker(["docker", "load", "-i", src], timeout=2400)
             if rc != 0:

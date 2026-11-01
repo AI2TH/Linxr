@@ -126,13 +126,15 @@ class VmManager(private val context: Context) {
     // ── Network / port forwarding ───────────────────────────────────────────
 
     fun getPortForwards(): List<Map<String, Any>> {
-        val defaults = portForwards.map {
+        val customs = getCustomPortForwards()
+        val customHostSet = customs.map { it.host }.toSet()
+        val defaults = portForwards.filter { it.host !in customHostSet }.map {
             mapOf("host" to it.host, "guest" to it.guest, "desc" to it.desc, "custom" to false)
         }
-        val customs = getCustomPortForwards().map {
+        val customMaps = customs.map {
             mapOf("host" to it.host, "guest" to it.guest, "desc" to it.desc, "custom" to true)
         }
-        return defaults + customs
+        return defaults + customMaps
     }
 
     fun addPortForward(host: Int, guest: Int, desc: String): List<Map<String, Any>> {
@@ -480,7 +482,7 @@ class VmManager(private val context: Context) {
         // Default is loopback (127.0.0.1) so ports — especially SSH with the known
         // default root password — are not exposed to the local network.
         val bindHost = if (getFlutterBool("flutter.lan_access", false)) "0.0.0.0" else "127.0.0.1"
-        val allPortForwards = portForwards + getCustomPortForwards()
+        val allPortForwards = (getCustomPortForwards() + portForwards).distinctBy { it.host }
         val defaultPortForwards = allPortForwards.joinToString(",") { pf ->
             "hostfwd=tcp:$bindHost:${pf.host}-:${pf.guest}"
         }

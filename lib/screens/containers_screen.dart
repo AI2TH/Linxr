@@ -128,39 +128,43 @@ class _ContainersScreenState extends State<ContainersScreen> with WidgetsBinding
   /// Shows a blocking, non-dismissible progress dialog while [action] runs.
   /// Prevents the UI from looking frozen during slow container operations.
   Future<T> _runWithProgress<T>(String message, Future<T> Function() action) async {
-    BuildContext? progressCtx;
+    final nav = Navigator.of(context, rootNavigator: true);
+    var dialogOpen = true;
+
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) {
-        progressCtx = ctx;
-        return AlertDialog(
-          backgroundColor: AppColors.surface,
-          content: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 3),
+      useRootNavigator: true,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        content: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 3),
+            ),
+            const SizedBox(width: 20),
+            Flexible(
+              child: Text(
+                message,
+                style: const TextStyle(color: Colors.white, fontSize: 14),
               ),
-              const SizedBox(width: 20),
-              Flexible(
-                child: Text(
-                  message,
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
+            ),
+          ],
+        ),
+      ),
+    ).then((_) => dialogOpen = false);
+
+    // Yield one microtask to ensure dialog route is registered
+    await Future<void>.delayed(Duration.zero);
+
     try {
       return await action();
     } finally {
-      if (progressCtx != null && progressCtx!.mounted) {
-        Navigator.of(progressCtx!).pop();
+      if (dialogOpen && nav.canPop()) {
+        nav.pop();
       }
     }
   }
@@ -838,6 +842,10 @@ class _ContainersScreenState extends State<ContainersScreen> with WidgetsBinding
     if (host == null || guest == null || host < 1 || host > 65535 || guest < 1 || guest > 65535) {
       _showSnack('Ports must be within 1-65535', color: AppColors.danger);
       return null;
+    }
+    final existingPorts = await VmPlatform.getPortForwards();
+    if (existingPorts.any((p) => p['host'] == host && p['custom'] != true)) {
+      _showSnack('Port $host is already used by a default rule', color: AppColors.warning);
     }
     final desc = descController.text.trim();
     return {'host': host, 'guest': guest, 'desc': desc.isEmpty ? 'Custom' : desc};

@@ -192,6 +192,171 @@ class MainActivity : FlutterActivity() {
                         }
                     }
 
+                    "startExistingContainer" -> executor.execute {
+                        try {
+                            val name = call.argument<String>("name")
+                                ?: return@execute runOnUiThread {
+                                    result.error("CONTAINER_START_ERROR", "name required", null)
+                                }
+                            vmManager.startExistingContainer(name)
+                            if (!isFinishing) runOnUiThread { result.success(null) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("CONTAINER_START_ERROR", e.message, null) }
+                        }
+                    }
+
+                    "restartContainer" -> executor.execute {
+                        try {
+                            val name = call.argument<String>("name")
+                                ?: return@execute runOnUiThread {
+                                    result.error("CONTAINER_RESTART_ERROR", "name required", null)
+                                }
+                            vmManager.restartContainer(name)
+                            if (!isFinishing) runOnUiThread { result.success(null) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("CONTAINER_RESTART_ERROR", e.message, null) }
+                        }
+                    }
+
+                    "deleteContainer" -> executor.execute {
+                        try {
+                            val name = call.argument<String>("name")
+                                ?: return@execute runOnUiThread {
+                                    result.error("CONTAINER_DELETE_ERROR", "name required", null)
+                                }
+                            vmManager.deleteContainer(name)
+                            if (!isFinishing) runOnUiThread { result.success(null) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("CONTAINER_DELETE_ERROR", e.message, null) }
+                        }
+                    }
+
+                    "updateContainer" -> executor.execute {
+                        try {
+                            val name = call.argument<String>("name")
+                                ?: return@execute runOnUiThread {
+                                    result.error("CONTAINER_UPDATE_ERROR", "name required", null)
+                                }
+                            val restartPolicy = call.argument<String>("restartPolicy")
+                            val memoryMb = (call.argument<Number>("memoryMb"))?.toLong()
+                            val cpus = call.argument<Double>("cpus")
+                            vmManager.updateContainer(name, restartPolicy, memoryMb, cpus)
+                            if (!isFinishing) runOnUiThread { result.success(null) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("CONTAINER_UPDATE_ERROR", e.message, null) }
+                        }
+                    }
+
+                    "inspectContainer" -> executor.execute {
+                        try {
+                            val name = call.argument<String>("name")
+                                ?: return@execute runOnUiThread {
+                                    result.error("CONTAINER_INSPECT_ERROR", "name required", null)
+                                }
+                            val info = vmManager.inspectContainer(name)
+                            if (!isFinishing) runOnUiThread { result.success(info) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("CONTAINER_INSPECT_ERROR", e.message, null) }
+                        }
+                    }
+
+                    "exportContainer" -> executor.execute {
+                        try {
+                            val name = call.argument<String>("name")
+                                ?: return@execute runOnUiThread {
+                                    result.error("CONTAINER_EXPORT_ERROR", "name required", null)
+                                }
+                            val file = vmManager.exportContainer(name)
+                            if (!isFinishing) runOnUiThread { result.success(file) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("CONTAINER_EXPORT_ERROR", e.message, null) }
+                        }
+                    }
+
+                    "importContainer" -> executor.execute {
+                        try {
+                            val name = call.argument<String>("name")
+                                ?: return@execute runOnUiThread {
+                                    result.error("CONTAINER_IMPORT_ERROR", "name required", null)
+                                }
+                            val file = call.argument<String>("file")
+                                ?: return@execute runOnUiThread {
+                                    result.error("CONTAINER_IMPORT_ERROR", "file required", null)
+                                }
+                            val output = vmManager.importContainer(name, file)
+                            if (!isFinishing) runOnUiThread { result.success(output) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("CONTAINER_IMPORT_ERROR", e.message, null) }
+                        }
+                    }
+
+                    "saveImage" -> executor.execute {
+                        try {
+                            val image = call.argument<String>("image")
+                                ?: return@execute runOnUiThread {
+                                    result.error("IMAGE_SAVE_ERROR", "image required", null)
+                                }
+                            val file = vmManager.saveImage(image)
+                            if (!isFinishing) runOnUiThread { result.success(file) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("IMAGE_SAVE_ERROR", e.message, null) }
+                        }
+                    }
+
+                    "loadImage" -> executor.execute {
+                        try {
+                            val file = call.argument<String>("file")
+                                ?: return@execute runOnUiThread {
+                                    result.error("IMAGE_LOAD_ERROR", "file required", null)
+                                }
+                            val output = vmManager.loadImage(file)
+                            if (!isFinishing) runOnUiThread { result.success(output) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("IMAGE_LOAD_ERROR", e.message, null) }
+                        }
+                    }
+
+                    "listImages" -> executor.execute {
+                        try {
+                            val images = vmManager.listImages()
+                            if (!isFinishing) runOnUiThread { result.success(images) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("IMAGE_LIST_ERROR", e.message, null) }
+                        }
+                    }
+
+                    "getPortForwards" -> {
+                        result.success(vmManager.getPortForwards())
+                    }
+
+                    "addPortForward" -> {
+                        val host = call.argument<Int>("host")
+                        val guest = call.argument<Int>("guest")
+                        val desc = call.argument<String>("desc") ?: ""
+                        if (host == null || guest == null || host !in 1..65535 || guest !in 1..65535) {
+                            result.error("PORT_ADD_ERROR", "host and guest ports must be 1-65535", null)
+                        } else {
+                            result.success(vmManager.addPortForward(host, guest, desc))
+                        }
+                    }
+
+                    "removePortForward" -> {
+                        val host = call.argument<Int>("host")
+                        if (host == null) {
+                            result.error("PORT_REMOVE_ERROR", "host required", null)
+                        } else {
+                            result.success(vmManager.removePortForward(host))
+                        }
+                    }
+
+                    "getLanIp" -> {
+                        result.success(vmManager.getLanIp())
+                    }
+
+                    "hasAllFilesAccess" -> {
+                        result.success(vmManager.hasAllFilesAccess())
+                    }
+
                     "vmExec" -> executor.execute {
                         try {
                             val cmd = call.argument<String>("cmd")

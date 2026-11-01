@@ -68,6 +68,15 @@ class VmPlatform {
     }
   }
 
+  static Future<bool> hasAllFilesAccess() async {
+    try {
+      final bool? result = await _channel.invokeMethod<bool>('hasAllFilesAccess');
+      return result ?? false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
   static Future<bool> pingSsh() async {
     SSHClient? client;
     try {
@@ -152,6 +161,159 @@ class VmPlatform {
       return result ?? '';
     } on PlatformException catch (e) {
       debugPrint("Failed to get logs: ${e.message}");
+      return '';
+    }
+  }
+
+  static Future<void> startExistingContainer(String name) async {
+    try {
+      await _channel.invokeMethod('startExistingContainer', {'name': name});
+    } on PlatformException catch (e) {
+      debugPrint("Failed to start existing container: ${e.message}");
+      rethrow;
+    }
+  }
+
+  static Future<void> restartContainer(String name) async {
+    try {
+      await _channel.invokeMethod('restartContainer', {'name': name});
+    } on PlatformException catch (e) {
+      debugPrint("Failed to restart container: ${e.message}");
+      rethrow;
+    }
+  }
+
+  static Future<void> deleteContainer(String name) async {
+    try {
+      await _channel.invokeMethod('deleteContainer', {'name': name});
+    } on PlatformException catch (e) {
+      debugPrint("Failed to delete container: ${e.message}");
+      rethrow;
+    }
+  }
+
+  static Future<void> updateContainer(
+    String name, {
+    String? restartPolicy,
+    int? memoryMb,
+    double? cpus,
+  }) async {
+    try {
+      await _channel.invokeMethod('updateContainer', {
+        'name': name,
+        if (restartPolicy != null) 'restartPolicy': restartPolicy,
+        if (memoryMb != null) 'memoryMb': memoryMb,
+        if (cpus != null) 'cpus': cpus,
+      });
+    } on PlatformException catch (e) {
+      debugPrint("Failed to update container: ${e.message}");
+      rethrow;
+    }
+  }
+
+  static Future<Map<String, dynamic>> inspectContainer(String name) async {
+    try {
+      final result = await _channel.invokeMethod('inspectContainer', {'name': name});
+      return Map<String, dynamic>.from(result as Map);
+    } on PlatformException catch (e) {
+      debugPrint("Failed to inspect container: ${e.message}");
+      rethrow;
+    }
+  }
+
+  static Future<String> exportContainer(String name) async {
+    try {
+      final String? result = await _channel.invokeMethod<String>('exportContainer', {'name': name});
+      return result ?? '';
+    } on PlatformException catch (e) {
+      debugPrint("Failed to export container: ${e.message}");
+      rethrow;
+    }
+  }
+
+  static Future<String> importContainer(String name, String file) async {
+    try {
+      final String? result = await _channel.invokeMethod<String>('importContainer', {
+        'name': name,
+        'file': file,
+      });
+      return result ?? '';
+    } on PlatformException catch (e) {
+      debugPrint("Failed to import container: ${e.message}");
+      rethrow;
+    }
+  }
+
+  static Future<String> saveImage(String image) async {
+    try {
+      final String? result = await _channel.invokeMethod<String>('saveImage', {'image': image});
+      return result ?? '';
+    } on PlatformException catch (e) {
+      debugPrint("Failed to save image: ${e.message}");
+      rethrow;
+    }
+  }
+
+  static Future<String> loadImage(String file) async {
+    try {
+      final String? result = await _channel.invokeMethod<String>('loadImage', {'file': file});
+      return result ?? '';
+    } on PlatformException catch (e) {
+      debugPrint("Failed to load image: ${e.message}");
+      rethrow;
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> listImages() async {
+    try {
+      final List<dynamic>? result = await _channel.invokeMethod('listImages');
+      if (result == null) return [];
+      return result.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    } on PlatformException catch (e) {
+      debugPrint("Failed to list images: ${e.message}");
+      return [];
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getPortForwards() async {
+    try {
+      final List<dynamic>? result = await _channel.invokeMethod('getPortForwards');
+      if (result == null) return [];
+      return result.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    } on PlatformException catch (e) {
+      debugPrint("Failed to get port forwards: ${e.message}");
+      return [];
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> addPortForward(
+    int host,
+    int guest,
+    String desc,
+  ) async {
+    final List<dynamic>? result = await _channel.invokeMethod('addPortForward', {
+      'host': host,
+      'guest': guest,
+      'desc': desc,
+    });
+    if (result == null) return [];
+    return result.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  static Future<List<Map<String, dynamic>>> removePortForward(int host) async {
+    final List<dynamic>? result = await _channel.invokeMethod('removePortForward', {
+      'host': host,
+    });
+    if (result == null) return [];
+    return result.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  static Future<String> getLanIp() async {
+    try {
+      final String? result = await _channel.invokeMethod<String>('getLanIp');
+      return result ?? '';
+    } on PlatformException catch (e) {
+      debugPrint("Failed to get LAN IP: ${e.message}");
       return '';
     }
   }

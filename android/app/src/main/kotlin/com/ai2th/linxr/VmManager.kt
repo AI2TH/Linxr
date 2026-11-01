@@ -12,6 +12,8 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
 import java.util.zip.GZIPInputStream
+import org.json.JSONArray
+import org.json.JSONObject
 
 class VmManager(private val context: Context) {
     companion object {
@@ -20,6 +22,24 @@ class VmManager(private val context: Context) {
         // Virtual disk size in GB. Must match DISK_SIZE_GB in scripts/_build_rootfs.sh
         // so the user.qcow2 overlay is the same size as the pre-expanded base filesystem.
         private const val VM_DISK_SIZE_GB = 4L
+
+        // Host -> guest port forwards exposed through QEMU SLIRP.
+        // These are the ports the Android host (and, when LAN access is enabled,
+        // other devices on the same network) can reach inside the VM.
+        private data class PortForward(val host: Int, val guest: Int, val desc: String)
+
+        private val portForwards = listOf(
+            PortForward(2222, 22, "SSH"),
+            PortForward(7081, 7080, "Container API"),
+            PortForward(8080, 8080, "HTTP / web apps"),
+            PortForward(3000, 3000, "Node.js / React"),
+            PortForward(8000, 8000, "Python / FastAPI"),
+            PortForward(5000, 5000, "Flask"),
+            PortForward(8443, 8443, "VS Code Server"),
+            PortForward(9000, 9000, "Portainer"),
+            PortForward(8088, 80, "HTTP (80 -> 8088)"),
+            PortForward(11434, 11434, "Ollama AI"),
+        )
     }
 
     @Volatile private var vmProcess: Process? = null
@@ -74,6 +94,27 @@ class VmManager(private val context: Context) {
 
     fun stopContainer(name: String) = apiClient.stopContainer(name)
 
+    fun startExistingContainer(name: String) = apiClient.startExistingContainer(name)
+
+    fun restartContainer(name: String) = apiClient.restartContainer(name)
+
+    fun deleteContainer(name: String) = apiClient.deleteContainer(name)
+
+    fun updateContainer(name: String, restartPolicy: String?, memoryMb: Long?, cpus: Double?) =
+        apiClient.updateContainer(name, restartPolicy, memoryMb, cpus)
+
+    fun inspectContainer(name: String): Map<String, Any> = apiClient.inspectContainer(name)
+
+    fun exportContainer(name: String): String = apiClient.exportContainer(name)
+
+    fun importContainer(name: String, file: String): String = apiClient.importContainer(name, file)
+
+    fun saveImage(image: String): String = apiClient.saveImage(image)
+
+    fun loadImage(file: String): String = apiClient.loadImage(file)
+
+    fun listImages(): List<Map<String, Any>> = apiClient.listImages()
+
     fun listContainers(): List<Map<String, Any>> = apiClient.listContainers()
 
     fun getLogs(name: String, tail: Int): String = apiClient.getLogs(name, tail)
@@ -81,6 +122,84 @@ class VmManager(private val context: Context) {
     fun vmExec(cmd: String): Map<String, Any> = apiClient.vmExec(cmd)
 
     fun checkHealth(): Boolean = apiClient.checkHealth()
+
+    // ── Network / port forwarding ───────────────────────────────────────────
+
+    fun getPortForwards(): List<Map<String, Any>> {
+        val defaults = portForwards.map {
+            mapOf("host" to it.host, "guest" to it.guest, "desc" to it.desc, "custom" to false)
+        }
+        val customs = getCustomPortForwards().map {
+            mapOf("host" to it.host, "guest" to it.guest, "desc" to it.desc, "custom" to true)
+        }
+        return defaults + customs
+    }
+
+    fun addPortForward(host: Int, guest: Int, desc: String): List<Map<String, Any>> {
+        val list = getCustomPortForwards()
+        list.removeAll { it.host == host }
+        list.add(PortForward(host, guest, desc.trim().ifEmpty { "Custom" }))
+        setCustomPortForwards(list)
+        return getPortForwards()
+    }
+
+    fun removePortForward(host: Int): List<Map<String, Any>> {
+        val list = getCustomPortForwards()
+        list.removeAll { it.host == host }
+        setCustomPortForwards(list)
+        return getPortForwards()
+    }
+
+    private fun getCustomPortForwards(): MutableList<PortForward> {
+        val json = appPrefs.getString("custom_port_forwards", null) ?: return mutableListOf()
+        return try {
+            val arr = JSONArray(json)
+            val list = mutableListOf<PortForward>()
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                list.add(PortForward(o.getInt("host"), o.getInt("guest"), o.getString("desc")))
+            }
+            list
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to parse custom port forwards: ${e.message}")
+            mutableListOf()
+        }
+    }
+
+    private fun setCustomPortForwards(list: List<PortForward>) {
+        val arr = JSONArray()
+        for (pf in list) {
+            arr.put(JSONObject().apply {
+                put("host", pf.host)
+                put("guest", pf.guest)
+                put("desc", pf.desc)
+            })
+        }
+        appPrefs.edit().putString("custom_port_forwards", arr.toString()).apply()
+    }
+
+    fun isLanAccessEnabled(): Boolean = getFlutterBool("flutter.lan_access", false)
+
+    fun getLanIp(): String {
+        return try {
+            val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
+            while (interfaces.hasMoreElements()) {
+                val ni = interfaces.nextElement()
+                if (!ni.isUp || ni.isLoopback) continue
+                val addrs = ni.inetAddresses
+                while (addrs.hasMoreElements()) {
+                    val addr = addrs.nextElement()
+                    if (addr is java.net.Inet4Address && addr.isSiteLocalAddress) {
+                        return addr.hostAddress ?: continue
+                    }
+                }
+            }
+            ""
+        } catch (e: Exception) {
+            Log.w(TAG, "getLanIp: ${e.message}")
+            ""
+        }
+    }
     // -------------------------------------------------------------------------
     // Public API
     // -------------------------------------------------------------------------
@@ -357,18 +476,14 @@ class VmManager(private val context: Context) {
         // host 9000  -> guest 9000  (Portainer)
         // host 8088  -> guest 80    (HTTP port 80 mapped to 8088)
         // host 11434 -> guest 11434 (Ollama AI API)
-        val defaultPortForwards = listOf(
-            "hostfwd=tcp::2222-:22",
-            "hostfwd=tcp::7081-:7080",
-            "hostfwd=tcp::8080-:8080",
-            "hostfwd=tcp::3000-:3000",
-            "hostfwd=tcp::8000-:8000",
-            "hostfwd=tcp::5000-:5000",
-            "hostfwd=tcp::8443-:8443",
-            "hostfwd=tcp::9000-:9000",
-            "hostfwd=tcp::8088-:80",
-            "hostfwd=tcp::11434-:11434"
-        ).joinToString(",")
+        // Bind hostfwd to 0.0.0.0 (all interfaces) only when LAN access is enabled.
+        // Default is loopback (127.0.0.1) so ports — especially SSH with the known
+        // default root password — are not exposed to the local network.
+        val bindHost = if (getFlutterBool("flutter.lan_access", false)) "0.0.0.0" else "127.0.0.1"
+        val allPortForwards = portForwards + getCustomPortForwards()
+        val defaultPortForwards = allPortForwards.joinToString(",") { pf ->
+            "hostfwd=tcp:$bindHost:${pf.host}-:${pf.guest}"
+        }
 
         cmd += listOf("-netdev",
             "user,id=net0," +
@@ -630,6 +745,25 @@ class VmManager(private val context: Context) {
             is String -> value
             else -> default
         }
+    }
+
+    private fun getFlutterBool(key: String, default: Boolean): Boolean {
+        return when (val value = flutterPrefs.all[key]) {
+            is Boolean -> value
+            is String -> value.toBooleanStrictOrNull() ?: default
+            else -> default
+        }
+    }
+
+    /**
+     * Whether the app currently has "All files access" (MANAGE_EXTERNAL_STORAGE).
+     * Container management — and the app's 9p shared folder — depend on writing to
+     * external storage outside the app-specific directory. On Android 11+ this
+     * requires the user to grant "All files access" in system settings; on older
+     * versions the legacy READ/WRITE_EXTERNAL_STORAGE permissions apply.
+     */
+    fun hasAllFilesAccess(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
     }
 
     /**

@@ -25,7 +25,6 @@ class _Tab {
   SSHSession? session;
   _ConnState connState = _ConnState.idle;
   Timer? retryTimer;
-  Timer? keepAliveTimer;
   int retryCount = 0;
   StreamSubscription? _stdoutSub;
   StreamSubscription? _stderrSub;
@@ -36,27 +35,8 @@ class _Tab {
       : terminal = Terminal(maxLines: 5000),
         controller = TerminalController();
 
-  void startKeepAlive(VoidCallback onDead) {
-    keepAliveTimer?.cancel();
-    keepAliveTimer = Timer.periodic(const Duration(seconds: 25), (_) {
-      if (connState != _ConnState.connected) return;
-      try {
-        // Send CR byte to probe liveness — non-empty payload avoids SSH-layer coalescing
-        session?.stdin.add(Uint8List.fromList([13]));  // 13 = CR
-      } catch (_) {
-        onDead();
-      }
-    });
-  }
-
-  void stopKeepAlive() {
-    keepAliveTimer?.cancel();
-    keepAliveTimer = null;
-  }
-
   void close() {
     retryTimer?.cancel();
-    keepAliveTimer?.cancel();
     _stdoutSub?.cancel();
     _stderrSub?.cancel();
     session?.stdin.close();
@@ -139,7 +119,6 @@ class _TerminalScreenState extends State<TerminalScreen> with WidgetsBindingObse
   void _disconnectAll() {
     for (final tab in _tabs) {
       tab.retryTimer?.cancel();
-      tab.stopKeepAlive();
       tab.session?.stdin.close();
       tab.client?.close();
       tab.session = null;
@@ -306,7 +285,6 @@ class _TerminalScreenState extends State<TerminalScreen> with WidgetsBindingObse
       };
 
       tab.retryCount = 0;
-      tab.startKeepAlive(() => _onSessionDone(tab));
       if (mounted) setState(() => tab.connState = _ConnState.connected);
     } on TimeoutException {
       _retryOrError(tab, 'Timed out (${tab.retryCount + 1}/${_Tab._maxRetries})');
@@ -335,7 +313,6 @@ class _TerminalScreenState extends State<TerminalScreen> with WidgetsBindingObse
   }
 
   void _onSessionDone(_Tab tab) {
-    tab.stopKeepAlive();
     tab._stdoutSub?.cancel();
     tab._stderrSub?.cancel();
     tab.session?.close();
@@ -355,7 +332,6 @@ class _TerminalScreenState extends State<TerminalScreen> with WidgetsBindingObse
   void _reconnect() {
     final tab = _active;
     tab.retryTimer?.cancel();
-    tab.stopKeepAlive();
     tab.retryCount = 0;
     tab.connState = _ConnState.idle;
     tab.session?.stdin.close();
@@ -621,6 +597,7 @@ class _KeyRow extends StatelessWidget {
   final bool enabled;
 
   static const _keys = <(String, List<int>)>[
+    ('Enter', [0x0d]),          // Enter — run the current command
     ('Tab',  [0x09]),           // Tab — triggers shell autocomplete
     ('Esc',  [0x1b]),           // Escape
     ('↑',    [0x1b, 0x5b, 0x41]), // Arrow up — history prev
@@ -647,19 +624,29 @@ class _KeyRow extends StatelessWidget {
         separatorBuilder: (_, __) => const SizedBox(width: 4),
         itemBuilder: (_, i) {
           final (label, bytes) = _keys[i];
+          final isEnter = label == 'Enter';
           final isTab = label == 'Tab';
+          final isSpecial = isEnter || isTab;
+          final accent = isEnter ? AppColors.secondary : AppColors.primary;
+          final textColor = enabled
+              ? (isEnter
+                  ? AppColors.secondary
+                  : isTab
+                      ? AppColors.brightBlue
+                      : Colors.white70)
+              : Colors.white24;
           return GestureDetector(
             onTap: enabled ? () => onKey(bytes) : null,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10),
               decoration: BoxDecoration(
-                color: isTab
-                    ? AppColors.primary.withOpacity(enabled ? 0.25 : 0.08)
+                color: isSpecial
+                    ? accent.withOpacity(enabled ? 0.25 : 0.08)
                     : Colors.white.withOpacity(enabled ? 0.07 : 0.03),
                 borderRadius: BorderRadius.circular(5),
                 border: Border.all(
-                  color: isTab
-                      ? AppColors.primary.withOpacity(enabled ? 0.5 : 0.15)
+                  color: isSpecial
+                      ? accent.withOpacity(enabled ? 0.5 : 0.15)
                       : Colors.white.withOpacity(enabled ? 0.12 : 0.05),
                 ),
               ),
@@ -669,10 +656,8 @@ class _KeyRow extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 12,
                   fontFamily: 'monospace',
-                  fontWeight: isTab ? FontWeight.bold : FontWeight.normal,
-                  color: enabled
-                      ? (isTab ? AppColors.brightBlue : Colors.white70)
-                      : Colors.white24,
+                  fontWeight: isSpecial ? FontWeight.bold : FontWeight.normal,
+                  color: textColor,
                 ),
               ),
             ),

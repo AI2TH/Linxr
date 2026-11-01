@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import socket
+import shutil
 import subprocess
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -197,6 +198,80 @@ def _resolve_share_file(file_name: str) -> str:
     return ""
 
 
+
+ENGINE_MODE_FILE = "/etc/linxr_engine.mode"
+
+
+def _get_engine_mode() -> str:
+    """Returns 'fasttrack' (daemonless crun/podman) or 'docker' (dockerd daemon)."""
+    if os.path.isfile(ENGINE_MODE_FILE):
+        try:
+            with open(ENGINE_MODE_FILE, "r") as f:
+                mode = f.read().strip().lower()
+                if mode in ("fasttrack", "docker"):
+                    return mode
+        except Exception:
+            pass
+    return "fasttrack"
+
+
+def _set_engine_mode(mode: str) -> dict:
+    mode = mode.strip().lower()
+    if mode not in ("fasttrack", "docker"):
+        mode = "fasttrack"
+    try:
+        with open(ENGINE_MODE_FILE, "w") as f:
+            f.write(mode)
+    except Exception as e:
+        logger.warning("Could not write engine mode: %s", e)
+
+    if mode == "docker":
+        if not os.path.exists("/var/run/docker.sock"):
+            logger.info("Starting Docker daemon on demand...")
+            subprocess.Popen(
+                "containerd >/var/log/containerd.log 2>&1 & dockerd --containerd=/run/containerd/containerd.sock >/var/log/dockerd.log 2>&1 &",
+                shell=True
+            )
+    else:
+        logger.info("Stopping Docker daemon to free emulated CPU...")
+        subprocess.run("killall -9 dockerd containerd 2>/dev/null || true", shell=True)
+
+    return _get_engine_info()
+
+
+def _get_engine_info() -> dict:
+    mode = _get_engine_mode()
+    has_docker = os.path.exists("/var/run/docker.sock")
+    has_crun = shutil.which("crun") is not None
+    has_podman = shutil.which("podman") is not None
+    has_buildah = shutil.which("buildah") is not None
+
+    return {
+        "mode": mode,
+        "dockerRunning": has_docker,
+        "fasttrackAvailable": (has_crun or has_podman),
+        "runtimes": {
+            "oci": "crun" if has_crun else ("runc" if shutil.which("runc") else "none"),
+            "podman": has_podman,
+            "buildah": has_buildah,
+            "dockerd": has_docker
+        },
+        "description": "FastTrack (daemonless crun/podman)" if mode == "fasttrack" else "Standard Docker Daemon"
+    }
+
+
+def _run_engine_cmd(args, timeout=600):
+    """Run container CLI using active engine (podman for fasttrack, docker for docker mode)."""
+    mode = _get_engine_mode()
+    cli = "podman" if (mode == "fasttrack" and shutil.which("podman")) else "docker"
+    try:
+        result = subprocess.run([cli] + args, capture_output=True, text=True, timeout=timeout)
+        return result.returncode, result.stdout or "", result.stderr or ""
+    except subprocess.TimeoutExpired:
+        return 124, "", f"timed out after {timeout}s"
+    except Exception as e:
+        return -1, "", str(e)
+
 class VmApiHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -263,12 +338,29 @@ class VmApiHandler(BaseHTTPRequestHandler):
 
         # /health endpoint — no auth required
         if path == "/health":
-            is_ok, ver = _check_docker_socket()
-            self._send_json(200, {
-                "status": "ok" if is_ok else "degraded",
-                "runtime": "docker",
-                "version": ver,
-            })
+            mode = _get_engine_mode()
+            if mode == "fasttrack":
+                is_crun = shutil.which("crun") is not None
+                is_podman = shutil.which("podman") is not None
+                is_ok = is_crun or is_podman
+                self._send_json(200, {
+                    "status": "ok" if is_ok else "degraded",
+                    "runtime": "fasttrack",
+                    "version": "crun OCI (daemonless)",
+                    "mode": mode,
+                })
+            else:
+                is_ok, ver = _check_docker_socket()
+                self._send_json(200, {
+                    "status": "ok" if is_ok else "degraded",
+                    "runtime": "docker",
+                    "version": ver,
+                    "mode": mode,
+                })
+            return
+
+        if path == "/engine":
+            self._send_json(200, _get_engine_info())
             return
 
         # Protected endpoints
@@ -276,6 +368,45 @@ class VmApiHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/containers":
+            mode = _get_engine_mode()
+            if mode == "fasttrack" or not os.path.exists("/var/run/docker.sock"):
+                rc, out, err = _run_engine_cmd(["ps", "-a", "--format", "json"], timeout=20)
+                if rc == 0 and out.strip():
+                    try:
+                        raw = json.loads(out)
+                        if not isinstance(raw, list):
+                            raw = [raw]
+                        containers = []
+                        for c in raw:
+                            names = c.get("Names") or [c.get("Id", "")[:12]]
+                            if isinstance(names, str):
+                                names = [names]
+                            name = names[0].lstrip("/") if names else "unknown"
+                            image = c.get("Image", "")
+                            status = c.get("Status", "") or c.get("State", "")
+                            ports = []
+                            for p in c.get("Ports", []):
+                                if isinstance(p, dict):
+                                    hp = p.get("hostPort") or p.get("PublicPort")
+                                    cp = p.get("containerPort") or p.get("PrivatePort")
+                                    proto = p.get("protocol") or p.get("Type") or "tcp"
+                                    if hp and cp:
+                                        ports.append(f"{hp}->{cp}/{proto}")
+                                elif isinstance(p, str):
+                                    ports.append(p)
+                            containers.append({
+                                "name": name,
+                                "image": image,
+                                "status": status,
+                                "ports": ports,
+                            })
+                        self._send_json(200, containers)
+                        return
+                    except Exception as e:
+                        logger.error("FastTrack ps parse error: %s", e)
+                self._send_json(200, [])
+                return
+
             code, data = _docker_socket_request("GET", "/containers/json?all=1")
             if code != 200:
                 self._send_error(500, "Docker daemon socket error")
@@ -349,6 +480,32 @@ class VmApiHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/images":
+            mode = _get_engine_mode()
+            if mode == "fasttrack" or not os.path.exists("/var/run/docker.sock"):
+                rc, out, err = _run_engine_cmd(["images", "--format", "json"], timeout=20)
+                if rc == 0 and out.strip():
+                    try:
+                        raw = json.loads(out)
+                        if not isinstance(raw, list):
+                            raw = [raw]
+                        images = []
+                        for img in raw:
+                            names = img.get("Names") or img.get("RepoTags") or []
+                            if isinstance(names, str):
+                                names = [names]
+                            tag = names[0] if names else ((img.get("Id") or "")[:12] or "<none>")
+                            images.append({
+                                "repoTag": tag,
+                                "id": (img.get("Id") or "")[:12],
+                                "size": img.get("Size") or 0,
+                            })
+                        self._send_json(200, images)
+                        return
+                    except Exception as e:
+                        logger.error("FastTrack images parse error: %s", e)
+                self._send_json(200, [])
+                return
+
             code, data = _docker_socket_request("GET", "/images/json")
             if code != 200:
                 self._send_error(500, "Docker daemon socket error")
@@ -379,6 +536,12 @@ class VmApiHandler(BaseHTTPRequestHandler):
             return
 
         data = self._read_json_body()
+
+        if path == "/engine":
+            req_mode = data.get("mode", "fasttrack")
+            info = _set_engine_mode(req_mode)
+            self._send_json(200, info)
+            return
 
         if path in ("/containers/start", "/containers"):
             image = data.get("image", "").strip()
@@ -414,7 +577,9 @@ class VmApiHandler(BaseHTTPRequestHandler):
             else:
                 logger.info("Image %s already cached locally, skipping pull", image)
 
-            cmd = ["docker", "run", "-d", "--network", network, "--name", name]
+            mode = _get_engine_mode()
+            cli = "podman" if (mode == "fasttrack" and shutil.which("podman")) else "docker"
+            cmd = [cli, "run", "-d", "--network", network, "--name", name]
             for env in env_vars:
                 if isinstance(env, dict) and "key" in env and "value" in env:
                     cmd += ["-e", f"{env['key']}={env['value']}"]
@@ -428,14 +593,14 @@ class VmApiHandler(BaseHTTPRequestHandler):
             if isinstance(cmd_args, list):
                 cmd.extend([str(x) for x in cmd_args])
 
-            logger.info("Starting container: %s", " ".join(cmd))
+            logger.info("[%s] Starting container: %s", mode, " ".join(cmd))
             try:
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=2400)
                 if result.returncode != 0:
                     err = result.stderr.strip() or result.stdout.strip()
-                    self._send_error(500, f"Docker run error: {err}")
+                    self._send_error(500, f"{cli} run error: {err}")
                     return
-                self._send_json(200, {"status": "started", "name": name, "id": result.stdout.strip()})
+                self._send_json(200, {"status": "started", "name": name, "id": result.stdout.strip(), "engine": mode})
             except subprocess.TimeoutExpired:
                 # Self-healing: On TCG emulation, docker run may complete or start the container.
                 # Check via docker socket if the container is running.
@@ -459,7 +624,11 @@ class VmApiHandler(BaseHTTPRequestHandler):
             if not name:
                 self._send_error(400, "name required")
                 return
-            _docker_socket_request("POST", f"/containers/{name}/stop")
+            mode = _get_engine_mode()
+            if mode == "fasttrack":
+                _run_engine_cmd(["stop", name], timeout=60)
+            else:
+                _docker_socket_request("POST", f"/containers/{name}/stop")
             self._send_json(200, {"status": "stopped", "name": name})
             return
 
@@ -518,10 +687,17 @@ class VmApiHandler(BaseHTTPRequestHandler):
             if not name:
                 self._send_error(400, "name required")
                 return
-            code, _ = _docker_socket_request("POST", f"/containers/{name}/start")
-            if code not in (200, 204, 304):
-                self._send_error(500, f"Failed to start container (status {code})")
-                return
+            mode = _get_engine_mode()
+            if mode == "fasttrack":
+                rc, out, err = _run_engine_cmd(["start", name], timeout=60)
+                if rc != 0:
+                    self._send_error(500, f"Failed to start: {err or out}")
+                    return
+            else:
+                code, _ = _docker_socket_request("POST", f"/containers/{name}/start")
+                if code not in (200, 204, 304):
+                    self._send_error(500, f"Failed to start container (status {code})")
+                    return
             self._send_json(200, {"status": "started", "name": name})
             return
 
@@ -530,10 +706,17 @@ class VmApiHandler(BaseHTTPRequestHandler):
             if not name:
                 self._send_error(400, "name required")
                 return
-            code, _ = _docker_socket_request("POST", f"/containers/{name}/restart")
-            if code not in (200, 204):
-                self._send_error(500, f"Failed to restart container (status {code})")
-                return
+            mode = _get_engine_mode()
+            if mode == "fasttrack":
+                rc, out, err = _run_engine_cmd(["restart", name], timeout=60)
+                if rc != 0:
+                    self._send_error(500, f"Failed to restart: {err or out}")
+                    return
+            else:
+                code, _ = _docker_socket_request("POST", f"/containers/{name}/restart")
+                if code not in (200, 204):
+                    self._send_error(500, f"Failed to restart container (status {code})")
+                    return
             self._send_json(200, {"status": "restarted", "name": name})
             return
 
@@ -542,10 +725,17 @@ class VmApiHandler(BaseHTTPRequestHandler):
             if not name:
                 self._send_error(400, "name required")
                 return
-            code, _ = _docker_socket_request("DELETE", f"/containers/{name}?force=true")
-            if code not in (200, 204):
-                self._send_error(500, f"Failed to delete container (status {code})")
-                return
+            mode = _get_engine_mode()
+            if mode == "fasttrack":
+                rc, out, err = _run_engine_cmd(["rm", "-f", name], timeout=60)
+                if rc != 0:
+                    self._send_error(500, f"Failed to delete: {err or out}")
+                    return
+            else:
+                code, _ = _docker_socket_request("DELETE", f"/containers/{name}?force=true")
+                if code not in (200, 204):
+                    self._send_error(500, f"Failed to delete container (status {code})")
+                    return
             self._send_json(200, {"status": "deleted", "name": name})
             return
 

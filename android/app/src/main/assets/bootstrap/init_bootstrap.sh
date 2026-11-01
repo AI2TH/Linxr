@@ -292,29 +292,35 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Docker daemon startup (NEW-18)
+# Container Engine Setup: Dual-Mode (FastTrack crun vs. Docker Daemon)
 # ---------------------------------------------------------------------------
-# The OLD 23.apk had `docker run hello-world` working. Restore that behavior.
-#
-# Root causes of dockerd failure in QEMU virt environment (found via testing):
-#   1. overlay2 storage driver fails: overlayfs kernel module version mismatch
-#      (module built for 6.6.140, VM runs 6.6.142) → "no such device"
-#   2. iptables module (ip_tables) not found → dockerd can't init firewall
-#   3. bridge module not found → dockerd can't create docker0 bridge
-#
-# Fix: configure daemon.json with vfs storage driver (no kernel module needed),
-# disable iptables and bridge networking (not needed for single-VM use case).
-if command -v dockerd >/dev/null 2>&1; then
-    # Remove slow Go CLI plugins to prevent docker CLI from hanging on emulated CPU
-    rm -rf /usr/libexec/docker/cli-plugins 2>/dev/null || true
+# FastTrack (daemonless crun + podman) is the default runtime, keeping emulated
+# CPU overhead at 0% when idle and starting containers in milliseconds.
+# Standard Docker daemon is started on-demand only if configured or requested.
+ENGINE_MODE="fasttrack"
+if [ -f /etc/linxr_engine.mode ]; then
+    ENGINE_MODE="$(cat /etc/linxr_engine.mode | tr -d '[:space:]')"
+fi
 
-    echo "Configuring Docker daemon for QEMU virt environment..."
-    mkdir -p /etc/docker
+# Ensure iptables symlinks point to xtables-nft-multi for both Podman and Docker
+if [ ! -x /sbin/iptables ] || [ ! -e /sbin/iptables ]; then
+    ln -sf /usr/sbin/xtables-nft-multi /sbin/iptables 2>/dev/null || true
+    ln -sf /usr/sbin/xtables-nft-multi /usr/sbin/iptables 2>/dev/null || true
+    ln -sf /usr/sbin/xtables-nft-multi /usr/bin/iptables 2>/dev/null || true
+fi
 
-    # vfs: copy-on-write via plain directory copies — no kernel module needed.
-    # iptables=false, bridge=none: skip modules that don't exist in virt kernel.
-    # registry-mirrors: use Chinese mirrors for faster image pulls over SLIRP.
-    cat > /etc/docker/daemon.json <<'DOCKEREOF'
+# Ensure FastTrack tools exist
+if ! command -v crun >/dev/null 2>&1 || ! command -v podman >/dev/null 2>&1; then
+    echo "Installing FastTrack container tools (crun, podman, buildah)..."
+    apk add --no-cache crun podman buildah netavark 2>/dev/null || true
+fi
+
+if [ "$ENGINE_MODE" = "docker" ]; then
+    echo "=== Starting Docker daemon (Docker mode active) ==="
+    if command -v dockerd >/dev/null 2>&1; then
+        rm -rf /usr/libexec/docker/cli-plugins 2>/dev/null || true
+        mkdir -p /etc/docker
+        cat > /etc/docker/daemon.json <<'DOCKEREOF'
 {
   "storage-driver": "vfs",
   "iptables": false,
@@ -323,54 +329,36 @@ if command -v dockerd >/dev/null 2>&1; then
   "dns": ["1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4"]
 }
 DOCKEREOF
-
-    if pgrep dockerd >/dev/null 2>&1 && [ -S /var/run/docker.sock ]; then
-        echo "=== Docker daemon is already running ==="
-    else
-        # Only clean docker state on very first bootstrap, NOT on every restart
-        if [ ! -f /etc/docker/.initialized ]; then
-            rm -rf /var/lib/docker/* 2>/dev/null || true
-            touch /etc/docker/.initialized
-        fi
-
-        # Clean up stale pid/sock files
-        rm -f /var/run/docker.pid /var/run/docker/containerd/containerd.pid /run/containerd/containerd.sock /var/run/docker.sock
-
-        if ! pgrep containerd >/dev/null 2>&1; then
-            echo "Starting containerd daemon..."
-            containerd >/var/log/containerd.log 2>&1 &
-            for i in $(seq 1 15); do
-                if [ -S /run/containerd/containerd.sock ]; then
-                    echo "containerd socket is ready after ${i}s"
+        if pgrep dockerd >/dev/null 2>&1 && [ -S /var/run/docker.sock ]; then
+            echo "=== Docker daemon is already running ==="
+        else
+            if [ ! -f /etc/docker/.initialized ]; then
+                rm -rf /var/lib/docker/* 2>/dev/null || true
+                touch /etc/docker/.initialized
+            fi
+            rm -f /var/run/docker.pid /var/run/docker/containerd/containerd.pid /run/containerd/containerd.sock /var/run/docker.sock
+            if ! pgrep containerd >/dev/null 2>&1; then
+                echo "Starting containerd daemon..."
+                containerd >/var/log/containerd.log 2>&1 &
+                for i in $(seq 1 15); do
+                    if [ -S /run/containerd/containerd.sock ]; then break; fi
+                    sleep 1
+                done
+            fi
+            echo "Starting Docker daemon..."
+            dockerd --containerd=/run/containerd/containerd.sock > /var/log/dockerd.log 2>&1 &
+            for i in $(seq 1 20); do
+                if [ -S /var/run/docker.sock ]; then
+                    echo "Docker socket ready after ${i}s"
                     break
                 fi
                 sleep 1
             done
         fi
-
-        # Start dockerd directly in background pointing to containerd
-        echo "Starting Docker daemon..."
-        dockerd --containerd=/run/containerd/containerd.sock > /var/log/dockerd.log 2>&1 &
-
-        # Poll for /var/run/docker.sock — dockerd creates it when fully initialized.
-        echo "Waiting for Docker socket..."
-        DOCKER_READY=0
-        for i in $(seq 1 20); do
-            if [ -S /var/run/docker.sock ]; then
-                DOCKER_READY=1
-                echo "Docker socket ready after ${i}s"
-                break
-            fi
-            sleep 1
-        done
-
-        if [ "$DOCKER_READY" -eq 1 ]; then
-            echo "=== Docker daemon is running ==="
-        else
-            echo "WARNING: Docker socket not ready after 20s. Check /var/log/dockerd.log"
-            tail -5 /var/log/dockerd.log 2>/dev/null || true
-        fi
     fi
+else
+    echo "=== FastTrack Engine active: zero idle CPU overhead (crun + podman) ==="
+    killall -9 dockerd containerd 2>/dev/null || true
 fi
 
 # ---------------------------------------------------------------------------

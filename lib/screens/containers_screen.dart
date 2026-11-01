@@ -55,6 +55,8 @@ class _ContainersScreenState extends State<ContainersScreen> with WidgetsBinding
   List<ContainerInfo> _containers = [];
   bool _isLoading = false;
   bool _hasFilesAccess = true;
+  String _engineMode = 'fasttrack';
+  bool _dockerRunning = false;
 
   @override
   void initState() {
@@ -62,6 +64,18 @@ class _ContainersScreenState extends State<ContainersScreen> with WidgetsBinding
     WidgetsBinding.instance.addObserver(this);
     _loadContainers();
     _checkFilesAccess();
+    _loadEngineMode();
+  }
+
+  Future<void> _loadEngineMode() async {
+    try {
+      final info = await VmPlatform.getContainerEngine();
+      if (!mounted) return;
+      setState(() {
+        _engineMode = (info['mode'] as String?) ?? 'fasttrack';
+        _dockerRunning = (info['dockerRunning'] as bool?) ?? false;
+      });
+    } catch (_) {}
   }
 
   @override
@@ -208,6 +222,7 @@ class _ContainersScreenState extends State<ContainersScreen> with WidgetsBinding
       body: Column(
         children: [
           if (!_hasFilesAccess) _buildFilesAccessBanner(),
+          if (vmState.isRunning) _buildEngineModeBanner(),
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -226,6 +241,178 @@ class _ContainersScreenState extends State<ContainersScreen> with WidgetsBinding
             : Colors.grey.withOpacity(0.4),
         tooltip: ready ? 'Run container' : 'VM / Docker not ready',
         child: const Icon(Icons.add, color: Colors.white),
+      ),
+    );
+  }
+
+
+  Widget _buildEngineModeBanner() {
+    final isFastTrack = _engineMode == 'fasttrack';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: Colors.white.withOpacity(0.03),
+      child: Row(
+        children: [
+          Icon(
+            isFastTrack ? Icons.bolt : Icons.directions_boat,
+            size: 18,
+            color: isFastTrack ? AppColors.secondary : Colors.lightBlueAccent,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isFastTrack ? 'Engine: FastTrack OCI' : 'Engine: Docker Daemon',
+                  style: TextStyle(
+                    color: isFastTrack ? AppColors.secondary : Colors.lightBlueAccent,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  isFastTrack
+                      ? 'Daemonless crun • 0% idle CPU • Instant start'
+                      : (_dockerRunning ? 'Docker daemon running (active)' : 'Docker daemon stopped (idle)'),
+                  style: const TextStyle(color: Colors.white54, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          TextButton.icon(
+            onPressed: _showEngineDialog,
+            icon: const Icon(Icons.swap_horiz, size: 16),
+            label: Text(isFastTrack ? 'Docker' : 'FastTrack', style: const TextStyle(fontSize: 12)),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.white70,
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showEngineDialog() async {
+    final info = await VmPlatform.getContainerEngine();
+    final currentMode = (info['mode'] as String?) ?? _engineMode;
+    if (!mounted) return;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => Container(
+        decoration: const BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Container Engine Runtime',
+              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Choose between the daemonless FastTrack engine for maximum phone speed '
+              'or the full Docker daemon.',
+              style: TextStyle(color: Colors.white54, fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            _engineOptionCard(
+              title: 'FastTrack OCI Engine',
+              subtitle: 'crun + podman • Zero idle CPU/RAM overhead • Instant start',
+              icon: Icons.bolt,
+              color: AppColors.secondary,
+              selected: currentMode == 'fasttrack',
+              onTap: () async {
+                Navigator.pop(sheetCtx);
+                if (_engineMode != 'fasttrack') await _switchEngine('fasttrack');
+              },
+            ),
+            const SizedBox(height: 12),
+            _engineOptionCard(
+              title: 'Standard Docker Daemon',
+              subtitle: 'dockerd + containerd • Full Docker API compatibility • Higher CPU overhead',
+              icon: Icons.directions_boat,
+              color: Colors.lightBlueAccent,
+              selected: currentMode == 'docker',
+              onTap: () async {
+                Navigator.pop(sheetCtx);
+                if (_engineMode != 'docker') await _switchEngine('docker');
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _switchEngine(String mode) async {
+    try {
+      final info = await _runWithProgress(
+        mode == 'docker' ? 'Starting Docker daemon…' : 'Switching to FastTrack (stopping Docker)…',
+        () => VmPlatform.setContainerEngine(mode),
+      );
+      if (!mounted) return;
+      setState(() {
+        _engineMode = (info['mode'] as String?) ?? mode;
+        _dockerRunning = (info['dockerRunning'] as bool?) ?? false;
+      });
+      _showSnack(
+        mode == 'fasttrack'
+            ? '⚡ FastTrack active: 0% idle CPU'
+            : '🐳 Docker daemon active',
+        color: mode == 'fasttrack' ? AppColors.secondary : AppColors.primary,
+      );
+      _loadContainers();
+    } catch (e) {
+      _showSnack('Engine switch failed: $e', color: AppColors.danger);
+    }
+  }
+
+  Widget _engineOptionCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: selected ? color.withOpacity(0.12) : Colors.white.withOpacity(0.04),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? color : Colors.white.withOpacity(0.1),
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 24),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                ],
+              ),
+            ),
+            if (selected) Icon(Icons.check_circle, color: color, size: 20),
+          ],
+        ),
       ),
     );
   }

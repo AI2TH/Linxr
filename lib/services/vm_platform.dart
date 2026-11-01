@@ -318,6 +318,28 @@ class VmPlatform {
     }
   }
 
+  static Future<Map<String, dynamic>> getContainerEngine() async {
+    try {
+      final result = await _channel.invokeMethod('getContainerEngine');
+      if (result == null) return {'mode': 'fasttrack'};
+      return Map<String, dynamic>.from(result as Map);
+    } on PlatformException catch (e) {
+      debugPrint("Failed to get container engine: ${e.message}");
+      return {'mode': 'fasttrack'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> setContainerEngine(String mode) async {
+    try {
+      final result = await _channel.invokeMethod('setContainerEngine', {'mode': mode});
+      if (result == null) return {'mode': mode};
+      return Map<String, dynamic>.from(result as Map);
+    } on PlatformException catch (e) {
+      debugPrint("Failed to set container engine: ${e.message}");
+      rethrow;
+    }
+  }
+
   static Future<bool> checkHealth() async {
     try {
       final bool? result = await _channel.invokeMethod<bool>('checkHealth');

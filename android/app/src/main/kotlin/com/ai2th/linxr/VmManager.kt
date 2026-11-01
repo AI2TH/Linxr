@@ -115,6 +115,10 @@ class VmManager(private val context: Context) {
 
     fun listImages(): List<Map<String, Any>> = apiClient.listImages()
 
+    fun getContainerEngine(): Map<String, Any> = apiClient.getContainerEngine()
+
+    fun setContainerEngine(mode: String): Map<String, Any> = apiClient.setContainerEngine(mode)
+
     fun listContainers(): List<Map<String, Any>> = apiClient.listContainers()
 
     fun getLogs(name: String, tail: Int): String = apiClient.getLogs(name, tail)

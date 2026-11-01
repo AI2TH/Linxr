@@ -301,4 +301,40 @@ class VmApiClient(private val token: String) {
         val obj = try { com.google.gson.JsonParser.parseString(jsonStr).asJsonObject } catch (e: Exception) { com.google.gson.JsonObject() }
         return if (obj.has(field) && !obj.get(field).isJsonNull) obj.get(field).asString else ""
     }
+
+    // ── Dual-Mode Container Engine ──────────────────────────────────────────
+
+    fun getContainerEngine(): Map<String, Any> {
+        return try {
+            val request = Request.Builder()
+                .url("$baseUrl/engine")
+                .withAuth()
+                .get()
+                .build()
+            val response = client.newCall(request).execute()
+            val json = response.body?.string() ?: "{}"
+            response.close()
+            @Suppress("UNCHECKED_CAST")
+            (gson.fromJson(json, Map::class.java) as? Map<String, Any>) ?: emptyMap()
+        } catch (e: Exception) {
+            Log.e(TAG, "getContainerEngine: ${e.message}")
+            mapOf("mode" to "fasttrack", "error" to (e.message ?: "error"))
+        }
+    }
+
+    fun setContainerEngine(mode: String): Map<String, Any> {
+        val body = mapOf("mode" to mode)
+        val json = gson.toJson(body).toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url("$baseUrl/engine")
+            .withAuth()
+            .post(json)
+            .build()
+        val response = client.newCall(request).execute()
+        val jsonStr = response.body?.string() ?: "{}"
+        response.close()
+        if (!response.isSuccessful) throw Exception(jsonStr.take(300))
+        @Suppress("UNCHECKED_CAST")
+        return (gson.fromJson(jsonStr, Map::class.java) as? Map<String, Any>) ?: emptyMap()
+    }
 }

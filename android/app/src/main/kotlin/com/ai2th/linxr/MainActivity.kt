@@ -357,6 +357,25 @@ class MainActivity : FlutterActivity() {
                         result.success(vmManager.hasAllFilesAccess())
                     }
 
+                    "getContainerEngine" -> executor.execute {
+                        try {
+                            val engine = vmManager.getContainerEngine()
+                            if (!isFinishing) runOnUiThread { result.success(engine) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("ENGINE_ERROR", e.message, null) }
+                        }
+                    }
+
+                    "setContainerEngine" -> executor.execute {
+                        try {
+                            val mode = call.argument<String>("mode") ?: "fasttrack"
+                            val engine = vmManager.setContainerEngine(mode)
+                            if (!isFinishing) runOnUiThread { result.success(engine) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("ENGINE_ERROR", e.message, null) }
+                        }
+                    }
+
                     "vmExec" -> executor.execute {
                         try {
                             val cmd = call.argument<String>("cmd")

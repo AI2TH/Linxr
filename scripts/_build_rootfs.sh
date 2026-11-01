@@ -46,6 +46,10 @@ apk --root "${ROOTFS}" --initdb --no-cache add \
     e2fsprogs \
     e2fsprogs-extra \
     docker \
+    crun \
+    podman \
+    buildah \
+    netavark \
     fuse-overlayfs \
     iptables \
     iptables-legacy \

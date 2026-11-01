@@ -178,4 +178,127 @@ class VmApiClient(private val token: String) {
             ""
         }
     }
+
+    // ── Container lifecycle ─────────────────────────────────────────────────
+
+    fun startExistingContainer(name: String) {
+        postJson("containers/start-existing", mapOf("name" to name))
+    }
+
+    fun restartContainer(name: String) {
+        postJson("containers/restart", mapOf("name" to name))
+    }
+
+    fun deleteContainer(name: String) {
+        postJson("containers/delete", mapOf("name" to name))
+    }
+
+    fun updateContainer(
+        name: String,
+        restartPolicy: String?,
+        memoryMb: Long?,
+        cpus: Double?
+    ) {
+        val body = mutableMapOf<String, Any>("name" to name)
+        restartPolicy?.let { body["restartPolicy"] = it }
+        memoryMb?.let { body["memoryMb"] = it }
+        cpus?.let { body["cpus"] = it }
+        postJson("containers/update", body)
+    }
+
+    fun inspectContainer(name: String): Map<String, Any> {
+        return try {
+            val encoded = java.net.URLEncoder.encode(name, "UTF-8")
+            val request = Request.Builder()
+                .url("$baseUrl/containers/inspect?name=$encoded")
+                .withAuth()
+                .get()
+                .build()
+            val response = client.newCall(request).execute()
+            val json = response.body?.string() ?: "{}"
+            response.close()
+            if (!response.isSuccessful) throw Exception(json)
+            @Suppress("UNCHECKED_CAST")
+            (gson.fromJson(json, Map::class.java) as? Map<String, Any>) ?: emptyMap()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error inspecting container: ${e.message}")
+            throw e
+        }
+    }
+
+    // ── Container export/import (snapshot tar) ──────────────────────────────
+
+    fun exportContainer(name: String): String {
+        return postJsonForField("containers/export", mapOf("name" to name), "file")
+    }
+
+    fun importContainer(name: String, file: String): String {
+        return postJsonForField("containers/import", mapOf("name" to name, "file" to file), "output")
+    }
+
+    // ── Image save/load ─────────────────────────────────────────────────────
+
+    fun saveImage(image: String): String {
+        return postJsonForField("images/save", mapOf("image" to image), "file")
+    }
+
+    fun loadImage(file: String): String {
+        return postJsonForField("images/load", mapOf("file" to file), "output")
+    }
+
+    fun listImages(): List<Map<String, Any>> {
+        return try {
+            val request = Request.Builder()
+                .url("$baseUrl/images")
+                .withAuth()
+                .get()
+                .build()
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) {
+                response.close()
+                return emptyList()
+            }
+            val json = response.body?.string() ?: "[]"
+            response.close()
+            @Suppress("UNCHECKED_CAST")
+            gson.fromJson(json, List::class.java) as? List<Map<String, Any>> ?: emptyList()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error listing images: ${e.message}")
+            emptyList()
+        }
+    }
+
+    // ── Helpers ─────────────────────────────────────────────────────────────
+
+    private fun postJson(path: String, body: Map<String, Any>) {
+        val json = gson.toJson(body).toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url("$baseUrl/$path")
+            .withAuth()
+            .post(json)
+            .build()
+        val response = client.newCall(request).execute()
+        if (!response.isSuccessful) {
+            val err = response.body?.string() ?: response.code.toString()
+            response.close()
+            throw Exception((err).take(300))
+        }
+        response.close()
+        Log.d(TAG, "POST /$path ok")
+    }
+
+    private fun postJsonForField(path: String, body: Map<String, Any>, field: String): String {
+        val json = gson.toJson(body).toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url("$baseUrl/$path")
+            .withAuth()
+            .post(json)
+            .build()
+        val response = containerClient.newCall(request).execute()
+        val jsonStr = response.body?.string() ?: "{}"
+        response.close()
+        if (!response.isSuccessful) throw Exception(jsonStr.take(300))
+        val obj = try { com.google.gson.JsonParser.parseString(jsonStr).asJsonObject } catch (e: Exception) { com.google.gson.JsonObject() }
+        return if (obj.has(field) && !obj.get(field).isJsonNull) obj.get(field).asString else ""
+    }
 }

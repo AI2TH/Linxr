@@ -154,6 +154,29 @@ def _check_docker_socket():
     return (b"OK" in data or code == 200), "Docker 29.5"
 
 
+def _run_docker(args, timeout=1800):
+    """Run a docker CLI command, returning (returncode, stdout, stderr)."""
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        return result.returncode, result.stdout or "", result.stderr or ""
+    except subprocess.TimeoutExpired as e:
+        return 124, "", f"timed out after {timeout}s"
+    except Exception as e:
+        return -1, "", str(e)
+
+
+# Guest-side export directory. Mirrors /mnt/sdcard (the Android-side shared folder
+# mounted via virtio-9p), so exported tar files show up in the Files tab.
+EXPORT_DIR = "/mnt/sdcard/linxr-exports"
+GUEST_SHARE_DIR = "/mnt/sdcard"
+
+
+def _safe_filename(name):
+    """Sanitize a container/image name into a filesystem-safe filename stem."""
+    safe = "".join(c if (c.isalnum() or c in "._-") else "_" for c in name)
+    return safe.strip("._-") or "export"
+
+
 class VmApiHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -273,6 +296,55 @@ class VmApiHandler(BaseHTTPRequestHandler):
                     capture_output=True, text=True, check=True, timeout=10
                 )
                 self._send_text(200, result.stdout or result.stderr or "")
+            except Exception as e:
+                self._send_error(500, str(e))
+            return
+
+        if path == "/containers/inspect":
+            params = parse_qs(parsed.query)
+            name = params.get("name", [""])[0]
+            if not name:
+                self._send_error(400, "Container name required")
+                return
+            rc, out, err = _run_docker(["docker", "inspect", name], timeout=30)
+            if rc != 0:
+                self._send_error(404, (err or out or "Not found").strip()[:500])
+                return
+            try:
+                c = json.loads(out)[0]
+                host_config = c.get("HostConfig", {}) or {}
+                restart_policy = (host_config.get("RestartPolicy") or {}).get("Name", "no")
+                memory_bytes = host_config.get("Memory", 0) or 0
+                nano_cpus = host_config.get("NanoCpus", 0) or 0
+                conf = c.get("Config", {}) or {}
+                self._send_json(200, {
+                    "name": name,
+                    "image": conf.get("Image", ""),
+                    "restartPolicy": restart_policy,
+                    "memoryMb": int(memory_bytes // (1024 * 1024)),
+                    "cpus": round(nano_cpus / 1e9, 2) if nano_cpus else 0,
+                })
+            except Exception as e:
+                self._send_error(500, str(e))
+            return
+
+        if path == "/images":
+            code, data = _docker_socket_request("GET", "/images/json")
+            if code != 200:
+                self._send_error(500, "Docker daemon socket error")
+                return
+            try:
+                raw_list = json.loads(data.decode("utf-8", errors="ignore"))
+                images = []
+                for img in raw_list:
+                    tags = img.get("RepoTags") or []
+                    tag = tags[0] if tags else (img.get("Id", "")[:12] or "<none>")
+                    images.append({
+                        "repoTag": tag,
+                        "id": img.get("Id", "")[:12],
+                        "size": img.get("Size", 0),
+                    })
+                self._send_json(200, images)
             except Exception as e:
                 self._send_error(500, str(e))
             return
@@ -417,6 +489,150 @@ class VmApiHandler(BaseHTTPRequestHandler):
                 self._send_error(504, "Exec timed out")
             except Exception as e:
                 self._send_error(500, str(e))
+            return
+
+        # ── Container lifecycle management ───────────────────────────────────
+
+        if path == "/containers/start-existing":
+            name = data.get("name", "").strip()
+            if not name:
+                self._send_error(400, "name required")
+                return
+            code, _ = _docker_socket_request("POST", f"/containers/{name}/start")
+            if code not in (200, 204, 304):
+                self._send_error(500, f"Failed to start container (status {code})")
+                return
+            self._send_json(200, {"status": "started", "name": name})
+            return
+
+        if path == "/containers/restart":
+            name = data.get("name", "").strip()
+            if not name:
+                self._send_error(400, "name required")
+                return
+            code, _ = _docker_socket_request("POST", f"/containers/{name}/restart")
+            if code not in (200, 204):
+                self._send_error(500, f"Failed to restart container (status {code})")
+                return
+            self._send_json(200, {"status": "restarted", "name": name})
+            return
+
+        if path == "/containers/delete":
+            name = data.get("name", "").strip()
+            if not name:
+                self._send_error(400, "name required")
+                return
+            code, _ = _docker_socket_request("DELETE", f"/containers/{name}?force=true")
+            if code not in (200, 204):
+                self._send_error(500, f"Failed to delete container (status {code})")
+                return
+            self._send_json(200, {"status": "deleted", "name": name})
+            return
+
+        if path == "/containers/update":
+            name = data.get("name", "").strip()
+            if not name:
+                self._send_error(400, "name required")
+                return
+            cmd = ["docker", "update"]
+            restart_policy = data.get("restartPolicy")
+            if restart_policy:
+                cmd += ["--restart", str(restart_policy)]
+            memory_mb = data.get("memoryMb")
+            if memory_mb:
+                try:
+                    cmd += ["--memory", f"{int(memory_mb)}m"]
+                except (TypeError, ValueError):
+                    pass
+            cpus = data.get("cpus")
+            if cpus:
+                try:
+                    cmd += ["--cpus", str(float(cpus))]
+                except (TypeError, ValueError):
+                    pass
+            cmd.append(name)
+            rc, out, err = _run_docker(cmd, timeout=120)
+            if rc != 0:
+                self._send_error(500, (err or out or "Update failed").strip()[:500])
+                return
+            self._send_json(200, {"status": "updated", "name": name})
+            return
+
+        if path == "/containers/export":
+            name = data.get("name", "").strip()
+            if not name:
+                self._send_error(400, "name required")
+                return
+            if not os.path.isdir(GUEST_SHARE_DIR):
+                self._send_error(500, "Shared folder (/mnt/sdcard) not available")
+                return
+            try:
+                os.makedirs(EXPORT_DIR, exist_ok=True)
+            except Exception as e:
+                self._send_error(500, f"Could not create export dir: {e}")
+                return
+            file_path = os.path.join(EXPORT_DIR, f"{_safe_filename(name)}.tar")
+            rc, out, err = _run_docker(["docker", "export", "-o", file_path, name], timeout=2400)
+            if rc != 0:
+                self._send_error(500, (err or out or "Export failed").strip()[:500])
+                return
+            self._send_json(200, {"status": "exported", "name": name, "file": os.path.basename(file_path)})
+            return
+
+        if path == "/containers/import":
+            name = data.get("name", "").strip()
+            file_name = data.get("file", "").strip()
+            if not name or not file_name:
+                self._send_error(400, "name and file required")
+                return
+            src = os.path.join(GUEST_SHARE_DIR, file_name)
+            if not os.path.isfile(src):
+                self._send_error(404, f"File not found in shared folder: {file_name}")
+                return
+            rc, out, err = _run_docker(["docker", "import", src, name], timeout=2400)
+            if rc != 0:
+                self._send_error(500, (err or out or "Import failed").strip()[:500])
+                return
+            self._send_json(200, {"status": "imported", "image": name, "output": out.strip()[-300:]})
+            return
+
+        # ── Image save/load ──────────────────────────────────────────────────
+
+        if path == "/images/save":
+            image = data.get("image", "").strip()
+            if not image:
+                self._send_error(400, "image required")
+                return
+            if not os.path.isdir(GUEST_SHARE_DIR):
+                self._send_error(500, "Shared folder (/mnt/sdcard) not available")
+                return
+            try:
+                os.makedirs(EXPORT_DIR, exist_ok=True)
+            except Exception as e:
+                self._send_error(500, f"Could not create export dir: {e}")
+                return
+            file_path = os.path.join(EXPORT_DIR, f"{_safe_filename(image)}.tar")
+            rc, out, err = _run_docker(["docker", "save", "-o", file_path, image], timeout=2400)
+            if rc != 0:
+                self._send_error(500, (err or out or "Save failed").strip()[:500])
+                return
+            self._send_json(200, {"status": "saved", "image": image, "file": os.path.basename(file_path)})
+            return
+
+        if path == "/images/load":
+            file_name = data.get("file", "").strip()
+            if not file_name:
+                self._send_error(400, "file required")
+                return
+            src = os.path.join(GUEST_SHARE_DIR, file_name)
+            if not os.path.isfile(src):
+                self._send_error(404, f"File not found in shared folder: {file_name}")
+                return
+            rc, out, err = _run_docker(["docker", "load", "-i", src], timeout=2400)
+            if rc != 0:
+                self._send_error(500, (err or out or "Load failed").strip()[:500])
+                return
+            self._send_json(200, {"status": "loaded", "output": (out or err).strip()[-500:]})
             return
 
         self._send_error(404, "Not found")

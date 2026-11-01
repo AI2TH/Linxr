@@ -12,6 +12,8 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
 import java.util.zip.GZIPInputStream
+import org.json.JSONArray
+import org.json.JSONObject
 
 class VmManager(private val context: Context) {
     companion object {
@@ -123,8 +125,58 @@ class VmManager(private val context: Context) {
 
     // ── Network / port forwarding ───────────────────────────────────────────
 
-    fun getPortForwards(): List<Map<String, Any>> =
-        portForwards.map { mapOf("host" to it.host, "guest" to it.guest, "desc" to it.desc) }
+    fun getPortForwards(): List<Map<String, Any>> {
+        val defaults = portForwards.map {
+            mapOf("host" to it.host, "guest" to it.guest, "desc" to it.desc, "custom" to false)
+        }
+        val customs = getCustomPortForwards().map {
+            mapOf("host" to it.host, "guest" to it.guest, "desc" to it.desc, "custom" to true)
+        }
+        return defaults + customs
+    }
+
+    fun addPortForward(host: Int, guest: Int, desc: String): List<Map<String, Any>> {
+        val list = getCustomPortForwards()
+        list.removeAll { it.host == host }
+        list.add(PortForward(host, guest, desc.trim().ifEmpty { "Custom" }))
+        setCustomPortForwards(list)
+        return getPortForwards()
+    }
+
+    fun removePortForward(host: Int): List<Map<String, Any>> {
+        val list = getCustomPortForwards()
+        list.removeAll { it.host == host }
+        setCustomPortForwards(list)
+        return getPortForwards()
+    }
+
+    private fun getCustomPortForwards(): MutableList<PortForward> {
+        val json = appPrefs.getString("custom_port_forwards", null) ?: return mutableListOf()
+        return try {
+            val arr = JSONArray(json)
+            val list = mutableListOf<PortForward>()
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                list.add(PortForward(o.getInt("host"), o.getInt("guest"), o.getString("desc")))
+            }
+            list
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to parse custom port forwards: ${e.message}")
+            mutableListOf()
+        }
+    }
+
+    private fun setCustomPortForwards(list: List<PortForward>) {
+        val arr = JSONArray()
+        for (pf in list) {
+            arr.put(JSONObject().apply {
+                put("host", pf.host)
+                put("guest", pf.guest)
+                put("desc", pf.desc)
+            })
+        }
+        appPrefs.edit().putString("custom_port_forwards", arr.toString()).apply()
+    }
 
     fun isLanAccessEnabled(): Boolean = getFlutterBool("flutter.lan_access", false)
 
@@ -428,7 +480,8 @@ class VmManager(private val context: Context) {
         // Default is loopback (127.0.0.1) so ports — especially SSH with the known
         // default root password — are not exposed to the local network.
         val bindHost = if (getFlutterBool("flutter.lan_access", false)) "0.0.0.0" else "127.0.0.1"
-        val defaultPortForwards = portForwards.joinToString(",") { pf ->
+        val allPortForwards = portForwards + getCustomPortForwards()
+        val defaultPortForwards = allPortForwards.joinToString(",") { pf ->
             "hostfwd=tcp:$bindHost:${pf.host}-:${pf.guest}"
         }
 

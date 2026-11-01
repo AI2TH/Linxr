@@ -50,3 +50,8 @@ android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
 # Local marketplace repo working copy
 linxr-marketplace/
 
+# Python cache & local scratch
+__pycache__/
+*.pyc
+scratch/
+

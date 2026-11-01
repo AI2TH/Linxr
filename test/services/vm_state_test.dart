@@ -34,17 +34,49 @@ void main() {
     final future = vmState.startVm();
 
     // During execution
-    expect(vmState.status, 'starting');
+    expect(vmState.status, 'booting');
     expect(vmState.isLoading, true);
 
     await future;
 
-    // After execution
-    expect(vmState.status, 'running');
+    // After startVm execution, status is booting until SSH ping succeeds
+    expect(vmState.status, 'booting');
     expect(vmState.isLoading, false);
     expect(vmState.errorMessage, isNull);
 
     expect(log, hasLength(1));
     expect(log[0].method, 'startVm');
+  });
+
+  test('getContainerEngine returns engine mode map', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+      if (methodCall.method == 'getContainerEngine') {
+        return {'mode': 'fasttrack', 'dockerd_running': false};
+      }
+      return null;
+    });
+
+    final engineInfo = await VmPlatform.getContainerEngine();
+    expect(engineInfo['mode'], 'fasttrack');
+    expect(engineInfo['dockerd_running'], false);
+  });
+
+  test('setContainerEngine invokes platform channel with mode', () async {
+    MethodCall? capturedCall;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+      if (methodCall.method == 'setContainerEngine') {
+        capturedCall = methodCall;
+        return {'mode': methodCall.arguments['mode'], 'status': 'switched'};
+      }
+      return null;
+    });
+
+    final result = await VmPlatform.setContainerEngine('docker');
+    expect(capturedCall?.method, 'setContainerEngine');
+    expect(capturedCall?.arguments, {'mode': 'docker'});
+    expect(result['mode'], 'docker');
+    expect(result['status'], 'switched');
   });
 }

@@ -5,6 +5,23 @@ All notable changes to Linxr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.0+29] — 2026-11-02
+
+### Added
+- **Dual-Mode Marketplace Architecture (Docker vs Native Linux Direct):**
+  - Applications in the Linxr Marketplace are now offered in two distinct runtime paradigms:
+    - **🐳 Docker Containers**: Fully isolated OCI container execution with configurable port mappings.
+    - **⚡ Native Linux (Direct)**: Bare-metal execution directly on Alpine Linux using `apk` packages and OpenRC system daemons with zero container virtualization overhead.
+  - Interactive Format Filter Chips in Marketplace header (`All Formats`, `🐳 Docker Containers`, `⚡ Native Linux Direct`) with real-time reactive counts.
+- **Zyvr — Asterisk PBX Integration:**
+  - Integrated full Asterisk 20 telephony server into Linxr Marketplace, resolving [AI2TH/Zyvr#8](https://github.com/AI2TH/Zyvr/issues/8) without requiring monolithic standalone VM builds.
+  - Available as both `zyvr-docker` (`andrius/asterisk:latest`) and `zyvr-native` (native Asterisk 20.9.3 PBX with PJSIP, SRTP, sample configs, and English sound prompts).
+- **Zabbix Enterprise Telemetry Dual Offering:**
+  - `zabbix-docker`: Complete Zabbix enterprise appliance with integrated server, SQLite DB, and web UI.
+  - `zabbix-native`: Official lightweight Zabbix agent daemon directly monitoring the mobile host.
+- **Core Stack Native Direct Linux Recipes:**
+  - Added native direct Linux options for Nginx, PostgreSQL 16, and Redis with automatic OpenRC service registration.
+
 ## [3.2.0+28] — 2026-11-01
 
 ### Added

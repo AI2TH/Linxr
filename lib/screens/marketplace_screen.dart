@@ -22,6 +22,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   final Set<String> _inProgressItemIds = {};
   bool _isLoading = false;
   String _selectedCategory = 'All';
+  String _selectedFormatFilter = 'All'; // 'All' | 'Docker' | 'Native'
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounceTimer;
@@ -34,6 +35,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     'Web & Cloud',
     'Databases',
     'Networking & Tools',
+    'IoT & Network',
+    'Utilities',
     'Dev Tools',
     'My Custom',
   ];
@@ -97,13 +100,23 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   }
 
   int _getCountForCategory(String cat) {
-    if (cat == 'All') return _items.length;
-    if (cat == 'My Custom') return _items.where((i) => i.isCustom).length;
-    return _items.where((i) => i.category == cat).length;
+    Iterable<MarketplaceItem> source = _items;
+    if (_selectedFormatFilter == 'Docker') {
+      source = source.where((i) => i.isDocker);
+    } else if (_selectedFormatFilter == 'Native') {
+      source = source.where((i) => i.isScript);
+    }
+
+    if (cat == 'All') return source.length;
+    if (cat == 'My Custom') return source.where((i) => i.isCustom).length;
+    return source.where((i) => i.category == cat).length;
   }
 
   List<MarketplaceItem> get _filteredItems {
     return _items.where((item) {
+      if (_selectedFormatFilter == 'Docker' && !item.isDocker) return false;
+      if (_selectedFormatFilter == 'Native' && !item.isScript) return false;
+
       if (_selectedCategory == 'My Custom') {
         if (!item.isCustom) return false;
       } else if (_selectedCategory != 'All') {
@@ -159,6 +172,49 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
         );
       }
     }
+  }
+
+  Widget _buildFormatChip(String format, String label, IconData icon, int count) {
+    final isSelected = _selectedFormatFilter == format;
+    final Color activeColor = format == 'Docker'
+        ? AppColors.brightBlue
+        : (format == 'Native' ? AppColors.brightMagenta : AppColors.primary);
+
+    return InkWell(
+      onTap: () => setState(() => _selectedFormatFilter = format),
+      borderRadius: BorderRadius.circular(20),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? activeColor.withOpacity(0.18) : AppColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? activeColor : Colors.white.withOpacity(0.08),
+            width: isSelected ? 1.5 : 1.0,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 13,
+              color: isSelected ? activeColor : Colors.white60,
+            ),
+            const SizedBox(width: 5),
+            Text(
+              '$label ($count)',
+              style: TextStyle(
+                color: isSelected ? Colors.white : Colors.white70,
+                fontSize: 11,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -354,6 +410,21 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
           ),
           const SizedBox(height: 10),
 
+          // Dual-Mode Format Filter Selector (All Formats / 🐳 Docker / ⚡ Native Linux)
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildFormatChip('All', 'All Formats', Icons.widgets_outlined, _items.length),
+                const SizedBox(width: 8),
+                _buildFormatChip('Docker', '🐳 Docker Containers', Icons.layers_outlined, _items.where((i) => i.isDocker).length),
+                const SizedBox(width: 8),
+                _buildFormatChip('Native', '⚡ Native Linux (Direct)', Icons.terminal_rounded, _items.where((i) => i.isScript).length),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+
           // Horizontal Category Chips with Item Count
           SizedBox(
             height: 36,
@@ -439,7 +510,9 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
             Text(
               _searchQuery.isNotEmpty
                   ? 'No results for "$_searchQuery". Try searching another term.'
-                  : 'No recipes available in "$_selectedCategory".',
+                  : (_selectedFormatFilter != 'All'
+                      ? 'No $_selectedFormatFilter recipes available in "$_selectedCategory".'
+                      : 'No recipes available in "$_selectedCategory".'),
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 13),
             ),

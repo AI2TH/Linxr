@@ -235,6 +235,142 @@ class MarketplaceService {
           'Verify installation in the Terminal tab using "go version".',
       isCustom: false,
     ),
+
+    // ── Dual-Mode Telecom & Monitoring Recipes ──────────────────────────────
+    const MarketplaceItem(
+      id: 'zyvr-docker',
+      name: 'Zyvr — Asterisk PBX (Docker)',
+      category: 'Networking & Tools',
+      type: RecipeType.docker,
+      author: 'AI2TH / Asterisk',
+      version: 'latest',
+      iconCodePoint: 0xe4cf, // Icons.phone_in_talk
+      image: 'andrius/asterisk:latest',
+      ports: [
+        {'host': 5060, 'container': 5060},
+        {'host': 8088, 'container': 8088},
+      ],
+      description:
+          'Containerized Asterisk 20 PBX telephony server. Run isolated SIP PBX in Docker or daemonless FastTrack OCI mode.',
+      notes:
+          'Runs Asterisk inside an isolated container. Connect SIP softphones to port 5060. WebRTC/HTTP listens on port 8088.',
+      isCustom: false,
+    ),
+    const MarketplaceItem(
+      id: 'zyvr-native',
+      name: 'Zyvr — Asterisk PBX (Native Linux)',
+      category: 'Networking & Tools',
+      type: RecipeType.script,
+      author: 'AI2TH / Asterisk',
+      version: '20-alpine',
+      iconCodePoint: 0xe4cf, // Icons.phone_in_talk
+      description:
+          'Full Asterisk 20 PBX telephony server installed natively into Alpine Linux. Features PJSIP SIP stack, SRTP encryption, voicemail, and WebRTC bridge with zero container overhead.',
+      script:
+          'sed -i "s/https:/http:/g" /etc/apk/repositories 2>/dev/null || true && apk update && apk add --no-cache asterisk asterisk-sample-config asterisk-sounds-en asterisk-srtp openssl python3 && mkdir -p /etc/asterisk /var/log/asterisk /var/spool/asterisk /var/run/asterisk && chown -R asterisk:asterisk /var/run/asterisk /var/log/asterisk /var/spool/asterisk /etc/asterisk && rc-update add asterisk default 2>/dev/null || true && (rc-service asterisk restart 2>/dev/null || asterisk -U asterisk -G asterisk) && echo "Zyvr Asterisk PBX installed successfully!"',
+      ports: [
+        {'host': 5060, 'container': 5060},
+        {'host': 8088, 'container': 8088},
+      ],
+      notes:
+          'Native Asterisk PBX listening on port 5060 (SIP UDP/TCP) and 8088 (HTTP/WebSockets). Connect any SIP softphone (Linphone, Zoiper, MicroSIP) to 127.0.0.1:5060.',
+      isCustom: false,
+    ),
+    const MarketplaceItem(
+      id: 'zabbix-docker',
+      name: 'Zabbix Server & Web UI (Docker)',
+      category: 'Kubernetes & DevOps',
+      type: RecipeType.docker,
+      author: 'Zabbix LLC',
+      version: 'latest',
+      iconCodePoint: 0xeb51, // Icons.monitor_heart
+      image: 'zabbix/zabbix-appliance:latest',
+      ports: [
+        {'host': 8080, 'container': 80},
+        {'host': 10051, 'container': 10051},
+      ],
+      description:
+          'Complete Zabbix enterprise monitoring appliance with integrated Zabbix Server, Web Frontend, and SQLite storage.',
+      notes:
+          'Access the Zabbix Web UI at http://localhost:8080 in your mobile browser. Default login: Admin / zabbix.',
+      isCustom: false,
+    ),
+    const MarketplaceItem(
+      id: 'zabbix-native',
+      name: 'Zabbix Agent (Native Linux)',
+      category: 'Kubernetes & DevOps',
+      type: RecipeType.script,
+      author: 'Zabbix LLC',
+      version: '7.0-lts',
+      iconCodePoint: 0xeb51, // Icons.monitor_heart
+      description:
+          'Installs the official Zabbix monitoring agent daemon natively in Alpine Linux. Collects host CPU, memory, storage, network traffic, and process metrics.',
+      script:
+          'sed -i "s/https:/http:/g" /etc/apk/repositories 2>/dev/null || true && apk update && apk add --no-cache zabbix-agent zabbix-utils && rc-update add zabbix-agent default 2>/dev/null || true && (rc-service zabbix-agent restart 2>/dev/null || zabbix_agentd) && echo "Zabbix Agent running on port 10050!"',
+      ports: [
+        {'host': 10050, 'container': 10050},
+      ],
+      notes:
+          'Zabbix agent listens on port 10050. Edit /etc/zabbix/zabbix_agentd.conf to set Server=<your-zabbix-server-ip> and Hostname=<node-name>.',
+      isCustom: false,
+    ),
+    const MarketplaceItem(
+      id: 'nginx-native',
+      name: 'Nginx Web Server (Native Linux)',
+      category: 'Web & Cloud',
+      type: RecipeType.script,
+      author: 'Nginx Inc. / Alpine',
+      version: 'alpine',
+      iconCodePoint: 0xe30d, // Icons.http
+      description:
+          'High-performance HTTP web server installed natively into Alpine Linux. Minimal memory usage (<5 MB) without container layers.',
+      script:
+          'sed -i "s/https:/http:/g" /etc/apk/repositories 2>/dev/null || true && apk update && apk add --no-cache nginx && rc-update add nginx default 2>/dev/null || true && rc-service nginx restart 2>/dev/null || nginx',
+      ports: [
+        {'host': 8088, 'container': 80},
+      ],
+      notes:
+          'Native Nginx server is live at http://localhost:8088. Root document directory: /var/lib/nginx/html.',
+      isCustom: false,
+    ),
+    const MarketplaceItem(
+      id: 'postgres-native',
+      name: 'PostgreSQL 16 (Native Linux)',
+      category: 'Databases',
+      type: RecipeType.script,
+      author: 'PostgreSQL Global Dev Group',
+      version: '16-alpine',
+      iconCodePoint: 0xe5e1, // Icons.storage
+      description:
+          'Installs PostgreSQL 16 server and client tools natively into Alpine Linux. High-speed SQL engine running with direct system I/O.',
+      script:
+          'sed -i "s/https:/http:/g" /etc/apk/repositories 2>/dev/null || true && apk update && apk add --no-cache postgresql postgresql-contrib && /etc/init.d/postgresql setup 2>/dev/null || true && rc-update add postgresql default 2>/dev/null || true && rc-service postgresql restart 2>/dev/null || su - postgres -c "pg_ctl start -D /var/lib/postgresql/data" || true',
+      ports: [
+        {'host': 5432, 'container': 5432},
+      ],
+      notes:
+          'Native PostgreSQL active on port 5432. Connect via "su - postgres -c psql" in Terminal.',
+      isCustom: false,
+    ),
+    const MarketplaceItem(
+      id: 'redis-native',
+      name: 'Redis In-Memory Cache (Native Linux)',
+      category: 'Databases',
+      type: RecipeType.script,
+      author: 'Redis Ltd. / Alpine',
+      version: 'alpine',
+      iconCodePoint: 0xe244, // Icons.flash_on
+      description:
+          'Ultra-fast in-memory key-value database installed natively into Alpine Linux. Zero container abstraction latency.',
+      script:
+          'sed -i "s/https:/http:/g" /etc/apk/repositories 2>/dev/null || true && apk update && apk add --no-cache redis && rc-update add redis default 2>/dev/null || true && rc-service redis restart 2>/dev/null || redis-server --daemonize yes',
+      ports: [
+        {'host': 6379, 'container': 6379},
+      ],
+      notes:
+          'Native Redis server active on localhost:6379. Connect via "redis-cli" in Terminal.',
+      isCustom: false,
+    ),
   ];
 
   // ── Remote Community Marketplace (AI2TH/linxr-marketplace) ───────────────

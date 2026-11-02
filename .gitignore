@@ -35,8 +35,6 @@ android/app/src/main/assets/vm/vmlinuz-virt
 # Docker build cache
 guest/
 
-# Kimchi session state
-.kimchi/
 
 # Build artifacts
 build/

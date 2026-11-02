@@ -408,5 +408,5 @@ Signer #1 key size (bits): 2048
   inside the signing block, confirming v3 signing.
 - The `android/app/debug.keystore` path is in `.gitignore` (line 17) but was force-added
   (`git add -f`) so the keystore is tracked, ensuring reproducible builds and CI parity.
-- Pre-existing untracked files (`.kimchi/`, `android/gradlew*`, `docker/`, `bug-report/*.md`,
+- Pre-existing untracked files (`android/gradlew*`, `docker/`, `bug-report/*.md`,
   `build/.cxx/`, etc.) were intentionally NOT included in the commit, per step constraints.

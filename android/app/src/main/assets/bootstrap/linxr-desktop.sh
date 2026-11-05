@@ -19,8 +19,8 @@ is_installed() {
 
 is_running() {
     pgrep -f "Xvfb $DISPLAY_NUM" >/dev/null 2>&1 && \
-    pgrep -f "x11vnc.*$DISPLAY_NUM" >/dev/null 2>&1 && \
-    pgrep -f "websockify.*6080" >/dev/null 2>&1
+    pgrep -f "x11vnc" >/dev/null 2>&1 && \
+    pgrep -f "websockify" >/dev/null 2>&1
 }
 
 get_res() {
@@ -167,8 +167,8 @@ cmd_install() {
 
 cmd_stop() {
     echo "Stopping Linxr Virtual Desktop..."
-    pkill -f "websockify.*6080" 2>/dev/null || true
-    pkill -f "x11vnc.*$DISPLAY_NUM" 2>/dev/null || true
+    pkill -f "websockify" 2>/dev/null || true
+    pkill -f "x11vnc" 2>/dev/null || true
     pkill -x "tint2" 2>/dev/null || true
     pkill -x "openbox" 2>/dev/null || true
     pkill -x "xfce4-session" 2>/dev/null || true
@@ -224,11 +224,10 @@ cmd_start() {
     fi
 
     echo "Starting x11vnc server on port 5900..."
-    x11vnc -display "$DISPLAY_NUM" -nopw -listen 127.0.0.1 -rfbport 5900 -forever -shared -bg -noxdamage -repeat -ncache 10 2>/dev/null || \
-    x11vnc -display "$DISPLAY_NUM" -nopw -listen 127.0.0.1 -rfbport 5900 -forever -shared -bg
+    x11vnc -display "$DISPLAY_NUM" -nopw -rfbport 5900 -forever -shared </dev/null >/tmp/x11vnc.log 2>&1 &
 
     echo "Starting websockify noVNC bridge on port 6080..."
-    websockify --web /usr/share/novnc 6080 localhost:5900 </dev/null >/dev/null 2>&1 &
+    websockify --web /usr/share/novnc 6080 127.0.0.1:5900 </dev/null >/tmp/websockify.log 2>&1 &
     WPID=$!
 
     sleep 1

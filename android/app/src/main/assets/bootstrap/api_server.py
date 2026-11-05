@@ -201,20 +201,19 @@ def _resolve_share_file(file_name: str) -> str:
 
 def _resolve_desktop_bin() -> str:
     target = "/usr/local/bin/linxr-desktop"
-    if os.path.isfile(target) and os.access(target, os.X_OK):
-        return target
-    # If not in /usr/local/bin, copy from shared folder or bootstrap dir and chmod on ext4
-    for src in ["/bootstrap/linxr-desktop.sh", "/mnt/sdcard/bootstrap/linxr-desktop.sh"]:
+    for src in ["/mnt/sdcard/bootstrap/linxr-desktop.sh", "/bootstrap/linxr-desktop.sh"]:
         if os.path.isfile(src):
             try:
-                subprocess.run(["cp", src, target], check=True, timeout=5)
-                subprocess.run(["chmod", "+x", target], check=True, timeout=5)
+                if not os.path.isfile(target) or os.path.getmtime(src) > os.path.getmtime(target):
+                    subprocess.run(["cp", src, target], check=True, timeout=5)
+                    subprocess.run(["chmod", "+x", target], check=True, timeout=5)
                 if os.path.isfile(target) and os.access(target, os.X_OK):
                     return target
             except Exception as e:
-                logger.warning("Could not setup %s from %s: %s", target, src, e)
+                logger.warning("Could not sync %s to %s: %s", src, target, e)
+    if os.path.isfile(target) and os.access(target, os.X_OK):
+        return target
     return target
-
 
 ENGINE_MODE_FILE = "/etc/linxr_engine.mode"
 

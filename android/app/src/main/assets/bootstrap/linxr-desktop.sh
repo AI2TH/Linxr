@@ -12,7 +12,7 @@ DEFAULT_WM="openbox"
 is_installed() {
     command -v Xvfb >/dev/null 2>&1 && \
     command -v x11vnc >/dev/null 2>&1 && \
-    command -v websockify >/dev/null 2>&1 && \
+    (command -v websockify >/dev/null 2>&1 || [ -x /usr/local/bin/websockify ]) && \
     [ -d "/usr/share/novnc" ] && \
     (command -v openbox >/dev/null 2>&1 || command -v startxfce4 >/dev/null 2>&1)
 }
@@ -151,6 +151,7 @@ EOF
 cmd_install() {
     MODE="${1:-lightweight}"
     echo "Installing Linxr Virtual Desktop packages (mode: $MODE)..."
+    sed -i 's/\r$//' /etc/apk/repositories 2>/dev/null || true
     apk update >/dev/null 2>&1 || true
 
     if [ "$MODE" = "xfce" ] || [ "$MODE" = "full" ]; then
@@ -168,11 +169,11 @@ cmd_stop() {
     echo "Stopping Linxr Virtual Desktop..."
     pkill -f "websockify.*6080" 2>/dev/null || true
     pkill -f "x11vnc.*$DISPLAY_NUM" 2>/dev/null || true
-    pkill -f "tint2" 2>/dev/null || true
-    pkill -f "openbox" 2>/dev/null || true
-    pkill -f "xfce4-session" 2>/dev/null || true
-    pkill -f "startxfce4" 2>/dev/null || true
-    pkill -f "Xvfb $DISPLAY_NUM" 2>/dev/null || true
+    pkill -x "tint2" 2>/dev/null || true
+    pkill -x "openbox" 2>/dev/null || true
+    pkill -x "xfce4-session" 2>/dev/null || true
+    pkill -x "startxfce4" 2>/dev/null || true
+    pkill -f "Xvfb.*$DISPLAY_NUM" 2>/dev/null || true
     rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null || true
     echo "Virtual Desktop stopped."
     cmd_status
@@ -194,7 +195,7 @@ cmd_start() {
     echo "$WM" > "$WM_FILE"
 
     echo "Starting Xvfb on $DISPLAY_NUM with resolution $RES..."
-    Xvfb "$DISPLAY_NUM" -screen 0 "${RES}x24" -nocursor &
+    Xvfb "$DISPLAY_NUM" -screen 0 "${RES}x24" -nocursor </dev/null >/dev/null 2>&1 &
     XPID=$!
 
     # Wait for X display socket to be ready
@@ -209,16 +210,16 @@ cmd_start() {
 
     if [ "$WM" = "xfce4" ] || [ "$WM" = "xfce" ]; then
         echo "Starting XFCE4 session..."
-        startxfce4 &
+        startxfce4 </dev/null >/dev/null 2>&1 &
     else
         echo "Starting Openbox window manager..."
         setup_openbox_config
-        openbox &
+        openbox </dev/null >/dev/null 2>&1 &
         if command -v tint2 >/dev/null 2>&1; then
-            tint2 &
+            tint2 </dev/null >/dev/null 2>&1 &
         fi
         if command -v xterm >/dev/null 2>&1; then
-            xterm -geometry 80x24+40+50 -title "Linxr Terminal" -e bash &
+            xterm -geometry 80x24+40+50 -title "Linxr Terminal" -e bash </dev/null >/dev/null 2>&1 &
         fi
     fi
 
@@ -227,7 +228,7 @@ cmd_start() {
     x11vnc -display "$DISPLAY_NUM" -nopw -listen 127.0.0.1 -rfbport 5900 -forever -shared -bg
 
     echo "Starting websockify noVNC bridge on port 6080..."
-    websockify --web /usr/share/novnc 6080 localhost:5900 &
+    websockify --web /usr/share/novnc 6080 localhost:5900 </dev/null >/dev/null 2>&1 &
     WPID=$!
 
     sleep 1
@@ -255,7 +256,7 @@ cmd_launch_app() {
             ;;
         editor)
             if command -v mousepad >/dev/null 2>&1; then
-                mousepad &
+                mousepad </dev/null >/dev/null 2>&1 &
             elif command -v leafpad >/dev/null 2>&1; then
                 leafpad &
             fi

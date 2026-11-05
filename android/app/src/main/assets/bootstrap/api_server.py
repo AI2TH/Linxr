@@ -200,20 +200,20 @@ def _resolve_share_file(file_name: str) -> str:
 
 
 def _resolve_desktop_bin() -> str:
-    for candidate in [
-        "/usr/local/bin/linxr-desktop",
-        "/bootstrap/linxr-desktop.sh",
-        "/mnt/sdcard/bootstrap/linxr-desktop.sh",
-    ]:
-        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
-            return candidate
-        if os.path.isfile(candidate):
+    target = "/usr/local/bin/linxr-desktop"
+    if os.path.isfile(target) and os.access(target, os.X_OK):
+        return target
+    # If not in /usr/local/bin, copy from shared folder or bootstrap dir and chmod on ext4
+    for src in ["/bootstrap/linxr-desktop.sh", "/mnt/sdcard/bootstrap/linxr-desktop.sh"]:
+        if os.path.isfile(src):
             try:
-                os.chmod(candidate, 0o755)
-                return candidate
-            except Exception:
-                pass
-    return "/usr/local/bin/linxr-desktop"
+                subprocess.run(["cp", src, target], check=True, timeout=5)
+                subprocess.run(["chmod", "+x", target], check=True, timeout=5)
+                if os.path.isfile(target) and os.access(target, os.X_OK):
+                    return target
+            except Exception as e:
+                logger.warning("Could not setup %s from %s: %s", target, src, e)
+    return target
 
 
 ENGINE_MODE_FILE = "/etc/linxr_engine.mode"
@@ -585,7 +585,7 @@ class VmApiHandler(BaseHTTPRequestHandler):
             resolution = data.get("resolution", "1280x720")
             wm = data.get("wm", "openbox")
             try:
-                res = subprocess.run([desktop_bin, "start", resolution, wm], capture_output=True, text=True, timeout=60)
+                res = subprocess.run([desktop_bin, "start", resolution, wm], capture_output=True, text=True, timeout=300)
                 out = res.stdout.strip()
                 last_brace = out.rfind("{")
                 if last_brace != -1:

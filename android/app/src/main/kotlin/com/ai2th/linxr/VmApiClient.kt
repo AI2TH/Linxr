@@ -366,7 +366,7 @@ class VmApiClient(private val token: String) {
             .withAuth()
             .post(json)
             .build()
-        val response = client.newCall(request).execute()
+        val response = containerClient.newCall(request).execute()
         val jsonStr = response.body?.string() ?: "{}"
         response.close()
         if (!response.isSuccessful) throw Exception(jsonStr.take(300))

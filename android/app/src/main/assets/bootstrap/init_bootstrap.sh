@@ -15,6 +15,7 @@ cat > /etc/apk/repositories <<REPOEOF
 https://dl-cdn.alpinelinux.org/alpine/v3.20/main
 https://dl-cdn.alpinelinux.org/alpine/v3.20/community
 REPOEOF
+sed -i 's/\r$//' /etc/apk/repositories 2>/dev/null || true
 
 # Check if we need to install anything
 NEEDS_INSTALL=0

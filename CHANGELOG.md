@@ -5,6 +5,19 @@ All notable changes to Linxr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.0+30] — 2026-11-06
+
+### Added
+- **Mobile Linux Virtual Desktop (GUI Environment):**
+  - Run full graphical Linux applications directly on Android without root or external VNC clients.
+  - Headless X11 (`Xvfb :1`) with hardware-efficient Openbox window manager and Tint2 top taskbar panel.
+  - Optional full XFCE4 desktop session support.
+  - Built-in `x11vnc` RFB server (port 5900) and `websockify` + `noVNC` HTML5 bridge (port 6080).
+  - In-app interactive web desktop viewer (`LaunchMode.inAppBrowserView`) with auto-reconnect and scaling.
+  - Desktop control panel in Linxr with 1-tap start/stop, resolution picker (Phone Native 1080x2400, 1920x1080, 1280x720, 1024x768, 800x600), and quick application launchers (Terminal, File Manager, Text Editor).
+  - QEMU SLIRP port mappings: `6080:6080` (noVNC web client) and `5900:5900` (RFB VNC server).
+  - REST API management endpoints on guest port 7080: `/desktop/status`, `/desktop/start`, `/desktop/stop`, `/desktop/install`, and `/desktop/app`.
+
 ## [3.3.0+29] — 2026-11-02
 
 ### Added

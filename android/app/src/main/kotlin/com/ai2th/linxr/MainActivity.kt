@@ -399,6 +399,55 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     }
 
+                    "getDesktopStatus" -> executor.execute {
+                        try {
+                            val status = vmManager.getDesktopStatus()
+                            if (!isFinishing) runOnUiThread { result.success(status) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("DESKTOP_STATUS_ERROR", e.message, null) }
+                        }
+                    }
+
+                    "startDesktop" -> executor.execute {
+                        try {
+                            val res = call.argument<String>("resolution") ?: "1280x720"
+                            val wm = call.argument<String>("wm") ?: "openbox"
+                            val resMap = vmManager.startDesktop(res, wm)
+                            if (!isFinishing) runOnUiThread { result.success(resMap) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("DESKTOP_START_ERROR", e.message, null) }
+                        }
+                    }
+
+                    "stopDesktop" -> executor.execute {
+                        try {
+                            val resMap = vmManager.stopDesktop()
+                            if (!isFinishing) runOnUiThread { result.success(resMap) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("DESKTOP_STOP_ERROR", e.message, null) }
+                        }
+                    }
+
+                    "installDesktop" -> executor.execute {
+                        try {
+                            val mode = call.argument<String>("mode") ?: "lightweight"
+                            val resMap = vmManager.installDesktop(mode)
+                            if (!isFinishing) runOnUiThread { result.success(resMap) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("DESKTOP_INSTALL_ERROR", e.message, null) }
+                        }
+                    }
+
+                    "launchDesktopApp" -> executor.execute {
+                        try {
+                            val app = call.argument<String>("app") ?: "terminal"
+                            val resMap = vmManager.launchDesktopApp(app)
+                            if (!isFinishing) runOnUiThread { result.success(resMap) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("DESKTOP_APP_ERROR", e.message, null) }
+                        }
+                    }
+
                     "pickFolder" -> {
                         pendingFolderResult = result
                         try {

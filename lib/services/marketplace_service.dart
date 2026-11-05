@@ -9,6 +9,66 @@ class MarketplaceService {
   static const String _kCustomRecipesKey = 'custom_marketplace_recipes';
 
   static final List<MarketplaceItem> builtInItems = [
+    // ── Desktop & GUI Environments ──────────────────────────────────────────
+    const MarketplaceItem(
+      id: 'desktop-openbox',
+      name: 'Virtual Desktop — Openbox (Native)',
+      category: 'Desktop & GUI',
+      type: RecipeType.script,
+      author: 'Linxr Desktop / Alpine',
+      version: '1.0',
+      iconCodePoint: 0xe1cb, // Icons.desktop_windows
+      description:
+          'Ultra-lightweight Linux GUI desktop with Openbox window manager, tint2 taskbar panel, PCManFM file manager, Mousepad text editor, and XTerm. Low RAM footprint (<25 MB), mobile-optimized noVNC touch controls.',
+      script:
+          '/usr/local/bin/linxr-desktop install openbox && /usr/local/bin/linxr-desktop start 1280x720 openbox',
+      ports: [
+        {'host': 6080, 'container': 6080},
+        {'host': 5900, 'container': 5900},
+      ],
+      notes:
+          'Open http://localhost:6080 in mobile browser or use the Virtual Desktop screen inside Linxr. Standard VNC viewer connects to port 5900.',
+      isCustom: false,
+    ),
+    const MarketplaceItem(
+      id: 'desktop-xfce',
+      name: 'Virtual Desktop — XFCE4 (Native)',
+      category: 'Desktop & GUI',
+      type: RecipeType.script,
+      author: 'Linxr Desktop / XFCE',
+      version: '4.18',
+      iconCodePoint: 0xe1cb, // Icons.desktop_windows
+      description:
+          'Complete XFCE4 desktop suite with Thunar file manager, Mousepad, XFCE Terminal, window manager, and settings. Smooth WebGL hardware-accelerated noVNC rendering.',
+      script:
+          '/usr/local/bin/linxr-desktop install xfce4 && /usr/local/bin/linxr-desktop start 1280x720 xfce4',
+      ports: [
+        {'host': 6080, 'container': 6080},
+        {'host': 5900, 'container': 5900},
+      ],
+      notes:
+          'Open http://localhost:6080 in your phone browser or use the Linxr Virtual Desktop screen. Connect any VNC app to port 5900.',
+      isCustom: false,
+    ),
+    const MarketplaceItem(
+      id: 'desktop-webtop-docker',
+      name: 'Virtual Desktop — Webtop (Docker)',
+      category: 'Desktop & GUI',
+      type: RecipeType.docker,
+      author: 'LinuxServer.io',
+      version: 'alpine-xfce',
+      iconCodePoint: 0xe1cb, // Icons.desktop_windows
+      image: 'lscr.io/linuxserver/webtop:alpine-xfce',
+      ports: [
+        {'host': 3000, 'container': 3000},
+      ],
+      description:
+          'Isolated containerized Linux XFCE desktop environment by LinuxServer.io. Includes web browser, audio support, and touch-screen clipboard sync.',
+      notes:
+          'Web desktop UI is served at http://localhost:3000. Open in Chrome on your phone to interact with the containerized desktop.',
+      isCustom: false,
+    ),
+
     // ── Kubernetes & DevOps ──────────────────────────────────────────────────
     const MarketplaceItem(
       id: 'k3s',

@@ -39,6 +39,8 @@ class VmManager(private val context: Context) {
             PortForward(9000, 9000, "Portainer"),
             PortForward(8088, 80, "HTTP (80 -> 8088)"),
             PortForward(11434, 11434, "Ollama AI"),
+            PortForward(6080, 6080, "Virtual Desktop (Web noVNC)"),
+            PortForward(5900, 5900, "Virtual Desktop (VNC Server)"),
         )
     }
 
@@ -126,6 +128,13 @@ class VmManager(private val context: Context) {
     fun vmExec(cmd: String): Map<String, Any> = apiClient.vmExec(cmd)
 
     fun checkHealth(): Boolean = apiClient.checkHealth()
+
+    // ── Virtual Desktop (GUI) ────────────────────────────────────────────────
+    fun getDesktopStatus(): Map<String, Any> = apiClient.getDesktopStatus()
+    fun startDesktop(resolution: String, wm: String): Map<String, Any> = apiClient.startDesktop(resolution, wm)
+    fun stopDesktop(): Map<String, Any> = apiClient.stopDesktop()
+    fun installDesktop(mode: String): Map<String, Any> = apiClient.installDesktop(mode)
+    fun launchDesktopApp(app: String): Map<String, Any> = apiClient.launchDesktopApp(app)
 
     // ── Network / port forwarding ───────────────────────────────────────────
 
@@ -234,6 +243,7 @@ class VmManager(private val context: Context) {
             // Always re-extract bootstrap scripts to ensure they are up to date with the current APK
             runCatching { extractAsset("bootstrap/init_bootstrap.sh", File(bootstrapDir, "init_bootstrap.sh")) }
             runCatching { extractAsset("bootstrap/api_server.py", File(bootstrapDir, "api_server.py")) }
+            runCatching { extractAsset("bootstrap/linxr-desktop.sh", File(bootstrapDir, "linxr-desktop.sh")) }
         }
 
         val qemuBin = resolveQemuBinary()
@@ -266,6 +276,7 @@ class VmManager(private val context: Context) {
             try {
                 File(bootstrapDir, "init_bootstrap.sh").copyTo(File(guestBootstrapDir, "init_bootstrap.sh"), overwrite = true)
                 File(bootstrapDir, "api_server.py").copyTo(File(guestBootstrapDir, "api_server.py"), overwrite = true)
+                File(bootstrapDir, "linxr-desktop.sh").copyTo(File(guestBootstrapDir, "linxr-desktop.sh"), overwrite = true)
                 File(guestBootstrapDir, "token").writeText(token)
                 Log.d(TAG, "Successfully prepared guest bootstrap files and token in shared folder: ${guestBootstrapDir.absolutePath}")
             } catch (e: Exception) {
@@ -593,6 +604,8 @@ class VmManager(private val context: Context) {
             .onFailure { Log.w(TAG, "init_bootstrap.sh asset not found: ${it.message}") }
         runCatching { extractAsset("bootstrap/api_server.py", File(bootstrapDir, "api_server.py")) }
             .onFailure { Log.w(TAG, "api_server.py asset not found: ${it.message}") }
+        runCatching { extractAsset("bootstrap/linxr-desktop.sh", File(bootstrapDir, "linxr-desktop.sh")) }
+            .onFailure { Log.w(TAG, "linxr-desktop.sh asset not found: ${it.message}") }
 
         File(filesDir, "assets_extracted.$ASSETS_VERSION").createNewFile()
         Log.d(TAG, "Assets extracted ($ASSETS_VERSION)")

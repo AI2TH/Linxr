@@ -337,4 +337,88 @@ class VmApiClient(private val token: String) {
         @Suppress("UNCHECKED_CAST")
         return (gson.fromJson(jsonStr, Map::class.java) as? Map<String, Any>) ?: emptyMap()
     }
+
+    // ── Virtual Desktop (GUI) ────────────────────────────────────────────────
+
+    fun getDesktopStatus(): Map<String, Any> {
+        return try {
+            val request = Request.Builder()
+                .url("$baseUrl/desktop/status")
+                .withAuth()
+                .get()
+                .build()
+            val response = client.newCall(request).execute()
+            val json = response.body?.string() ?: "{}"
+            response.close()
+            @Suppress("UNCHECKED_CAST")
+            (gson.fromJson(json, Map::class.java) as? Map<String, Any>) ?: emptyMap()
+        } catch (e: Exception) {
+            Log.e(TAG, "getDesktopStatus: ${e.message}")
+            mapOf("running" to false, "installed" to false, "error" to (e.message ?: "error"))
+        }
+    }
+
+    fun startDesktop(resolution: String, wm: String): Map<String, Any> {
+        val body = mapOf("resolution" to resolution, "wm" to wm)
+        val json = gson.toJson(body).toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url("$baseUrl/desktop/start")
+            .withAuth()
+            .post(json)
+            .build()
+        val response = client.newCall(request).execute()
+        val jsonStr = response.body?.string() ?: "{}"
+        response.close()
+        if (!response.isSuccessful) throw Exception(jsonStr.take(300))
+        @Suppress("UNCHECKED_CAST")
+        return (gson.fromJson(jsonStr, Map::class.java) as? Map<String, Any>) ?: emptyMap()
+    }
+
+    fun stopDesktop(): Map<String, Any> {
+        val body = emptyMap<String, String>()
+        val json = gson.toJson(body).toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url("$baseUrl/desktop/stop")
+            .withAuth()
+            .post(json)
+            .build()
+        val response = client.newCall(request).execute()
+        val jsonStr = response.body?.string() ?: "{}"
+        response.close()
+        if (!response.isSuccessful) throw Exception(jsonStr.take(300))
+        @Suppress("UNCHECKED_CAST")
+        return (gson.fromJson(jsonStr, Map::class.java) as? Map<String, Any>) ?: emptyMap()
+    }
+
+    fun installDesktop(mode: String): Map<String, Any> {
+        val body = mapOf("mode" to mode)
+        val json = gson.toJson(body).toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url("$baseUrl/desktop/install")
+            .withAuth()
+            .post(json)
+            .build()
+        val response = containerClient.newCall(request).execute()
+        val jsonStr = response.body?.string() ?: "{}"
+        response.close()
+        if (!response.isSuccessful) throw Exception(jsonStr.take(300))
+        @Suppress("UNCHECKED_CAST")
+        return (gson.fromJson(jsonStr, Map::class.java) as? Map<String, Any>) ?: emptyMap()
+    }
+
+    fun launchDesktopApp(app: String): Map<String, Any> {
+        val body = mapOf("app" to app)
+        val json = gson.toJson(body).toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url("$baseUrl/desktop/app")
+            .withAuth()
+            .post(json)
+            .build()
+        val response = client.newCall(request).execute()
+        val jsonStr = response.body?.string() ?: "{}"
+        response.close()
+        if (!response.isSuccessful) throw Exception(jsonStr.take(300))
+        @Suppress("UNCHECKED_CAST")
+        return (gson.fromJson(jsonStr, Map::class.java) as? Map<String, Any>) ?: emptyMap()
+    }
 }

@@ -349,6 +349,76 @@ class VmPlatform {
       return false;
     }
   }
+
+  // ── Virtual Desktop (GUI) ──────────────────────────────────────────────────
+
+  static Future<Map<String, dynamic>> getDesktopStatus() async {
+    try {
+      final Map<Object?, Object?>? result =
+          await _channel.invokeMethod('getDesktopStatus');
+      if (result == null) return {};
+      return result.map((k, v) => MapEntry(k.toString(), v));
+    } on PlatformException catch (e) {
+      debugPrint("Failed to getDesktopStatus: ${e.message}");
+      return {};
+    }
+  }
+
+  static Future<Map<String, dynamic>> startDesktop({
+    String resolution = '1280x720',
+    String wm = 'openbox',
+  }) async {
+    try {
+      final Map<Object?, Object?>? result =
+          await _channel.invokeMethod('startDesktop', {
+        'resolution': resolution,
+        'wm': wm,
+      });
+      if (result == null) return {};
+      return result.map((k, v) => MapEntry(k.toString(), v));
+    } on PlatformException catch (e) {
+      debugPrint("Failed to startDesktop: ${e.message}");
+      rethrow;
+    }
+  }
+
+  static Future<Map<String, dynamic>> stopDesktop() async {
+    try {
+      final Map<Object?, Object?>? result =
+          await _channel.invokeMethod('stopDesktop');
+      if (result == null) return {};
+      return result.map((k, v) => MapEntry(k.toString(), v));
+    } on PlatformException catch (e) {
+      debugPrint("Failed to stopDesktop: ${e.message}");
+      rethrow;
+    }
+  }
+
+  static Future<Map<String, dynamic>> installDesktop({
+    String mode = 'lightweight',
+  }) async {
+    try {
+      final Map<Object?, Object?>? result =
+          await _channel.invokeMethod('installDesktop', {'mode': mode});
+      if (result == null) return {};
+      return result.map((k, v) => MapEntry(k.toString(), v));
+    } on PlatformException catch (e) {
+      debugPrint("Failed to installDesktop: ${e.message}");
+      rethrow;
+    }
+  }
+
+  static Future<Map<String, dynamic>> launchDesktopApp(String app) async {
+    try {
+      final Map<Object?, Object?>? result =
+          await _channel.invokeMethod('launchDesktopApp', {'app': app});
+      if (result == null) return {};
+      return result.map((k, v) => MapEntry(k.toString(), v));
+    } on PlatformException catch (e) {
+      debugPrint("Failed to launchDesktopApp: ${e.message}");
+      rethrow;
+    }
+  }
 }
 
 class DeviceInfo {
@@ -367,6 +437,13 @@ class VmState extends ChangeNotifier {
   bool _isLoading = false;
   String? _errorMessage;
   bool _isHealthy = false;
+  bool _isDesktopRunning = false;
+  Map<String, dynamic> _desktopStatus = {};
+  bool _isDesktopLoading = false;
+
+  bool get isDesktopRunning => _isDesktopRunning;
+  Map<String, dynamic> get desktopStatus => _desktopStatus;
+  bool get isDesktopLoading => _isDesktopLoading;
 
   Timer? _pollTimer;
   Timer? _sshPingTimer;
@@ -460,6 +537,54 @@ class VmState extends ChangeNotifier {
     }
   }
 
+  Future<void> refreshDesktopStatus({bool force = false}) async {
+    if (!isRunning && !force) {
+      if (_isDesktopRunning || _desktopStatus.isNotEmpty) {
+        _isDesktopRunning = false;
+        _desktopStatus = {};
+        notifyListeners();
+      }
+      return;
+    }
+    try {
+      final res = await VmPlatform.getDesktopStatus();
+      final running = res['running'] == true;
+      if (running != _isDesktopRunning || res.toString() != _desktopStatus.toString()) {
+        _isDesktopRunning = running;
+        _desktopStatus = res;
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Error checking desktop status: $e');
+    }
+  }
+
+  Future<void> startDesktop({String resolution = '1280x720', String wm = 'openbox'}) async {
+    _isDesktopLoading = true;
+    notifyListeners();
+    try {
+      final res = await VmPlatform.startDesktop(resolution: resolution, wm: wm);
+      _desktopStatus = res;
+      _isDesktopRunning = res['running'] == true || res['status'] == 'started';
+    } finally {
+      _isDesktopLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> stopDesktop() async {
+    _isDesktopLoading = true;
+    notifyListeners();
+    try {
+      final res = await VmPlatform.stopDesktop();
+      _desktopStatus = res;
+      _isDesktopRunning = false;
+    } finally {
+      _isDesktopLoading = false;
+      notifyListeners();
+    }
+  }
+
   void _startPolling() {
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
@@ -477,6 +602,9 @@ class VmState extends ChangeNotifier {
           _isHealthy = h;
           notifyListeners();
         }
+        if (h) {
+          refreshDesktopStatus();
+        }
       } finally {
         _isPolling = false;
       }
@@ -487,6 +615,8 @@ class VmState extends ChangeNotifier {
     _pollTimer?.cancel();
     _pollTimer = null;
     _isHealthy = false;
+    _isDesktopRunning = false;
+    _desktopStatus = {};
   }
 
   @override

@@ -29,6 +29,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
 
   final List<String> _categories = [
     'All',
+    'Desktop & GUI',
     'Kubernetes & DevOps',
     'Dev Environments',
     'AI & ML',

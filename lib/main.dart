@@ -7,6 +7,8 @@ import 'screens/containers_screen.dart';
 import 'screens/marketplace_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/files_screen.dart';
+import 'screens/desktop_screen.dart';
+import 'services/desktop_service.dart';
 import 'services/vm_platform.dart';
 import 'theme.dart';
 
@@ -179,7 +181,21 @@ class _HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Linxr'), centerTitle: false),
+      appBar: AppBar(
+        title: const Text('Linxr'),
+        centerTitle: false,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.desktop_windows_outlined),
+            tooltip: 'Virtual Desktop (GUI)',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const DesktopScreen()),
+              );
+            },
+          ),
+        ],
+      ),
       body: const SingleChildScrollView(
         child: Padding(
           padding: EdgeInsets.all(16),
@@ -189,6 +205,8 @@ class _HomeScreen extends StatelessWidget {
               _StatusCard(),
               SizedBox(height: 16),
               _SshInfoCard(),
+              SizedBox(height: 16),
+              _VirtualDesktopCard(),
               SizedBox(height: 16),
               _ControlButton(),
               SizedBox(height: 16),
@@ -298,6 +316,202 @@ class _SshInfoCard extends StatelessWidget {
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _VirtualDesktopCard extends StatelessWidget {
+  const _VirtualDesktopCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = context.watch<VmState>();
+    final isVmRunning = vm.isRunning;
+    final isDesktopRunning = vm.isDesktopRunning;
+    final status = vm.desktopStatus;
+    final res = status['resolution'] ?? '1280x720';
+
+    if (!isVmRunning) {
+      return Card(
+        color: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              const Icon(Icons.desktop_windows_outlined, color: Colors.white38, size: 28),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Virtual Desktop (GUI)',
+                      style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Start VM to launch Linux GUI on your phone',
+                      style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      color: AppColors.surface,
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(
+          color: isDesktopRunning ? AppColors.secondary.withOpacity(0.5) : Colors.white10,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.desktop_windows,
+                  color: isDesktopRunning ? AppColors.secondary : AppColors.primary,
+                  size: 26,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Text(
+                            'Virtual Desktop (GUI)',
+                            style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: isDesktopRunning
+                                  ? AppColors.secondary.withOpacity(0.2)
+                                  : Colors.white10,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              isDesktopRunning ? 'RUNNING' : 'STOPPED',
+                              style: TextStyle(
+                                color: isDesktopRunning ? AppColors.secondary : Colors.white54,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        isDesktopRunning
+                            ? 'Active: $res · http://localhost:6080'
+                            : 'Run full desktop apps (Terminal, Files, Editor)',
+                        style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.settings_outlined, size: 20, color: Colors.white70),
+                  tooltip: 'Desktop Settings',
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const DesktopScreen()),
+                    );
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (isDesktopRunning) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.touch_app, size: 18),
+                      label: const Text('Launch Desktop', style: TextStyle(fontWeight: FontWeight.bold)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: () => DesktopService.launchDesktopInApp(context: context),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.tune, size: 16),
+                    label: const Text('Manage'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white70,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      side: BorderSide(color: Colors.white.withOpacity(0.2)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const DesktopScreen()),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ] else ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.play_arrow_rounded, size: 20),
+                      label: Text(
+                        vm.isDesktopLoading ? 'Starting Desktop...' : 'Start Desktop',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary.withOpacity(0.9),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: vm.isDesktopLoading ? null : () => vm.startDesktop(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.tune, size: 16),
+                    label: const Text('Configure'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white70,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      side: BorderSide(color: Colors.white.withOpacity(0.2)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const DesktopScreen()),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),

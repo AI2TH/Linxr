@@ -199,6 +199,23 @@ def _resolve_share_file(file_name: str) -> str:
 
 
 
+def _resolve_desktop_bin() -> str:
+    for candidate in [
+        "/usr/local/bin/linxr-desktop",
+        "/bootstrap/linxr-desktop.sh",
+        "/mnt/sdcard/bootstrap/linxr-desktop.sh",
+    ]:
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+        if os.path.isfile(candidate):
+            try:
+                os.chmod(candidate, 0o755)
+                return candidate
+            except Exception:
+                pass
+    return "/usr/local/bin/linxr-desktop"
+
+
 ENGINE_MODE_FILE = "/etc/linxr_engine.mode"
 
 
@@ -357,6 +374,31 @@ class VmApiHandler(BaseHTTPRequestHandler):
                     "version": ver,
                     "mode": mode,
                 })
+            return
+
+        if path == "/desktop/status":
+            desktop_bin = _resolve_desktop_bin()
+            if os.path.exists(desktop_bin):
+                try:
+                    res = subprocess.run([desktop_bin, "status"], capture_output=True, text=True, timeout=10)
+                    if res.returncode == 0 and res.stdout.strip():
+                        out = res.stdout.strip()
+                        last_brace = out.rfind("{")
+                        if last_brace != -1:
+                            self._send_json(200, json.loads(out[last_brace:]))
+                            return
+                except Exception as e:
+                    logger.error("Desktop status error: %s", e)
+            self._send_json(200, {
+                "installed": False,
+                "running": False,
+                "display": ":1",
+                "resolution": "1280x720",
+                "wm": "openbox",
+                "web_port": 6080,
+                "vnc_port": 5900,
+                "web_url": "http://localhost:6080/vnc.html?autoconnect=true&resize=scale&show_dot=true&reconnect=true"
+            })
             return
 
         if path == "/engine":
@@ -536,6 +578,67 @@ class VmApiHandler(BaseHTTPRequestHandler):
             return
 
         data = self._read_json_body()
+
+        # ── Virtual Desktop (GUI) ────────────────────────────────────────────
+        if path == "/desktop/start":
+            desktop_bin = _resolve_desktop_bin()
+            resolution = data.get("resolution", "1280x720")
+            wm = data.get("wm", "openbox")
+            try:
+                res = subprocess.run([desktop_bin, "start", resolution, wm], capture_output=True, text=True, timeout=60)
+                out = res.stdout.strip()
+                last_brace = out.rfind("{")
+                if last_brace != -1:
+                    self._send_json(200, json.loads(out[last_brace:]))
+                else:
+                    self._send_json(200, {"status": "ok", "message": out})
+            except Exception as e:
+                self._send_error(500, f"Desktop start failed: {e}")
+            return
+
+        if path == "/desktop/stop":
+            desktop_bin = _resolve_desktop_bin()
+            try:
+                res = subprocess.run([desktop_bin, "stop"], capture_output=True, text=True, timeout=15)
+                out = res.stdout.strip()
+                last_brace = out.rfind("{")
+                if last_brace != -1:
+                    self._send_json(200, json.loads(out[last_brace:]))
+                else:
+                    self._send_json(200, {"status": "ok", "message": out})
+            except Exception as e:
+                self._send_error(500, f"Desktop stop failed: {e}")
+            return
+
+        if path == "/desktop/install":
+            desktop_bin = _resolve_desktop_bin()
+            mode = data.get("mode", "lightweight")
+            try:
+                res = subprocess.run([desktop_bin, "install", mode], capture_output=True, text=True, timeout=300)
+                out = res.stdout.strip()
+                last_brace = out.rfind("{")
+                if last_brace != -1:
+                    self._send_json(200, json.loads(out[last_brace:]))
+                else:
+                    self._send_json(200, {"status": "ok", "message": out})
+            except Exception as e:
+                self._send_error(500, f"Desktop install failed: {e}")
+            return
+
+        if path == "/desktop/app":
+            desktop_bin = _resolve_desktop_bin()
+            app = data.get("app", "terminal")
+            try:
+                res = subprocess.run([desktop_bin, "app", app], capture_output=True, text=True, timeout=10)
+                out = res.stdout.strip()
+                last_brace = out.rfind("{")
+                if last_brace != -1:
+                    self._send_json(200, json.loads(out[last_brace:]))
+                else:
+                    self._send_json(200, {"status": "ok", "app": app})
+            except Exception as e:
+                self._send_error(500, f"Desktop app launch failed: {e}")
+            return
 
         if path == "/engine":
             req_mode = data.get("mode", "fasttrack")

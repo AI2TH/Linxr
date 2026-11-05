@@ -384,4 +384,13 @@ export GODEBUG="tlsmlkem=0"
 PROFEIO
 chmod +x /etc/profile.d/k3s.sh
 
+# Install Linxr Virtual Desktop tool
+if [ -f /bootstrap/linxr-desktop.sh ]; then
+    cp /bootstrap/linxr-desktop.sh /usr/local/bin/linxr-desktop
+    chmod +x /usr/local/bin/linxr-desktop
+elif [ -f /mnt/sdcard/bootstrap/linxr-desktop.sh ]; then
+    cp /mnt/sdcard/bootstrap/linxr-desktop.sh /usr/local/bin/linxr-desktop
+    chmod +x /usr/local/bin/linxr-desktop
+fi
+
 echo "=== Bootstrap Complete ==="

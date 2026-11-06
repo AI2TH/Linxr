@@ -152,6 +152,7 @@ cmd_install() {
     MODE="${1:-lightweight}"
     echo "Installing Linxr Virtual Desktop packages (mode: $MODE)..."
     sed -i 's/\r$//' /etc/apk/repositories 2>/dev/null || true
+    sed -i 's|https://|http://|g' /etc/apk/repositories 2>/dev/null || true
     apk update >/dev/null 2>&1 || true
 
     if [ "$MODE" = "xfce" ] || [ "$MODE" = "full" ]; then
@@ -222,6 +223,9 @@ cmd_start() {
             xterm -geometry 80x24+40+50 -title "Linxr Terminal" -e bash </dev/null >/dev/null 2>&1 &
         fi
     fi
+
+    # Eliminate reverse-DNS lookup latency (socket.getfqdn) on private SLIRP network connections
+    grep -q "10.0.2.2" /etc/hosts 2>/dev/null || echo "10.0.2.2 android-host gateway" >> /etc/hosts
 
     echo "Starting x11vnc server on port 5900..."
     x11vnc -display "$DISPLAY_NUM" -nopw -rfbport 5900 -forever -shared </dev/null >/tmp/x11vnc.log 2>&1 &

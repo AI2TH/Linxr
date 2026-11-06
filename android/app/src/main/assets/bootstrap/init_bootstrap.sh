@@ -9,11 +9,16 @@ echo "=== Alpine VM Bootstrap Starting ==="
 rm -rf /usr/libexec/docker/cli-plugins 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
+# Network hardening & host configuration
+# ---------------------------------------------------------------------------
+grep -q "10.0.2.2" /etc/hosts 2>/dev/null || echo "10.0.2.2 android-host gateway" >> /etc/hosts
+
+# ---------------------------------------------------------------------------
 # Package mirror configuration (NEW-16)
 # ---------------------------------------------------------------------------
 cat > /etc/apk/repositories <<REPOEOF
-https://dl-cdn.alpinelinux.org/alpine/v3.20/main
-https://dl-cdn.alpinelinux.org/alpine/v3.20/community
+http://dl-cdn.alpinelinux.org/alpine/v3.20/main
+http://dl-cdn.alpinelinux.org/alpine/v3.20/community
 REPOEOF
 sed -i 's/\r$//' /etc/apk/repositories 2>/dev/null || true
 

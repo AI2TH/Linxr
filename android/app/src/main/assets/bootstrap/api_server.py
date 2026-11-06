@@ -291,6 +291,10 @@ def _run_engine_cmd(args, timeout=600):
 class VmApiHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
+    def address_string(self):
+        # Override to prevent expensive reverse DNS lookup (socket.getfqdn) on private network
+        return self.client_address[0]
+
     def log_message(self, format, *args):
         # Quiet standard HTTP access logs to keep serial console clean
         pass
@@ -306,20 +310,22 @@ class VmApiHandler(BaseHTTPRequestHandler):
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Connection", "keep-alive")
+        self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)
         self.wfile.flush()
+        self.close_connection = True
 
     def _send_text(self, status_code: int, text: str):
         body = text.encode("utf-8")
         self.send_response(status_code)
         self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Connection", "keep-alive")
+        self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)
         self.wfile.flush()
+        self.close_connection = True
 
     def _send_error(self, status_code: int, detail: str):
         self._send_json(status_code, {"detail": detail})
@@ -376,27 +382,45 @@ class VmApiHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/desktop/status":
-            desktop_bin = _resolve_desktop_bin()
-            if os.path.exists(desktop_bin):
+            installed = (
+                os.path.isfile("/usr/share/novnc/vnc.html") and
+                (os.path.isfile("/usr/bin/x11vnc") or os.path.isfile("/usr/local/bin/x11vnc"))
+            )
+            running = False
+            if installed:
                 try:
-                    res = subprocess.run([desktop_bin, "status"], capture_output=True, text=True, timeout=10)
-                    if res.returncode == 0 and res.stdout.strip():
-                        out = res.stdout.strip()
-                        last_brace = out.rfind("{")
-                        if last_brace != -1:
-                            self._send_json(200, json.loads(out[last_brace:]))
-                            return
-                except Exception as e:
-                    logger.error("Desktop status error: %s", e)
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                        s.settimeout(0.3)
+                        if s.connect_ex(("127.0.0.1", 6080)) == 0:
+                            running = True
+                except Exception:
+                    pass
+
+            res = "1280x720"
+            if os.path.isfile("/tmp/.linxr_desktop_res"):
+                try:
+                    with open("/tmp/.linxr_desktop_res", "r") as f:
+                        res = f.read().strip() or res
+                except Exception:
+                    pass
+
+            wm = "openbox"
+            if os.path.isfile("/tmp/.linxr_desktop_wm"):
+                try:
+                    with open("/tmp/.linxr_desktop_wm", "r") as f:
+                        wm = f.read().strip() or wm
+                except Exception:
+                    pass
+
             self._send_json(200, {
-                "installed": False,
-                "running": False,
+                "installed": installed,
+                "running": running,
                 "display": ":1",
-                "resolution": "1280x720",
-                "wm": "openbox",
+                "resolution": res,
+                "wm": wm,
                 "web_port": 6080,
                 "vnc_port": 5900,
-                "web_url": "http://localhost:6080/vnc.html?autoconnect=true&resize=scale&show_dot=true&reconnect=true"
+                "web_url": "http://localhost:6080/vnc.html?autoconnect=true&resize=scale&show_dot=true&reconnect=true",
             })
             return
 

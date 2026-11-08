@@ -10,17 +10,30 @@ DEFAULT_RES="1280x720"
 DEFAULT_WM="openbox"
 
 is_installed() {
+    WM_TARGET="${1:-$(get_wm)}"
     command -v Xvfb >/dev/null 2>&1 && \
     command -v x11vnc >/dev/null 2>&1 && \
     (command -v websockify >/dev/null 2>&1 || [ -x /usr/local/bin/websockify ]) && \
-    [ -d "/usr/share/novnc" ] && \
-    (command -v openbox >/dev/null 2>&1 || command -v startxfce4 >/dev/null 2>&1)
+    [ -d "/usr/share/novnc" ] && {
+        if [ "$WM_TARGET" = "xfce4" ] || [ "$WM_TARGET" = "xfce" ] || [ "$WM_TARGET" = "full" ]; then
+            command -v startxfce4 >/dev/null 2>&1 || command -v xfwm4 >/dev/null 2>&1
+        else
+            command -v openbox >/dev/null 2>&1
+        fi
+    }
 }
 
 is_running() {
+    WM_TARGET="${1:-$(get_wm)}"
     pgrep -f "Xvfb $DISPLAY_NUM" >/dev/null 2>&1 && \
     pgrep -f "x11vnc" >/dev/null 2>&1 && \
-    pgrep -f "websockify" >/dev/null 2>&1
+    pgrep -f "websockify" >/dev/null 2>&1 && {
+        if [ "$WM_TARGET" = "xfce4" ] || [ "$WM_TARGET" = "xfce" ] || [ "$WM_TARGET" = "full" ]; then
+            pgrep -x "xfce4-session" >/dev/null 2>&1 || pgrep -x "xfwm4" >/dev/null 2>&1 || pgrep -x "xfce4-panel" >/dev/null 2>&1
+        else
+            pgrep -x "openbox" >/dev/null 2>&1
+        fi
+    }
 }
 
 get_res() {
@@ -120,17 +133,79 @@ systray_icon_size = 22
 EOF
 }
 
+setup_xfce_config() {
+    mkdir -p /root/Desktop /root/Downloads /root/Documents
+
+    cat > /root/Desktop/Terminal.desktop <<'EOF'
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Terminal
+Comment=Open Linxr Terminal
+Exec=xfce4-terminal
+Icon=utilities-terminal
+Path=
+Terminal=false
+StartupNotify=true
+EOF
+    chmod +x /root/Desktop/Terminal.desktop
+
+    cat > /root/Desktop/Files.desktop <<'EOF'
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=File Manager
+Comment=Browse files and storage
+Exec=thunar /root
+Icon=system-file-manager
+Path=
+Terminal=false
+StartupNotify=true
+EOF
+    chmod +x /root/Desktop/Files.desktop
+
+    cat > /root/Desktop/SharedFolder.desktop <<'EOF'
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Phone Storage (LinxrShare)
+Comment=Access Android shared storage
+Exec=thunar /mnt/sdcard
+Icon=folder-remote
+Path=
+Terminal=false
+StartupNotify=true
+EOF
+    chmod +x /root/Desktop/SharedFolder.desktop
+
+    mkdir -p /root/.config/gtk-3.0
+    cat > /root/.config/gtk-3.0/settings.ini <<'EOF'
+[Settings]
+gtk-theme-name = Adwaita-dark
+gtk-icon-theme-name = Adwaita
+gtk-font-name = DejaVu Sans 10
+gtk-application-prefer-dark-theme = true
+EOF
+}
+
 cmd_status() {
+    WM_REQ="${1:-$(get_wm)}"
     INSTALLED="false"
     RUNNING="false"
     RES=$(get_res)
     WM=$(get_wm)
 
-    if is_installed; then
+    OPENBOX_INSTALLED="false"
+    XFCE_INSTALLED="false"
+
+    command -v openbox >/dev/null 2>&1 && OPENBOX_INSTALLED="true"
+    (command -v startxfce4 >/dev/null 2>&1 || command -v xfwm4 >/dev/null 2>&1) && XFCE_INSTALLED="true"
+
+    if is_installed "$WM_REQ"; then
         INSTALLED="true"
     fi
 
-    if is_running; then
+    if is_running "$WM"; then
         RUNNING="true"
     fi
 
@@ -138,6 +213,8 @@ cmd_status() {
 {
   "installed": $INSTALLED,
   "running": $RUNNING,
+  "openbox_installed": $OPENBOX_INSTALLED,
+  "xfce_installed": $XFCE_INSTALLED,
   "display": "$DISPLAY_NUM",
   "resolution": "$RES",
   "wm": "$WM",
@@ -151,19 +228,36 @@ EOF
 cmd_install() {
     MODE="${1:-lightweight}"
     echo "Installing Linxr Virtual Desktop packages (mode: $MODE)..."
+    killall -9 apk 2>/dev/null || true
+    rm -f /lib/apk/db/lock 2>/dev/null || true
+    grep -q "dl-cdn.alpinelinux.org" /etc/hosts 2>/dev/null || echo "199.232.114.132 dl-cdn.alpinelinux.org" >> /etc/hosts
     sed -i 's/\r$//' /etc/apk/repositories 2>/dev/null || true
     sed -i 's|https://|http://|g' /etc/apk/repositories 2>/dev/null || true
     apk update >/dev/null 2>&1 || true
 
-    if [ "$MODE" = "xfce" ] || [ "$MODE" = "full" ]; then
-        apk add --no-cache xvfb x11vnc novnc websockify xfce4 xfce4-terminal thunar mousepad font-misc-misc
+    if [ "$MODE" = "xfce" ] || [ "$MODE" = "xfce4" ] || [ "$MODE" = "full" ]; then
+        if ! apk add --no-cache xvfb x11vnc novnc websockify \
+            xfce4 xfce4-terminal thunar mousepad xfce4-appfinder \
+            dbus dbus-x11 \
+            font-dejavu font-noto font-misc-misc \
+            adwaita-icon-theme hicolor-icon-theme; then
+            echo "Error: Failed to install XFCE4 desktop packages." >&2
+            exit 1
+        fi
+        setup_xfce_config
     else
-        apk add --no-cache xvfb x11vnc novnc websockify openbox tint2 pcmanfm mousepad xterm font-misc-misc
+        if ! apk add --no-cache xvfb x11vnc novnc websockify \
+            openbox tint2 pcmanfm mousepad xterm \
+            font-dejavu font-misc-misc \
+            adwaita-icon-theme hicolor-icon-theme; then
+            echo "Error: Failed to install Openbox desktop packages." >&2
+            exit 1
+        fi
         setup_openbox_config
     fi
 
     echo "Installation finished."
-    cmd_status
+    cmd_status "$MODE"
 }
 
 cmd_stop() {
@@ -172,7 +266,12 @@ cmd_stop() {
     pkill -f "x11vnc" 2>/dev/null || true
     pkill -x "tint2" 2>/dev/null || true
     pkill -x "openbox" 2>/dev/null || true
-    pkill -x "xfce4-session" 2>/dev/null || true
+    pkill -f "dbus-daemon.*session" 2>/dev/null || true
+    pkill -f "xfce4-session" 2>/dev/null || true
+    pkill -x "xfwm4" 2>/dev/null || true
+    pkill -x "xfce4-panel" 2>/dev/null || true
+    pkill -x "xfdesktop" 2>/dev/null || true
+    pkill -x "xfsettingsd" 2>/dev/null || true
     pkill -x "startxfce4" 2>/dev/null || true
     pkill -f "Xvfb.*$DISPLAY_NUM" 2>/dev/null || true
     rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null || true
@@ -184,9 +283,12 @@ cmd_start() {
     RES="${1:-$DEFAULT_RES}"
     WM="${2:-$DEFAULT_WM}"
 
-    if ! is_installed; then
-        echo "Packages missing. Auto-installing lightweight desktop..."
-        cmd_install "lightweight" >/dev/null 2>&1
+    if ! is_installed "$WM"; then
+        echo "Packages missing for $WM. Auto-installing..."
+        if ! cmd_install "$WM"; then
+            echo "Error: Auto-install failed for $WM." >&2
+            exit 1
+        fi
     fi
 
     cmd_stop >/dev/null 2>&1
@@ -209,9 +311,19 @@ cmd_start() {
 
     export DISPLAY="$DISPLAY_NUM"
 
-    if [ "$WM" = "xfce4" ] || [ "$WM" = "xfce" ]; then
+    if [ "$WM" = "xfce4" ] || [ "$WM" = "xfce" ] || [ "$WM" = "full" ]; then
         echo "Starting XFCE4 session..."
-        startxfce4 </dev/null >/dev/null 2>&1 &
+        setup_xfce_config
+        mkdir -p /var/run/dbus 2>/dev/null || true
+        dbus-uuidgen --ensure 2>/dev/null || true
+
+        if command -v dbus-run-session >/dev/null 2>&1; then
+            dbus-run-session startxfce4 </dev/null >/tmp/xfce4-session.log 2>&1 &
+        elif command -v dbus-launch >/dev/null 2>&1; then
+            dbus-launch --exit-with-session startxfce4 </dev/null >/tmp/xfce4-session.log 2>&1 &
+        else
+            startxfce4 </dev/null >/tmp/xfce4-session.log 2>&1 &
+        fi
     else
         echo "Starting Openbox window manager..."
         setup_openbox_config
@@ -234,9 +346,15 @@ cmd_start() {
     websockify --web /usr/share/novnc 6080 127.0.0.1:5900 </dev/null >/tmp/websockify.log 2>&1 &
     WPID=$!
 
-    sleep 1
+    sleep 2
+    if ! is_running "$WM"; then
+        echo "Error: Virtual Desktop failed to start ($WM)" >&2
+        cmd_status "$WM"
+        exit 1
+    fi
+
     echo "Linxr Virtual Desktop started successfully on $DISPLAY_NUM ($RES, $WM)."
-    cmd_status
+    cmd_status "$WM"
 }
 
 cmd_launch_app() {

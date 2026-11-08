@@ -28,7 +28,7 @@ class _DesktopScreenState extends State<DesktopScreen> {
     });
   }
 
-  Future<void> _startDesktop() async {
+  Future<void> _startOrInstallDesktop() async {
     final vm = context.read<VmState>();
     if (!vm.isRunning) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -40,29 +40,60 @@ class _DesktopScreenState extends State<DesktopScreen> {
       return;
     }
 
+    final status = vm.desktopStatus;
+    final isXfce = _selectedWm == 'xfce4' || _selectedWm == 'xfce' || _selectedWm == 'full';
+    final isInstalled = isXfce
+        ? (status['xfce_installed'] == true)
+        : (status['openbox_installed'] == true);
+
     setState(() {
       _isActionInProgress = true;
-      _statusMessage = 'Starting Virtual Desktop server...';
+      _statusMessage = isInstalled
+          ? 'Starting Virtual Desktop server...'
+          : 'Installing $_selectedWm desktop packages (this may take 1-2 min)...';
     });
 
     try {
+      if (!isInstalled) {
+        await DesktopService.install(mode: _selectedWm);
+        await vm.refreshDesktopStatus(force: true);
+        if (mounted) {
+          setState(() {
+            _statusMessage = 'Starting Virtual Desktop server...';
+          });
+        }
+      }
+
       await vm.startDesktop(
         resolution: _selectedResolution,
         wm: _selectedWm,
       );
+
+      await vm.refreshDesktopStatus(force: true);
+
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Virtual Desktop started successfully!'),
-            backgroundColor: AppColors.secondary,
-          ),
-        );
+        if (vm.isDesktopRunning) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Virtual Desktop started successfully!'),
+              backgroundColor: AppColors.secondary,
+            ),
+          );
+        } else {
+          final err = vm.desktopStatus['error'] ?? 'Window manager failed to initialize.';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Virtual Desktop failed to start: $err'),
+              backgroundColor: AppColors.danger,
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to start Virtual Desktop: $e'),
+            content: Text('Failed: $e'),
             backgroundColor: AppColors.danger,
           ),
         );
@@ -198,7 +229,10 @@ class _DesktopScreenState extends State<DesktopScreen> {
     final isVmRunning = vm.isRunning;
     final isDesktopRunning = vm.isDesktopRunning;
     final status = vm.desktopStatus;
-    final isInstalled = status['installed'] == true;
+    final isXfce = _selectedWm == 'xfce4' || _selectedWm == 'xfce' || _selectedWm == 'full';
+    final isSelectedWmInstalled = isXfce
+        ? (status['xfce_installed'] == true)
+        : (status['openbox_installed'] == true);
     final currentRes = status['resolution'] ?? _selectedResolution;
     final currentWm = status['wm'] ?? _selectedWm;
 
@@ -216,7 +250,7 @@ class _DesktopScreenState extends State<DesktopScreen> {
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh Status',
             onPressed: isVmRunning
-                ? () => vm.refreshDesktopStatus()
+                ? () => vm.refreshDesktopStatus(force: true)
                 : null,
           ),
           if (isDesktopRunning)
@@ -237,7 +271,8 @@ class _DesktopScreenState extends State<DesktopScreen> {
               context: context,
               isVmRunning: isVmRunning,
               isDesktopRunning: isDesktopRunning,
-              isInstalled: isInstalled,
+              isSelectedWmInstalled: isSelectedWmInstalled,
+              selectedWm: _selectedWm,
               currentRes: currentRes.toString(),
               currentWm: currentWm.toString(),
             ),
@@ -248,6 +283,7 @@ class _DesktopScreenState extends State<DesktopScreen> {
               context: context,
               isDesktopRunning: isDesktopRunning,
               isVmRunning: isVmRunning,
+              isSelectedWmInstalled: isSelectedWmInstalled,
             ),
             const SizedBox(height: 16),
 
@@ -276,7 +312,8 @@ class _DesktopScreenState extends State<DesktopScreen> {
     required BuildContext context,
     required bool isVmRunning,
     required bool isDesktopRunning,
-    required bool isInstalled,
+    required bool isSelectedWmInstalled,
+    required String selectedWm,
     required String currentRes,
     required String currentWm,
   }) {
@@ -295,7 +332,7 @@ class _DesktopScreenState extends State<DesktopScreen> {
       statusTitle = 'Virtual Desktop Active';
       statusSubtitle = '$currentRes · ${currentWm.toUpperCase()} · Port 6080';
       statusIcon = Icons.check_circle;
-    } else if (isInstalled) {
+    } else if (isSelectedWmInstalled) {
       statusColor = AppColors.warning;
       statusTitle = 'Desktop Stopped';
       statusSubtitle = 'Packages ready. Tap Start to boot your GUI.';
@@ -303,7 +340,7 @@ class _DesktopScreenState extends State<DesktopScreen> {
     } else {
       statusColor = Colors.blueAccent;
       statusTitle = 'Ready to Install';
-      statusSubtitle = 'One-click install Openbox or XFCE4 desktop.';
+      statusSubtitle = 'One-click install ${selectedWm.toUpperCase()} desktop.';
       statusIcon = Icons.download;
     }
 
@@ -436,9 +473,12 @@ class _DesktopScreenState extends State<DesktopScreen> {
               ),
             ] else ...[
               ElevatedButton.icon(
-                icon: const Icon(Icons.play_arrow_rounded, size: 22),
+                icon: Icon(
+                  isSelectedWmInstalled ? Icons.play_arrow_rounded : Icons.download_rounded,
+                  size: 22,
+                ),
                 label: Text(
-                  isInstalled ? 'Start Virtual Desktop' : 'Install & Start Desktop',
+                  isSelectedWmInstalled ? 'Start Virtual Desktop' : 'Install & Start Desktop',
                   style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                 ),
                 style: ElevatedButton.styleFrom(
@@ -449,7 +489,7 @@ class _DesktopScreenState extends State<DesktopScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                onPressed: (isVmRunning && !_isActionInProgress) ? _startDesktop : null,
+                onPressed: (isVmRunning && !_isActionInProgress) ? _startOrInstallDesktop : null,
               ),
             ],
           ],
@@ -462,6 +502,7 @@ class _DesktopScreenState extends State<DesktopScreen> {
     required BuildContext context,
     required bool isDesktopRunning,
     required bool isVmRunning,
+    required bool isSelectedWmInstalled,
   }) {
     return Card(
       color: AppColors.surface,
@@ -600,7 +641,12 @@ class _DesktopScreenState extends State<DesktopScreen> {
                 alignment: Alignment.centerRight,
                 child: TextButton.icon(
                   icon: const Icon(Icons.download_rounded, size: 16),
-                  label: Text('Pre-install $_selectedWm packages', style: const TextStyle(fontSize: 12)),
+                  label: Text(
+                    isSelectedWmInstalled
+                        ? 'Reinstall $_selectedWm packages'
+                        : 'Pre-install $_selectedWm packages',
+                    style: const TextStyle(fontSize: 12),
+                  ),
                   onPressed: (isVmRunning && !_isActionInProgress)
                       ? () => _installDesktop(_selectedWm)
                       : null,

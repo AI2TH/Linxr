@@ -479,9 +479,14 @@ class _VirtualDesktopCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: ElevatedButton.icon(
-                      icon: const Icon(Icons.play_arrow_rounded, size: 20),
+                      icon: Icon(
+                        status['installed'] == true ? Icons.play_arrow_rounded : Icons.download_rounded,
+                        size: 20,
+                      ),
                       label: Text(
-                        vm.isDesktopLoading ? 'Starting Desktop...' : 'Start Desktop',
+                        vm.isDesktopLoading
+                            ? 'Starting Desktop...'
+                            : (status['installed'] == true ? 'Start Desktop' : 'Install Desktop'),
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                       style: ElevatedButton.styleFrom(
@@ -490,7 +495,37 @@ class _VirtualDesktopCard extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
-                      onPressed: vm.isDesktopLoading ? null : () => vm.startDesktop(),
+                      onPressed: vm.isDesktopLoading
+                          ? null
+                          : () async {
+                              if (status['installed'] != true) {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(builder: (_) => const DesktopScreen()),
+                                );
+                                return;
+                              }
+                              try {
+                                await vm.startDesktop();
+                                await vm.refreshDesktopStatus(force: true);
+                                if (context.mounted && !vm.isDesktopRunning) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Failed to start Virtual Desktop: ${vm.desktopStatus['error'] ?? 'Unknown error'}'),
+                                      backgroundColor: AppColors.danger,
+                                    ),
+                                  );
+                                }
+                              } catch (e) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Failed to start Virtual Desktop: $e'),
+                                      backgroundColor: AppColors.danger,
+                                    ),
+                                  );
+                                }
+                              }
+                            },
                     ),
                   ),
                   const SizedBox(width: 8),

@@ -382,17 +382,33 @@ class VmApiHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/desktop/status":
+            desktop_bin = _resolve_desktop_bin()
+            if os.path.isfile(desktop_bin) and os.access(desktop_bin, os.X_OK):
+                try:
+                    res = subprocess.run([desktop_bin, "status"], capture_output=True, text=True, timeout=5)
+                    out = res.stdout.strip()
+                    last_brace = out.rfind("{")
+                    if last_brace != -1:
+                        self._send_json(200, json.loads(out[last_brace:]))
+                        return
+                except Exception as e:
+                    logger.warning("linxr-desktop status failed: %s", e)
+
             installed = (
                 os.path.isfile("/usr/share/novnc/vnc.html") and
                 (os.path.isfile("/usr/bin/x11vnc") or os.path.isfile("/usr/local/bin/x11vnc"))
             )
+            openbox_installed = os.path.isfile("/usr/bin/openbox")
+            xfce_installed = os.path.isfile("/usr/bin/startxfce4") or os.path.isfile("/usr/bin/xfwm4")
             running = False
             if installed:
                 try:
                     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                         s.settimeout(0.3)
                         if s.connect_ex(("127.0.0.1", 6080)) == 0:
-                            running = True
+                            ps_res = subprocess.run(["pgrep", "-f", "openbox|xfwm4|xfce4-session"], capture_output=True)
+                            if ps_res.returncode == 0:
+                                running = True
                 except Exception:
                     pass
 
@@ -415,6 +431,8 @@ class VmApiHandler(BaseHTTPRequestHandler):
             self._send_json(200, {
                 "installed": installed,
                 "running": running,
+                "openbox_installed": openbox_installed,
+                "xfce_installed": xfce_installed,
                 "display": ":1",
                 "resolution": res,
                 "wm": wm,
@@ -611,10 +629,17 @@ class VmApiHandler(BaseHTTPRequestHandler):
                 res = subprocess.run([desktop_bin, "start", resolution, wm], capture_output=True, text=True, timeout=300)
                 out = res.stdout.strip()
                 last_brace = out.rfind("{")
+                status_dict = {}
                 if last_brace != -1:
-                    self._send_json(200, json.loads(out[last_brace:]))
-                else:
-                    self._send_json(200, {"status": "ok", "message": out})
+                    try:
+                        status_dict = json.loads(out[last_brace:])
+                    except Exception:
+                        pass
+                if res.returncode != 0 or (status_dict and not status_dict.get("running", False)):
+                    err_detail = res.stderr.strip() or status_dict.get("error", "") or out
+                    self._send_error(500, f"Virtual Desktop failed to start: {err_detail[:400]}")
+                    return
+                self._send_json(200, status_dict if status_dict else {"status": "ok", "message": out})
             except Exception as e:
                 self._send_error(500, f"Desktop start failed: {e}")
             return
@@ -637,13 +662,20 @@ class VmApiHandler(BaseHTTPRequestHandler):
             desktop_bin = _resolve_desktop_bin()
             mode = data.get("mode", "lightweight")
             try:
-                res = subprocess.run([desktop_bin, "install", mode], capture_output=True, text=True, timeout=300)
+                res = subprocess.run([desktop_bin, "install", mode], capture_output=True, text=True, timeout=600)
                 out = res.stdout.strip()
                 last_brace = out.rfind("{")
+                status_dict = {}
                 if last_brace != -1:
-                    self._send_json(200, json.loads(out[last_brace:]))
-                else:
-                    self._send_json(200, {"status": "ok", "message": out})
+                    try:
+                        status_dict = json.loads(out[last_brace:])
+                    except Exception:
+                        pass
+                if res.returncode != 0:
+                    err_detail = res.stderr.strip() or out
+                    self._send_error(500, f"Virtual Desktop install failed: {err_detail[:400]}")
+                    return
+                self._send_json(200, status_dict if status_dict else {"status": "ok", "message": out})
             except Exception as e:
                 self._send_error(500, f"Desktop install failed: {e}")
             return

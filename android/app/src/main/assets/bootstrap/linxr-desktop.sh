@@ -334,7 +334,8 @@ cmd_install() {
     echo "Installing Linxr Virtual Desktop packages (mode: $MODE)..."
     killall -9 apk 2>/dev/null || true
     rm -f /lib/apk/db/lock 2>/dev/null || true
-    grep -q "dl-cdn.alpinelinux.org" /etc/hosts 2>/dev/null || echo "199.232.114.132 dl-cdn.alpinelinux.org" >> /etc/hosts
+    # Ensure clean repository config and DNS resolution
+    sed -i '/199.232.114.132/d' /etc/hosts 2>/dev/null || true
     sed -i 's/\r$//' /etc/apk/repositories 2>/dev/null || true
     sed -i 's|https://|http://|g' /etc/apk/repositories 2>/dev/null || true
     apk update >/dev/null 2>&1 || true
@@ -342,6 +343,7 @@ cmd_install() {
     if [ "$MODE" = "xfce" ] || [ "$MODE" = "xfce4" ] || [ "$MODE" = "full" ]; then
         if ! apk add --no-cache xvfb x11vnc novnc websockify \
             xfce4 xfce4-terminal thunar mousepad xfce4-appfinder \
+            xfce4-screenshooter xfce4-taskmanager \
             dbus dbus-x11 \
             font-dejavu font-noto font-misc-misc \
             adwaita-icon-theme hicolor-icon-theme \

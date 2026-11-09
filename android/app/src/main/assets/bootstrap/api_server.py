@@ -14,6 +14,7 @@ import socket
 import shutil
 import subprocess
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -199,20 +200,106 @@ def _resolve_share_file(file_name: str) -> str:
 
 
 
+def _is_port_listening(port_hex: str) -> bool:
+    try:
+        with open("/proc/net/tcp", "r") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 4 and parts[1].endswith(port_hex) and parts[3] == "0A":
+                    return True
+    except Exception:
+        pass
+    return False
+
+
+def _get_desktop_status() -> dict:
+    openbox_installed = os.path.isfile("/usr/bin/openbox") or os.path.isfile("/usr/local/bin/openbox")
+    xfce_installed = (
+        os.path.isfile("/usr/bin/startxfce4") or
+        os.path.isfile("/usr/bin/xfwm4") or
+        os.path.isfile("/usr/local/bin/xfwm4")
+    )
+    base_installed = (
+        (os.path.isfile("/usr/bin/Xvfb") or os.path.isfile("/usr/local/bin/Xvfb")) and
+        (os.path.isfile("/usr/bin/x11vnc") or os.path.isfile("/usr/local/bin/x11vnc")) and
+        (os.path.isfile("/usr/bin/websockify") or os.path.isfile("/usr/local/bin/websockify")) and
+        os.path.isdir("/usr/share/novnc")
+    )
+
+    res = "1280x720"
+    if os.path.isfile("/tmp/.linxr_desktop_res"):
+        try:
+            with open("/tmp/.linxr_desktop_res", "r") as f:
+                c = f.read().strip()
+                if c:
+                    res = c
+        except Exception:
+            pass
+
+    wm = "openbox"
+    if os.path.isfile("/tmp/.linxr_desktop_wm"):
+        try:
+            with open("/tmp/.linxr_desktop_wm", "r") as f:
+                c = f.read().strip()
+                if c:
+                    wm = c
+        except Exception:
+            pass
+
+    installed = base_installed and (xfce_installed if wm in ("xfce4", "xfce", "full") else openbox_installed)
+
+    running = False
+    if os.path.exists("/tmp/.X11-unix/X1") or os.path.exists("/tmp/.X1-lock"):
+        if _is_port_listening(":17C0"):
+            running = True
+        elif os.path.isfile("/tmp/.linxr_desktop_pids"):
+            try:
+                with open("/tmp/.linxr_desktop_pids", "r") as f:
+                    for pid_str in f.read().split():
+                        if pid_str.isdigit():
+                            try:
+                                os.kill(int(pid_str), 0)
+                                running = True
+                                break
+                            except OSError:
+                                pass
+            except Exception:
+                pass
+
+    return {
+        "installed": installed,
+        "running": running,
+        "openbox_installed": openbox_installed,
+        "xfce_installed": xfce_installed,
+        "display": ":1",
+        "resolution": res,
+        "wm": wm,
+        "web_port": 6080,
+        "vnc_port": 5900,
+        "web_url": "http://localhost:6080/vnc.html?autoconnect=true&resize=scale&show_dot=true&reconnect=true",
+    }
+
+
 def _resolve_desktop_bin() -> str:
     target = "/usr/local/bin/linxr-desktop"
-    for src in ["/mnt/sdcard/bootstrap/linxr-desktop.sh", "/bootstrap/linxr-desktop.sh"]:
+    for src in ["/bootstrap/linxr-desktop.sh", "/mnt/sdcard/bootstrap/linxr-desktop.sh"]:
         if os.path.isfile(src):
             try:
-                if not os.path.isfile(target) or os.path.getmtime(src) != os.path.getmtime(target) or os.path.getsize(src) != os.path.getsize(target):
-                    subprocess.run(["cp", "-p", src, target], check=True, timeout=5)
+                needs_sync = False
+                if not os.path.isfile(target):
+                    needs_sync = True
+                else:
+                    s_stat = os.stat(src)
+                    t_stat = os.stat(target)
+                    if s_stat.st_size != t_stat.st_size or (s_stat.st_mtime - t_stat.st_mtime > 2):
+                        needs_sync = True
+                if needs_sync:
+                    subprocess.run(["cp", "-f", src, target], check=True, timeout=5)
                     subprocess.run(["chmod", "+x", target], check=True, timeout=5)
                 if os.path.isfile(target) and os.access(target, os.X_OK):
                     return target
             except Exception as e:
                 logger.warning("Could not sync %s to %s: %s", src, target, e)
-    if os.path.isfile(target) and os.access(target, os.X_OK):
-        return target
     return target
 
 ENGINE_MODE_FILE = "/etc/linxr_engine.mode"
@@ -289,7 +376,7 @@ def _run_engine_cmd(args, timeout=600):
         return -1, "", str(e)
 
 class VmApiHandler(BaseHTTPRequestHandler):
-    protocol_version = "HTTP/1.1"
+    protocol_version = "HTTP/1.0"
 
     def address_string(self):
         # Override to prevent expensive reverse DNS lookup (socket.getfqdn) on private network
@@ -382,64 +469,7 @@ class VmApiHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/desktop/status":
-            desktop_bin = _resolve_desktop_bin()
-            if os.path.isfile(desktop_bin) and os.access(desktop_bin, os.X_OK):
-                try:
-                    res = subprocess.run([desktop_bin, "status"], capture_output=True, text=True, timeout=15)
-                    out = res.stdout.strip()
-                    last_brace = out.rfind("{")
-                    if last_brace != -1:
-                        self._send_json(200, json.loads(out[last_brace:]))
-                        return
-                except Exception as e:
-                    logger.warning("linxr-desktop status failed: %s", e)
-
-            installed = (
-                os.path.isfile("/usr/share/novnc/vnc.html") and
-                (os.path.isfile("/usr/bin/x11vnc") or os.path.isfile("/usr/local/bin/x11vnc"))
-            )
-            openbox_installed = os.path.isfile("/usr/bin/openbox")
-            xfce_installed = os.path.isfile("/usr/bin/startxfce4") or os.path.isfile("/usr/bin/xfwm4")
-            running = False
-            if installed:
-                try:
-                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                        s.settimeout(0.5)
-                        if s.connect_ex(("127.0.0.1", 6080)) == 0:
-                            ps_res = subprocess.run(["pidof", "openbox", "xfwm4", "xfce4-session", "Xvfb"], capture_output=True)
-                            if ps_res.returncode == 0:
-                                running = True
-                except Exception:
-                    pass
-
-            res = "1280x720"
-            if os.path.isfile("/tmp/.linxr_desktop_res"):
-                try:
-                    with open("/tmp/.linxr_desktop_res", "r") as f:
-                        res = f.read().strip() or res
-                except Exception:
-                    pass
-
-            wm = "openbox"
-            if os.path.isfile("/tmp/.linxr_desktop_wm"):
-                try:
-                    with open("/tmp/.linxr_desktop_wm", "r") as f:
-                        wm = f.read().strip() or wm
-                except Exception:
-                    pass
-
-            self._send_json(200, {
-                "installed": installed,
-                "running": running,
-                "openbox_installed": openbox_installed,
-                "xfce_installed": xfce_installed,
-                "display": ":1",
-                "resolution": res,
-                "wm": wm,
-                "web_port": 6080,
-                "vnc_port": 5900,
-                "web_url": "http://localhost:6080/vnc.html?autoconnect=true&resize=scale&show_dot=true&reconnect=true",
-            })
+            self._send_json(200, _get_desktop_status())
             return
 
         if path == "/engine":
@@ -635,11 +665,13 @@ class VmApiHandler(BaseHTTPRequestHandler):
                         status_dict = json.loads(out[last_brace:])
                     except Exception:
                         pass
-                if res.returncode != 0 or (status_dict and not status_dict.get("running", False)):
+                if not status_dict:
+                    status_dict = _get_desktop_status()
+                if res.returncode != 0 or not status_dict.get("running", False):
                     err_detail = res.stderr.strip() or status_dict.get("error", "") or out
                     self._send_error(500, f"Virtual Desktop failed to start: {err_detail[:400]}")
                     return
-                self._send_json(200, status_dict if status_dict else {"status": "ok", "message": out})
+                self._send_json(200, status_dict)
             except Exception as e:
                 self._send_error(500, f"Desktop start failed: {e}")
             return
@@ -650,10 +682,15 @@ class VmApiHandler(BaseHTTPRequestHandler):
                 res = subprocess.run([desktop_bin, "stop"], capture_output=True, text=True, timeout=15)
                 out = res.stdout.strip()
                 last_brace = out.rfind("{")
+                status_dict = {}
                 if last_brace != -1:
-                    self._send_json(200, json.loads(out[last_brace:]))
-                else:
-                    self._send_json(200, {"status": "ok", "message": out})
+                    try:
+                        status_dict = json.loads(out[last_brace:])
+                    except Exception:
+                        pass
+                if not status_dict:
+                    status_dict = _get_desktop_status()
+                self._send_json(200, status_dict)
             except Exception as e:
                 self._send_error(500, f"Desktop stop failed: {e}")
             return
@@ -1031,11 +1068,11 @@ def _apply_network_hardening():
 
 
 def run_server():
-    _apply_network_hardening()
     server_address = ("0.0.0.0", 7080)
     ThreadingHTTPServer.allow_reuse_address = True
     httpd = ThreadingHTTPServer(server_address, VmApiHandler)
     logger.info("Serving lightweight Docker VM API on 0.0.0.0:7080")
+    threading.Thread(target=_apply_network_hardening, daemon=True).start()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

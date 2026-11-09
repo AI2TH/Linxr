@@ -11,28 +11,34 @@ DEFAULT_WM="openbox"
 
 is_installed() {
     WM_TARGET="${1:-$(get_wm)}"
-    command -v Xvfb >/dev/null 2>&1 && \
-    command -v x11vnc >/dev/null 2>&1 && \
-    (command -v websockify >/dev/null 2>&1 || [ -x /usr/local/bin/websockify ]) && \
+    ([ -x /usr/bin/Xvfb ] || [ -x /usr/local/bin/Xvfb ]) && \
+    ([ -x /usr/bin/x11vnc ] || [ -x /usr/local/bin/x11vnc ]) && \
+    ([ -x /usr/bin/websockify ] || [ -x /usr/local/bin/websockify ]) && \
     [ -d "/usr/share/novnc" ] && {
         if [ "$WM_TARGET" = "xfce4" ] || [ "$WM_TARGET" = "xfce" ] || [ "$WM_TARGET" = "full" ]; then
-            command -v startxfce4 >/dev/null 2>&1 || command -v xfwm4 >/dev/null 2>&1
+            [ -x /usr/bin/startxfce4 ] || [ -x /usr/bin/xfwm4 ] || [ -x /usr/local/bin/xfwm4 ]
         else
-            command -v openbox >/dev/null 2>&1
+            [ -x /usr/bin/openbox ] || [ -x /usr/local/bin/openbox ]
         fi
     }
 }
 
 is_running() {
     WM_TARGET="${1:-$(get_wm)}"
-    pidof Xvfb >/dev/null 2>&1 && \
-    pidof x11vnc >/dev/null 2>&1 && {
-        if [ "$WM_TARGET" = "xfce4" ] || [ "$WM_TARGET" = "xfce" ] || [ "$WM_TARGET" = "full" ]; then
-            pidof xfce4-session >/dev/null 2>&1 || pidof xfwm4 >/dev/null 2>&1 || pidof xfce4-panel >/dev/null 2>&1 || pidof xfdesktop >/dev/null 2>&1
-        else
-            pidof openbox >/dev/null 2>&1
-        fi
-    }
+    [ -e "/tmp/.X11-unix/X1" ] || [ -f "/tmp/.X1-lock" ] || return 1
+
+    if [ -f "$PID_FILE" ]; then
+        for pid in $(cat "$PID_FILE" 2>/dev/null); do
+            kill -0 "$pid" 2>/dev/null && return 0
+        done
+        return 1
+    fi
+
+    if [ "$WM_TARGET" = "xfce4" ] || [ "$WM_TARGET" = "xfce" ] || [ "$WM_TARGET" = "full" ]; then
+        grep -qsE "^(xfwm4|xfce4-panel|xfdesktop|xfce4-session|Xvfb)\$" /proc/[0-9]*/comm 2>/dev/null
+    else
+        grep -qsE "^(openbox|Xvfb)\$" /proc/[0-9]*/comm 2>/dev/null
+    fi
 }
 
 get_res() {
@@ -296,8 +302,8 @@ cmd_status() {
     OPENBOX_INSTALLED="false"
     XFCE_INSTALLED="false"
 
-    command -v openbox >/dev/null 2>&1 && OPENBOX_INSTALLED="true"
-    (command -v startxfce4 >/dev/null 2>&1 || command -v xfwm4 >/dev/null 2>&1) && XFCE_INSTALLED="true"
+    ([ -x /usr/bin/openbox ] || [ -x /usr/local/bin/openbox ]) && OPENBOX_INSTALLED="true"
+    ([ -x /usr/bin/startxfce4 ] || [ -x /usr/bin/xfwm4 ] || [ -x /usr/local/bin/xfwm4 ]) && XFCE_INSTALLED="true"
 
     if is_installed "$WM_REQ"; then
         INSTALLED="true"
@@ -369,7 +375,7 @@ cmd_stop() {
         kill -9 $(cat /tmp/.linxr_websockify.pid) 2>/dev/null || true
         rm -f /tmp/.linxr_websockify.pid
     fi
-    rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null || true
+    rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 "$PID_FILE" 2>/dev/null || true
     echo "Virtual Desktop stopped."
     cmd_status
 }
@@ -422,16 +428,21 @@ cmd_start() {
 
         xfsettingsd </dev/null >/tmp/xfsettingsd.log 2>&1 &
         xfwm4 </dev/null >/tmp/xfwm4.log 2>&1 &
+        WMPID=$!
         sleep 1
 
         xfce4-panel --disable-wm-check </dev/null >/tmp/xfce4-panel.log 2>&1 &
+        PANELPID=$!
         xfdesktop --disable-wm-check </dev/null >/tmp/xfdesktop.log 2>&1 &
+        DESKTOPPID=$!
     else
         echo "Starting Openbox window manager..."
         setup_openbox_config
         openbox </dev/null >/dev/null 2>&1 &
+        WMPID=$!
         if command -v tint2 >/dev/null 2>&1; then
             tint2 </dev/null >/dev/null 2>&1 &
+            PANELPID=$!
         fi
         if command -v xterm >/dev/null 2>&1; then
             xterm -geometry 80x24+40+50 -title "Linxr Terminal" -e bash </dev/null >/dev/null 2>&1 &
@@ -450,12 +461,14 @@ cmd_start() {
     fi
 
     echo "Starting x11vnc server on port 5900..."
-    x11vnc -display "$DISPLAY_NUM" -nopw -rfbport 5900 -forever -shared -noxdamage -wait 20 -defer 20 </dev/null >/tmp/x11vnc.log 2>&1 &
+    x11vnc -display "$DISPLAY_NUM" -nopw -rfbport 5900 -forever -shared -wait 50 -defer 50 </dev/null >/tmp/x11vnc.log 2>&1 &
+    VNCPID=$!
 
     echo "Starting websockify noVNC bridge on port 6080..."
     /usr/local/bin/websockify --web /usr/share/novnc 6080 127.0.0.1:5900 </dev/null >/tmp/websockify.log 2>&1 &
     WPID=$!
     echo "$WPID" > /tmp/.linxr_websockify.pid
+    echo "$XPID $WMPID $PANELPID $DESKTOPPID $VNCPID $WPID" > "$PID_FILE"
 
     # Wait for desktop session and window manager to be up
     STARTED=0

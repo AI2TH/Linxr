@@ -46,7 +46,20 @@ def _load_token() -> str:
     except OSError:
         pass
 
-    # 3. Environment variable fallback
+    # 3. Try kernel cmdline (/proc/cmdline: api_token=...)
+    try:
+        with open("/proc/cmdline", "r") as f:
+            cmdline = f.read()
+            for part in cmdline.split():
+                if part.startswith("api_token="):
+                    token = part.split("=", 1)[1].strip()
+                    if token:
+                        logger.info("Loaded API token from /proc/cmdline")
+                        return token
+    except OSError:
+        pass
+
+    # 4. Environment variable fallback
     token = os.environ.get("API_TOKEN", "").strip()
     if token:
         logger.info("Loaded API token from environment")

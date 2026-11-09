@@ -329,6 +329,23 @@ cmd_status() {
 EOF
 }
 
+patch_websockify() {
+    # 1. Eliminate 60-90s numpy SIMD capability scanning delay under QEMU TCG emulation on Python 3.14
+    for wspath in /usr/lib/python*/site-packages/websockify/websocket.py; do
+        if [ -f "$wspath" ] && ! grep -q "numpy = None" "$wspath" 2>/dev/null; then
+            sed -i 's/import numpy/numpy = None  # patched: avoid TCG SIMD scan/g' "$wspath" 2>/dev/null || true
+        fi
+    done
+
+    # 2. Fix Python 3.14 LibProxyServer AttributeError: 'LibProxyServer' object has no attribute 'unix_listen'
+    for wspath in /usr/lib/python*/site-packages/websockify/websocketproxy.py; do
+        if [ -f "$wspath" ] && ! grep -q "getattr(self.server, 'unix_listen'" "$wspath" 2>/dev/null; then
+            sed -i "s/if not self.server.unix_listen:/if not getattr(self.server, 'unix_listen', False):/g" "$wspath" 2>/dev/null || true
+            sed -i "s/if not self.server.wrap_cmd and not self.server.unix_target:/if not getattr(self.server, 'wrap_cmd', False) and not getattr(self.server, 'unix_target', False):/g" "$wspath" 2>/dev/null || true
+        fi
+    done
+}
+
 cmd_install() {
     MODE="${1:-lightweight}"
     echo "Installing Linxr Virtual Desktop packages (mode: $MODE)..."
@@ -362,6 +379,8 @@ cmd_install() {
         fi
         setup_openbox_config
     fi
+
+    patch_websockify
 
     echo "Installation finished."
     cmd_status "$MODE"
@@ -411,8 +430,8 @@ cmd_start() {
     Xvfb "$DISPLAY_NUM" -screen 0 "${TARGET_RES}x24" -nocursor </dev/null >/dev/null 2>&1 &
     XPID=$!
 
-    # Wait for X display socket to be ready
-    for i in 1 2 3 4 5; do
+    # Wait for X display socket to be ready (up to 10 seconds under emulation)
+    for i in $(seq 1 20); do
         if [ -e "/tmp/.X11-unix/X1" ] || [ -f "/tmp/.X1-lock" ]; then
             break
         fi
@@ -464,25 +483,25 @@ cmd_start() {
     # Ensure noVNC index.html symlink exists
     [ -f /usr/share/novnc/vnc.html ] && [ ! -f /usr/share/novnc/index.html ] && ln -sf /usr/share/novnc/vnc.html /usr/share/novnc/index.html
 
-    # Patch /usr/local/bin/websockify to force fork start method under Python 3.14
-    if [ -f "/usr/local/bin/websockify" ] && ! grep -q "set_start_method('fork'" /usr/local/bin/websockify 2>/dev/null; then
-        sed -i 's/from websockify/import multiprocessing\ntry:\n    multiprocessing.set_start_method("fork", force=True)\nexcept Exception:\n    pass\nfrom websockify/' /usr/local/bin/websockify 2>/dev/null || true
-    fi
+    # Apply Websockify performance and compatibility patches
+    patch_websockify
 
     echo "Starting x11vnc server on port 5900..."
     x11vnc -display "$DISPLAY_NUM" -nopw -rfbport 5900 -forever -shared -wait 80 -defer 80 </dev/null >/tmp/x11vnc.log 2>&1 &
     VNCPID=$!
 
     echo "Starting websockify noVNC bridge on port 6080..."
+    pkill -9 -f /usr/bin/websockify 2>/dev/null || true
     pkill -9 -f websockify 2>/dev/null || true
-    /usr/local/bin/websockify --web /usr/share/novnc 0.0.0.0:6080 127.0.0.1:5900 </dev/null >/tmp/websockify.log 2>&1 &
+    WS_BIN=$(command -v websockify || echo "/usr/bin/websockify")
+    python3 -B "$WS_BIN" --libserver --web /usr/share/novnc 0.0.0.0:6080 127.0.0.1:5900 </dev/null >/tmp/websockify.log 2>&1 &
     WPID=$!
     echo "$WPID" > /tmp/.linxr_websockify.pid
     echo "$XPID $WMPID $PANELPID $DESKTOPPID $VNCPID $WPID" > "$PID_FILE"
 
     # Wait for desktop session and window manager to be up
     STARTED=0
-    for i in 1 2 3 4 5 6 7 8 9 10; do
+    for i in $(seq 1 25); do
         if is_running "$TARGET_WM"; then
             STARTED=1
             break
@@ -545,7 +564,7 @@ cmd_launch_app() {
 
 case "$1" in
     status)
-        cmd_status
+        cmd_status "$2"
         ;;
     start)
         cmd_start "$2" "$3"

@@ -53,3 +53,4 @@ __pycache__/
 *.pyc
 scratch/
 
+askpass.bat

@@ -204,8 +204,8 @@ def _resolve_desktop_bin() -> str:
     for src in ["/mnt/sdcard/bootstrap/linxr-desktop.sh", "/bootstrap/linxr-desktop.sh"]:
         if os.path.isfile(src):
             try:
-                if not os.path.isfile(target) or os.path.getmtime(src) > os.path.getmtime(target):
-                    subprocess.run(["cp", src, target], check=True, timeout=5)
+                if not os.path.isfile(target) or os.path.getmtime(src) != os.path.getmtime(target) or os.path.getsize(src) != os.path.getsize(target):
+                    subprocess.run(["cp", "-p", src, target], check=True, timeout=5)
                     subprocess.run(["chmod", "+x", target], check=True, timeout=5)
                 if os.path.isfile(target) and os.access(target, os.X_OK):
                     return target
@@ -385,7 +385,7 @@ class VmApiHandler(BaseHTTPRequestHandler):
             desktop_bin = _resolve_desktop_bin()
             if os.path.isfile(desktop_bin) and os.access(desktop_bin, os.X_OK):
                 try:
-                    res = subprocess.run([desktop_bin, "status"], capture_output=True, text=True, timeout=5)
+                    res = subprocess.run([desktop_bin, "status"], capture_output=True, text=True, timeout=15)
                     out = res.stdout.strip()
                     last_brace = out.rfind("{")
                     if last_brace != -1:
@@ -404,9 +404,9 @@ class VmApiHandler(BaseHTTPRequestHandler):
             if installed:
                 try:
                     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                        s.settimeout(0.3)
+                        s.settimeout(0.5)
                         if s.connect_ex(("127.0.0.1", 6080)) == 0:
-                            ps_res = subprocess.run(["pgrep", "-f", "openbox|xfwm4|xfce4-session"], capture_output=True)
+                            ps_res = subprocess.run(["pidof", "openbox", "xfwm4", "xfce4-session", "Xvfb"], capture_output=True)
                             if ps_res.returncode == 0:
                                 running = True
                 except Exception:

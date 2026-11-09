@@ -25,13 +25,12 @@ is_installed() {
 
 is_running() {
     WM_TARGET="${1:-$(get_wm)}"
-    pgrep -f "Xvfb $DISPLAY_NUM" >/dev/null 2>&1 && \
-    pgrep -f "x11vnc" >/dev/null 2>&1 && \
-    pgrep -f "websockify" >/dev/null 2>&1 && {
+    pidof Xvfb >/dev/null 2>&1 && \
+    pidof x11vnc >/dev/null 2>&1 && {
         if [ "$WM_TARGET" = "xfce4" ] || [ "$WM_TARGET" = "xfce" ] || [ "$WM_TARGET" = "full" ]; then
-            pgrep -x "xfce4-session" >/dev/null 2>&1 || pgrep -x "xfwm4" >/dev/null 2>&1 || pgrep -x "xfce4-panel" >/dev/null 2>&1
+            pidof xfce4-session >/dev/null 2>&1 || pidof xfwm4 >/dev/null 2>&1 || pidof xfce4-panel >/dev/null 2>&1 || pidof xfdesktop >/dev/null 2>&1
         else
-            pgrep -x "openbox" >/dev/null 2>&1
+            pidof openbox >/dev/null 2>&1
         fi
     }
 }
@@ -144,7 +143,7 @@ Name=Terminal
 Comment=Open Linxr Terminal
 Exec=xfce4-terminal
 Icon=utilities-terminal
-Path=
+Path=/root
 Terminal=false
 StartupNotify=true
 EOF
@@ -158,7 +157,7 @@ Name=File Manager
 Comment=Browse files and storage
 Exec=thunar /root
 Icon=system-file-manager
-Path=
+Path=/root
 Terminal=false
 StartupNotify=true
 EOF
@@ -172,7 +171,7 @@ Name=Phone Storage (LinxrShare)
 Comment=Access Android shared storage
 Exec=thunar /mnt/sdcard
 Icon=folder-remote
-Path=
+Path=/mnt/sdcard
 Terminal=false
 StartupNotify=true
 EOF
@@ -186,14 +185,113 @@ gtk-icon-theme-name = Adwaita
 gtk-font-name = DejaVu Sans 10
 gtk-application-prefer-dark-theme = true
 EOF
+
+    mkdir -p /root/.config/xfce4/xfconf/xfce-perchannel-xml
+    cat > /root/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xfce4-desktop" version="1.0">
+  <property name="desktop-icons" type="empty">
+    <property name="style" type="int" value="2"/>
+    <property name="file-icons" type="empty">
+      <property name="show-home" type="bool" value="true"/>
+      <property name="show-filesystem" type="bool" value="true"/>
+      <property name="show-trash" type="bool" value="false"/>
+      <property name="show-removable" type="bool" value="true"/>
+    </property>
+  </property>
+  <property name="backdrop" type="empty">
+    <property name="screen0" type="empty">
+      <property name="monitor0" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="color-style" type="int" value="0"/>
+          <property name="rgba1" type="array">
+            <value type="double" value="0.14"/>
+            <value type="double" value="0.16"/>
+            <value type="double" value="0.25"/>
+            <value type="double" value="1.0"/>
+          </property>
+          <property name="image-style" type="int" value="0"/>
+        </property>
+      </property>
+    </property>
+  </property>
+</channel>
+EOF
+
+    cat > /root/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xfce4-panel" version="1.0">
+  <property name="configver" type="int" value="2"/>
+  <property name="panels" type="array">
+    <value type="int" value="1"/>
+    <property name="panel-1" type="empty">
+      <property name="position" type="string" value="p=6;x=0;y=0"/>
+      <property name="length" type="uint" value="100"/>
+      <property name="position-locked" type="bool" value="true"/>
+      <property name="size" type="uint" value="32"/>
+      <property name="plugin-ids" type="array">
+        <value type="int" value="1"/>
+        <value type="int" value="2"/>
+        <value type="int" value="3"/>
+        <value type="int" value="4"/>
+        <value type="int" value="5"/>
+      </property>
+      <property name="mode" type="uint" value="0"/>
+    </property>
+  </property>
+  <property name="plugins" type="empty">
+    <property name="plugin-1" type="string" value="applicationsmenu"/>
+    <property name="plugin-2" type="string" value="tasklist">
+      <property name="flat-buttons" type="bool" value="true"/>
+      <property name="grouping" type="uint" value="1"/>
+    </property>
+    <property name="plugin-3" type="string" value="separator">
+      <property name="expand" type="bool" value="true"/>
+      <property name="style" type="uint" value="0"/>
+    </property>
+    <property name="plugin-4" type="string" value="systray"/>
+    <property name="plugin-5" type="string" value="clock"/>
+  </property>
+</channel>
+EOF
+
+    cat > /root/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xfwm4" version="1.0">
+  <property name="general" type="empty">
+    <property name="theme" type="string" value="Default-hdpi"/>
+    <property name="title_font" type="string" value="DejaVu Sans Bold 10"/>
+    <property name="use_compositing" type="bool" value="false"/>
+  </property>
+</channel>
+EOF
+
+    cat > /root/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xsettings" version="1.0">
+  <property name="Net" type="empty">
+    <property name="ThemeName" type="string" value="Adwaita-dark"/>
+    <property name="IconThemeName" type="string" value="Adwaita"/>
+    <property name="DoubleClickHandlerTime" type="int" value="400"/>
+    <property name="DoubleClickHandlerDistance" type="int" value="5"/>
+    <property name="Dpi" type="int" value="96"/>
+  </property>
+  <property name="Gtk" type="empty">
+    <property name="FontName" type="string" value="DejaVu Sans 10"/>
+    <property name="MonospaceFontName" type="string" value="DejaVu Sans Mono 10"/>
+    <property name="CursorThemeName" type="string" value="Adwaita"/>
+    <property name="CursorThemeSize" type="int" value="24"/>
+  </property>
+</channel>
+EOF
 }
 
 cmd_status() {
     WM_REQ="${1:-$(get_wm)}"
     INSTALLED="false"
     RUNNING="false"
-    RES=$(get_res)
-    WM=$(get_wm)
+    CURR_RES=$(get_res)
+    CURR_WM=$(get_wm)
 
     OPENBOX_INSTALLED="false"
     XFCE_INSTALLED="false"
@@ -205,7 +303,7 @@ cmd_status() {
         INSTALLED="true"
     fi
 
-    if is_running "$WM"; then
+    if is_running "$CURR_WM"; then
         RUNNING="true"
     fi
 
@@ -216,8 +314,8 @@ cmd_status() {
   "openbox_installed": $OPENBOX_INSTALLED,
   "xfce_installed": $XFCE_INSTALLED,
   "display": "$DISPLAY_NUM",
-  "resolution": "$RES",
-  "wm": "$WM",
+  "resolution": "$CURR_RES",
+  "wm": "$CURR_WM",
   "web_port": 6080,
   "vnc_port": 5900,
   "web_url": "http://localhost:6080/vnc.html?autoconnect=true&resize=scale&show_dot=true&reconnect=true"
@@ -240,7 +338,8 @@ cmd_install() {
             xfce4 xfce4-terminal thunar mousepad xfce4-appfinder \
             dbus dbus-x11 \
             font-dejavu font-noto font-misc-misc \
-            adwaita-icon-theme hicolor-icon-theme; then
+            adwaita-icon-theme hicolor-icon-theme \
+            gsettings-desktop-schemas xrdb; then
             echo "Error: Failed to install XFCE4 desktop packages." >&2
             exit 1
         fi
@@ -262,31 +361,27 @@ cmd_install() {
 
 cmd_stop() {
     echo "Stopping Linxr Virtual Desktop..."
-    pkill -f "websockify" 2>/dev/null || true
-    pkill -f "x11vnc" 2>/dev/null || true
-    pkill -x "tint2" 2>/dev/null || true
-    pkill -x "openbox" 2>/dev/null || true
-    pkill -f "dbus-daemon.*session" 2>/dev/null || true
-    pkill -f "xfce4-session" 2>/dev/null || true
-    pkill -x "xfwm4" 2>/dev/null || true
-    pkill -x "xfce4-panel" 2>/dev/null || true
-    pkill -x "xfdesktop" 2>/dev/null || true
-    pkill -x "xfsettingsd" 2>/dev/null || true
-    pkill -x "startxfce4" 2>/dev/null || true
-    pkill -f "Xvfb.*$DISPLAY_NUM" 2>/dev/null || true
+    for p in xfce4-session xfwm4 xfce4-panel xfdesktop xfsettingsd xfce4-power-manager startxfce4 openbox tint2 xterm pcmanfm mousepad websockify x11vnc Xvfb; do
+        killall -9 "$p" 2>/dev/null || true
+    done
+    pkill -9 -f websockify 2>/dev/null || true
+    if [ -f "/tmp/.linxr_websockify.pid" ]; then
+        kill -9 $(cat /tmp/.linxr_websockify.pid) 2>/dev/null || true
+        rm -f /tmp/.linxr_websockify.pid
+    fi
     rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null || true
     echo "Virtual Desktop stopped."
     cmd_status
 }
 
 cmd_start() {
-    RES="${1:-$DEFAULT_RES}"
-    WM="${2:-$DEFAULT_WM}"
+    TARGET_RES="${1:-$DEFAULT_RES}"
+    TARGET_WM="${2:-$DEFAULT_WM}"
 
-    if ! is_installed "$WM"; then
-        echo "Packages missing for $WM. Auto-installing..."
-        if ! cmd_install "$WM"; then
-            echo "Error: Auto-install failed for $WM." >&2
+    if ! is_installed "$TARGET_WM"; then
+        echo "Packages missing for $TARGET_WM. Auto-installing..."
+        if ! cmd_install "$TARGET_WM"; then
+            echo "Error: Auto-install failed for $TARGET_WM." >&2
             exit 1
         fi
     fi
@@ -294,11 +389,11 @@ cmd_start() {
     cmd_stop >/dev/null 2>&1
     sleep 1
 
-    echo "$RES" > "$RES_FILE"
-    echo "$WM" > "$WM_FILE"
+    echo "$TARGET_RES" > "$RES_FILE"
+    echo "$TARGET_WM" > "$WM_FILE"
 
-    echo "Starting Xvfb on $DISPLAY_NUM with resolution $RES..."
-    Xvfb "$DISPLAY_NUM" -screen 0 "${RES}x24" -nocursor </dev/null >/dev/null 2>&1 &
+    echo "Starting Xvfb on $DISPLAY_NUM with resolution $TARGET_RES..."
+    Xvfb "$DISPLAY_NUM" -screen 0 "${TARGET_RES}x24" -nocursor </dev/null >/dev/null 2>&1 &
     XPID=$!
 
     # Wait for X display socket to be ready
@@ -310,20 +405,27 @@ cmd_start() {
     done
 
     export DISPLAY="$DISPLAY_NUM"
+    export NO_AT_BRIDGE=1
+    export GTK_A11Y=none
+    export QT_ACCESSIBILITY=0
 
-    if [ "$WM" = "xfce4" ] || [ "$WM" = "xfce" ] || [ "$WM" = "full" ]; then
-        echo "Starting XFCE4 session..."
+    if [ "$TARGET_WM" = "xfce4" ] || [ "$TARGET_WM" = "xfce" ] || [ "$TARGET_WM" = "full" ]; then
+        echo "Starting XFCE4 desktop..."
         setup_xfce_config
         mkdir -p /var/run/dbus 2>/dev/null || true
         dbus-uuidgen --ensure 2>/dev/null || true
 
-        if command -v dbus-run-session >/dev/null 2>&1; then
-            dbus-run-session startxfce4 </dev/null >/tmp/xfce4-session.log 2>&1 &
-        elif command -v dbus-launch >/dev/null 2>&1; then
-            dbus-launch --exit-with-session startxfce4 </dev/null >/tmp/xfce4-session.log 2>&1 &
-        else
-            startxfce4 </dev/null >/tmp/xfce4-session.log 2>&1 &
+        if [ -z "$DBUS_SESSION_BUS_ADDRESS" ]; then
+            eval $(dbus-launch --sh-syntax 2>/dev/null)
+            export DBUS_SESSION_BUS_ADDRESS
         fi
+
+        xfsettingsd </dev/null >/tmp/xfsettingsd.log 2>&1 &
+        xfwm4 </dev/null >/tmp/xfwm4.log 2>&1 &
+        sleep 1
+
+        xfce4-panel --disable-wm-check </dev/null >/tmp/xfce4-panel.log 2>&1 &
+        xfdesktop --disable-wm-check </dev/null >/tmp/xfdesktop.log 2>&1 &
     else
         echo "Starting Openbox window manager..."
         setup_openbox_config
@@ -339,22 +441,40 @@ cmd_start() {
     # Eliminate reverse-DNS lookup latency (socket.getfqdn) on private SLIRP network connections
     grep -q "10.0.2.2" /etc/hosts 2>/dev/null || echo "10.0.2.2 android-host gateway" >> /etc/hosts
 
+    # Ensure noVNC index.html symlink exists
+    [ -f /usr/share/novnc/vnc.html ] && [ ! -f /usr/share/novnc/index.html ] && ln -sf /usr/share/novnc/vnc.html /usr/share/novnc/index.html
+
+    # Patch /usr/local/bin/websockify to force fork start method under Python 3.14
+    if [ -f "/usr/local/bin/websockify" ] && ! grep -q "set_start_method('fork'" /usr/local/bin/websockify 2>/dev/null; then
+        sed -i 's/from websockify/import multiprocessing\ntry:\n    multiprocessing.set_start_method("fork", force=True)\nexcept Exception:\n    pass\nfrom websockify/' /usr/local/bin/websockify 2>/dev/null || true
+    fi
+
     echo "Starting x11vnc server on port 5900..."
-    x11vnc -display "$DISPLAY_NUM" -nopw -rfbport 5900 -forever -shared </dev/null >/tmp/x11vnc.log 2>&1 &
+    x11vnc -display "$DISPLAY_NUM" -nopw -rfbport 5900 -forever -shared -noxdamage -wait 20 -defer 20 </dev/null >/tmp/x11vnc.log 2>&1 &
 
     echo "Starting websockify noVNC bridge on port 6080..."
-    websockify --web /usr/share/novnc 6080 127.0.0.1:5900 </dev/null >/tmp/websockify.log 2>&1 &
+    /usr/local/bin/websockify --web /usr/share/novnc 6080 127.0.0.1:5900 </dev/null >/tmp/websockify.log 2>&1 &
     WPID=$!
+    echo "$WPID" > /tmp/.linxr_websockify.pid
 
-    sleep 2
-    if ! is_running "$WM"; then
-        echo "Error: Virtual Desktop failed to start ($WM)" >&2
-        cmd_status "$WM"
+    # Wait for desktop session and window manager to be up
+    STARTED=0
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        if is_running "$TARGET_WM"; then
+            STARTED=1
+            break
+        fi
+        sleep 1
+    done
+
+    if [ "$STARTED" -ne 1 ]; then
+        echo "Error: Virtual Desktop failed to start ($TARGET_WM)" >&2
+        cmd_status "$TARGET_WM"
         exit 1
     fi
 
-    echo "Linxr Virtual Desktop started successfully on $DISPLAY_NUM ($RES, $WM)."
-    cmd_status "$WM"
+    echo "Linxr Virtual Desktop started successfully on $DISPLAY_NUM ($TARGET_RES, $TARGET_WM)."
+    cmd_status "$TARGET_WM"
 }
 
 cmd_launch_app() {
@@ -363,28 +483,37 @@ cmd_launch_app() {
     case "$APP" in
         terminal)
             if command -v xfce4-terminal >/dev/null 2>&1; then
-                xfce4-terminal &
+                xfce4-terminal </dev/null >/dev/null 2>&1 &
             else
-                xterm -geometry 85x26 -title "Linxr Terminal" -e bash &
+                xterm -geometry 85x26 -title "Linxr Terminal" -e bash </dev/null >/dev/null 2>&1 &
             fi
             ;;
         files)
             if command -v thunar >/dev/null 2>&1; then
-                thunar &
+                thunar /root </dev/null >/dev/null 2>&1 &
             elif command -v pcmanfm >/dev/null 2>&1; then
-                pcmanfm &
+                pcmanfm /root </dev/null >/dev/null 2>&1 &
             fi
             ;;
         editor)
             if command -v mousepad >/dev/null 2>&1; then
                 mousepad </dev/null >/dev/null 2>&1 &
             elif command -v leafpad >/dev/null 2>&1; then
-                leafpad &
+                leafpad </dev/null >/dev/null 2>&1 &
+            fi
+            ;;
+        calculator)
+            if command -v gnome-calculator >/dev/null 2>&1; then
+                gnome-calculator </dev/null >/dev/null 2>&1 &
+            elif command -v galculator >/dev/null 2>&1; then
+                galculator </dev/null >/dev/null 2>&1 &
+            elif command -v xcalc >/dev/null 2>&1; then
+                xcalc </dev/null >/dev/null 2>&1 &
             fi
             ;;
         *)
             if [ -n "$APP" ]; then
-                eval "$APP" &
+                eval "$APP" </dev/null >/dev/null 2>&1 &
             fi
             ;;
     esac

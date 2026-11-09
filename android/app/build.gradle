@@ -41,10 +41,14 @@ android {
         main.java.srcDirs += 'src/main/kotlin'
     }
 
+    androidResources {
+        noCompress 'gz', 'virt', 'qcow2'
+    }
+
     aaptOptions {
         // Prevent aapt2 from decompressing .gz assets — handled at runtime
         // Also skip compression on kernel/initrd (already compressed binaries)
-        noCompress "gz", "virt"
+        noCompress "gz", "virt", "qcow2"
     }
 
     defaultConfig {

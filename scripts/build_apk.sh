@@ -94,7 +94,7 @@ dart run flutter_launcher_icons
 
 echo ""
 echo "--- Step 4: flutter build apk ('"${BUILD_TYPE}"') ---"
-export GRADLE_OPTS="-Dorg.gradle.daemon=false -Xmx3g -Dorg.gradle.internal.http.connectionTimeout=60000 -Dorg.gradle.internal.http.socketTimeout=60000"
+export GRADLE_OPTS="-Dorg.gradle.daemon=false -Xmx5g -Dorg.gradle.internal.http.connectionTimeout=60000 -Dorg.gradle.internal.http.socketTimeout=60000"
 flutter build apk --'"${BUILD_TYPE}"' --no-tree-shake-icons 2>&1
 
 echo ""

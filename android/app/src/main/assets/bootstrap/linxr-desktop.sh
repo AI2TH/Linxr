@@ -324,7 +324,7 @@ cmd_status() {
   "wm": "$CURR_WM",
   "web_port": 6080,
   "vnc_port": 5900,
-  "web_url": "http://localhost:6080/vnc.html?autoconnect=true&resize=scale&show_dot=true&reconnect=true"
+  "web_url": "http://localhost:6080/vnc.html?autoconnect=true&resize=scale&show_dot=true&reconnect=true&path=websockify"
 }
 EOF
 }
@@ -367,14 +367,21 @@ cmd_install() {
 
 cmd_stop() {
     echo "Stopping Linxr Virtual Desktop..."
-    for p in xfce4-session xfwm4 xfce4-panel xfdesktop xfsettingsd xfce4-power-manager startxfce4 openbox tint2 xterm pcmanfm mousepad websockify x11vnc Xvfb; do
-        killall -9 "$p" 2>/dev/null || true
-    done
-    pkill -9 -f websockify 2>/dev/null || true
+    if [ -f "$PID_FILE" ]; then
+        for pid in $(cat "$PID_FILE" 2>/dev/null); do
+            kill -9 "$pid" 2>/dev/null || true
+        done
+        rm -f "$PID_FILE"
+    fi
     if [ -f "/tmp/.linxr_websockify.pid" ]; then
-        kill -9 $(cat /tmp/.linxr_websockify.pid) 2>/dev/null || true
+        kill -9 $(cat /tmp/.linxr_websockify.pid 2>/dev/null) 2>/dev/null || true
         rm -f /tmp/.linxr_websockify.pid
     fi
+
+    # Single-pass cleanup for any remaining desktop processes
+    pkill -9 -f websockify 2>/dev/null || true
+    killall -9 xfce4-session xfwm4 xfce4-panel xfdesktop xfsettingsd xfce4-power-manager startxfce4 openbox tint2 xterm pcmanfm mousepad websockify x11vnc Xvfb 2>/dev/null || true
+
     rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 "$PID_FILE" 2>/dev/null || true
     echo "Virtual Desktop stopped."
     cmd_status
@@ -461,11 +468,12 @@ cmd_start() {
     fi
 
     echo "Starting x11vnc server on port 5900..."
-    x11vnc -display "$DISPLAY_NUM" -nopw -rfbport 5900 -forever -shared -wait 50 -defer 50 </dev/null >/tmp/x11vnc.log 2>&1 &
+    x11vnc -display "$DISPLAY_NUM" -nopw -rfbport 5900 -forever -shared -wait 80 -defer 80 </dev/null >/tmp/x11vnc.log 2>&1 &
     VNCPID=$!
 
     echo "Starting websockify noVNC bridge on port 6080..."
-    /usr/local/bin/websockify --web /usr/share/novnc 6080 127.0.0.1:5900 </dev/null >/tmp/websockify.log 2>&1 &
+    pkill -9 -f websockify 2>/dev/null || true
+    /usr/local/bin/websockify --web /usr/share/novnc 0.0.0.0:6080 127.0.0.1:5900 </dev/null >/tmp/websockify.log 2>&1 &
     WPID=$!
     echo "$WPID" > /tmp/.linxr_websockify.pid
     echo "$XPID $WMPID $PANELPID $DESKTOPPID $VNCPID $WPID" > "$PID_FILE"

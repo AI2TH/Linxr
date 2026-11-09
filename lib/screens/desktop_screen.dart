@@ -284,6 +284,7 @@ class _DesktopScreenState extends State<DesktopScreen> {
               isDesktopRunning: isDesktopRunning,
               isVmRunning: isVmRunning,
               isSelectedWmInstalled: isSelectedWmInstalled,
+              currentWm: currentWm.toString(),
             ),
             const SizedBox(height: 16),
 
@@ -503,6 +504,7 @@ class _DesktopScreenState extends State<DesktopScreen> {
     required bool isDesktopRunning,
     required bool isVmRunning,
     required bool isSelectedWmInstalled,
+    required String currentWm,
   }) {
     return Card(
       color: AppColors.surface,
@@ -577,7 +579,7 @@ class _DesktopScreenState extends State<DesktopScreen> {
             const SizedBox(height: 8),
             Row(
               children: DesktopService.windowManagers.map((wm) {
-                final isSelected = _selectedWm == wm.value;
+                final isSelected = isDesktopRunning ? (currentWm == wm.value) : (_selectedWm == wm.value);
                 return Expanded(
                   child: Padding(
                     padding: const EdgeInsets.only(right: 8),

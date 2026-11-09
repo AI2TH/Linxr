@@ -68,13 +68,13 @@ class DesktopService {
   ];
 
   static const String defaultWebUrl =
-      'http://localhost:6080/vnc.html?autoconnect=true&resize=scale&show_dot=true&reconnect=true';
+      'http://localhost:6080/vnc.html?autoconnect=true&resize=scale&show_dot=true&reconnect=true&path=websockify';
   static const String vncAddress = '127.0.0.1:5900';
 
   /// Generates the mobile-optimized noVNC web URI.
   static Uri getNoVncUri({int port = 6080}) {
     return Uri.parse(
-      'http://localhost:$port/vnc.html?autoconnect=true&resize=scale&show_dot=true&reconnect=true',
+      'http://localhost:$port/vnc.html?autoconnect=true&resize=scale&show_dot=true&reconnect=true&path=websockify',
     );
   }
 

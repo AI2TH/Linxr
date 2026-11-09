@@ -66,6 +66,7 @@ void main() {
       expect(url.queryParameters['resize'], 'scale');
       expect(url.queryParameters['show_dot'], 'true');
       expect(url.queryParameters['reconnect'], 'true');
+      expect(url.queryParameters['path'], 'websockify');
     });
 
     test('getDesktopStatus invokes platform channel', () async {

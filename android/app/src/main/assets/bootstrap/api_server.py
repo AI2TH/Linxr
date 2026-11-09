@@ -276,7 +276,7 @@ def _get_desktop_status() -> dict:
         "wm": wm,
         "web_port": 6080,
         "vnc_port": 5900,
-        "web_url": "http://localhost:6080/vnc.html?autoconnect=true&resize=scale&show_dot=true&reconnect=true",
+        "web_url": "http://localhost:6080/vnc.html?autoconnect=true&resize=scale&show_dot=true&reconnect=true&path=websockify",
     }
 
 
@@ -294,8 +294,9 @@ def _resolve_desktop_bin() -> str:
                     if s_stat.st_size != t_stat.st_size or (s_stat.st_mtime - t_stat.st_mtime > 2):
                         needs_sync = True
                 if needs_sync:
-                    subprocess.run(["cp", "-f", src, target], check=True, timeout=5)
-                    subprocess.run(["chmod", "+x", target], check=True, timeout=5)
+                    import shutil
+                    shutil.copyfile(src, target)
+                    os.chmod(target, 0o755)
                 if os.path.isfile(target) and os.access(target, os.X_OK):
                     return target
             except Exception as e:
@@ -679,7 +680,32 @@ class VmApiHandler(BaseHTTPRequestHandler):
         if path == "/desktop/stop":
             desktop_bin = _resolve_desktop_bin()
             try:
-                res = subprocess.run([desktop_bin, "stop"], capture_output=True, text=True, timeout=15)
+                # Direct in-process PID kill for sub-second response
+                if os.path.isfile("/tmp/.linxr_desktop_pids"):
+                    try:
+                        with open("/tmp/.linxr_desktop_pids", "r") as f:
+                            for p in f.read().split():
+                                if p.isdigit():
+                                    try:
+                                        os.kill(int(p), 9)
+                                    except OSError:
+                                        pass
+                        os.remove("/tmp/.linxr_desktop_pids")
+                    except Exception:
+                        pass
+                if os.path.isfile("/tmp/.linxr_websockify.pid"):
+                    try:
+                        with open("/tmp/.linxr_websockify.pid", "r") as f:
+                            p = f.read().strip()
+                            if p.isdigit():
+                                try:
+                                    os.kill(int(p), 9)
+                                except OSError:
+                                    pass
+                        os.remove("/tmp/.linxr_websockify.pid")
+                    except Exception:
+                        pass
+                res = subprocess.run([desktop_bin, "stop"], capture_output=True, text=True, timeout=30)
                 out = res.stdout.strip()
                 last_brace = out.rfind("{")
                 status_dict = {}

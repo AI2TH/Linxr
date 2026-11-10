@@ -139,7 +139,17 @@ EOF
 }
 
 setup_xfce_config() {
-    mkdir -p /root/Desktop /root/Downloads /root/Documents
+    mkdir -p /root/Desktop /root/Downloads /root/Documents /root/.config/xfce4/xfconf/xfce-perchannel-xml
+
+    # Disable compositing to ensure smooth software rendering under QEMU TCG
+    cat > /root/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xfwm4" version="1.0">
+  <property name="general" type="empty">
+    <property name="use_compositing" type="bool" value="false"/>
+  </property>
+</channel>
+EOF
 
     cat > /root/Desktop/Terminal.desktop <<'EOF'
 [Desktop Entry]
@@ -332,8 +342,8 @@ EOF
 patch_websockify() {
     # 1. Eliminate 60-90s numpy SIMD capability scanning delay under QEMU TCG emulation on Python 3.14
     for wspath in /usr/lib/python*/site-packages/websockify/websocket.py; do
-        if [ -f "$wspath" ] && ! grep -q "numpy = None" "$wspath" 2>/dev/null; then
-            sed -i 's/import numpy/numpy = None  # patched: avoid TCG SIMD scan/g' "$wspath" 2>/dev/null || true
+        if [ -f "$wspath" ] && grep -q "^[[:space:]]*import numpy" "$wspath" 2>/dev/null; then
+            sed -i 's/^[[:space:]]*import numpy.*/    raise ImportError("tcg")  # patched: avoid TCG SIMD scan/' "$wspath" 2>/dev/null || true
         fi
     done
 
@@ -455,7 +465,7 @@ cmd_start() {
         fi
 
         xfsettingsd </dev/null >/tmp/xfsettingsd.log 2>&1 &
-        xfwm4 </dev/null >/tmp/xfwm4.log 2>&1 &
+        xfwm4 --compositor=off </dev/null >/tmp/xfwm4.log 2>&1 &
         WMPID=$!
         sleep 1
 
@@ -487,7 +497,7 @@ cmd_start() {
     patch_websockify
 
     echo "Starting x11vnc server on port 5900..."
-    x11vnc -display "$DISPLAY_NUM" -nopw -rfbport 5900 -forever -shared -wait 80 -defer 80 </dev/null >/tmp/x11vnc.log 2>&1 &
+    x11vnc -display "$DISPLAY_NUM" -nopw -rfbport 5900 -forever -shared -noxdamage -wait 50 -defer 50 </dev/null >/tmp/x11vnc.log 2>&1 &
     VNCPID=$!
 
     echo "Starting websockify noVNC bridge on port 6080..."
@@ -499,10 +509,10 @@ cmd_start() {
     echo "$WPID" > /tmp/.linxr_websockify.pid
     echo "$XPID $WMPID $PANELPID $DESKTOPPID $VNCPID $WPID" > "$PID_FILE"
 
-    # Wait for desktop session and window manager to be up
+    # Wait for desktop session, window manager, and websockify port 6080 to be actively listening
     STARTED=0
-    for i in $(seq 1 25); do
-        if is_running "$TARGET_WM"; then
+    for i in $(seq 1 30); do
+        if is_running "$TARGET_WM" && netstat -tlpn 2>/dev/null | grep -q ":6080.*LISTEN"; then
             STARTED=1
             break
         fi

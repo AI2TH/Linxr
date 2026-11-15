@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/marketplace_item.dart';
 import '../services/marketplace_service.dart';
+import '../services/recipe_signature.dart';
 import '../services/vm_platform.dart';
 import '../theme.dart';
 
@@ -39,6 +40,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     'IoT & Network',
     'Utilities',
     'Dev Tools',
+    'Community',
     'My Custom',
   ];
 
@@ -110,6 +112,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
 
     if (cat == 'All') return source.length;
     if (cat == 'My Custom') return source.where((i) => i.isCustom).length;
+    if (cat == 'Community') return source.where((i) => i.isCommunity).length;
     return source.where((i) => i.category == cat).length;
   }
 
@@ -120,6 +123,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
 
       if (_selectedCategory == 'My Custom') {
         if (!item.isCustom) return false;
+      } else if (_selectedCategory == 'Community') {
+        if (!item.isCommunity) return false;
       } else if (_selectedCategory != 'All') {
         if (item.category != _selectedCategory) return false;
       }
@@ -500,8 +505,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
               ),
               const Spacer(),
               Text(
-                'Pull to sync community updates',
-                style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.35)),
+                _catalogStatusText(),
+                style: TextStyle(fontSize: 10, color: _catalogStatusColor()),
               ),
             ],
           ),
@@ -676,7 +681,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '${item.author} • ${item.version}',
+                          '${item.author} • ${item.version}${item.isCommunity ? ' • Community' : ''}',
                           style: TextStyle(color: Colors.white.withOpacity(0.45), fontSize: 11),
                         ),
                       ],
@@ -937,7 +942,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                '${item.author} • ${item.version}',
+                                '${item.author} • ${item.version}${item.isCommunity ? ' • Community' : ''}',
                                 style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12),
                               ),
                             ],
@@ -1204,10 +1209,117 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   // Dedicated Live Deployment Progress Modal (Eliminates Unknown Errors)
   // ---------------------------------------------------------------------------
 
-  void _startDeploymentWithProgressModal(
+  // ---------------------------------------------------------------------------
+  // Catalog signature status
+  // ---------------------------------------------------------------------------
+
+  String _catalogStatusText() {
+    if (MarketplaceService.lastCatalogRejection != null) return 'Catalog rejected: see Settings';
+    switch (MarketplaceService.lastCatalogSignature) {
+      case CatalogSignature.verified:
+        return 'Signed catalog • pull to sync';
+      case CatalogSignature.unsigned:
+        return 'Unsigned catalog • review scripts';
+      case CatalogSignature.invalid:
+        return 'Invalid signature';
+      case null:
+        return 'Pull to sync community updates';
+    }
+  }
+
+  Color _catalogStatusColor() {
+    if (MarketplaceService.lastCatalogRejection != null) return AppColors.danger;
+    switch (MarketplaceService.lastCatalogSignature) {
+      case CatalogSignature.verified:
+        return AppColors.secondary;
+      case CatalogSignature.unsigned:
+        return AppColors.warning;
+      case CatalogSignature.invalid:
+        return AppColors.danger;
+      case null:
+        return Colors.white.withOpacity(0.35);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Script review before the first run
+  // ---------------------------------------------------------------------------
+
+  /// Shows a script recipe's full script before it first runs as root (and
+  /// again whenever the script changes). Returns true when the user accepts.
+  Future<bool> _reviewScriptBeforeFirstRun(MarketplaceItem item) async {
+    if (!item.isScript) return true;
+    if (await MarketplaceService.isScriptApproved(item)) return true;
+    if (!mounted) return false;
+    final script = item.script ?? '';
+    final httpApk = MarketplaceService.downgradesApkToHttp(script);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text('Review "${item.name}"', style: const TextStyle(color: Colors.white)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                item.isCommunity
+                    ? 'Community recipe by ${item.author}. This script runs as root in the VM:'
+                    : 'This script runs as root in the VM:',
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+              if (httpApk) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  'Warning: this script switches apk to plain http.',
+                  style: TextStyle(color: AppColors.warning, fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ],
+              const SizedBox(height: 10),
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.black38,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: SingleChildScrollView(
+                    child: SelectableText(
+                      script,
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 12, fontFamily: 'monospace'),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.termMagenta),
+            child: const Text('Run as root'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      await MarketplaceService.approveScript(item);
+      return true;
+    }
+    return false;
+  }
+
+  Future<void> _startDeploymentWithProgressModal(
     MarketplaceItem item, {
     String? customName,
-  }) {
+  }) async {
+    if (!await _reviewScriptBeforeFirstRun(item)) return;
+    if (!mounted) return;
     setState(() => _inProgressItemIds.add(item.id));
 
     showDialog(

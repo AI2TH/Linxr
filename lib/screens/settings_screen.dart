@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import '../services/marketplace_service.dart';
 import '../services/vm_platform.dart';
 import '../theme.dart';
 import '../widgets/ssh_access_card.dart';
@@ -39,6 +40,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _restarting = false;
   String? _loadError;
   String _version = '';
+  bool _requireSignedCatalog = false;
 
   // ── Derived ranges from device info ────────────────────────────────────────
 
@@ -111,6 +113,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _ramMb  = (r != null && r > 0) ? r : null;
         _diskGb = (d != null && d > 0) ? d : null;
         _sdcardPath = prefs.getString(_kSdcardPath) ?? _defaultSdcardPath;
+        _requireSignedCatalog =
+            prefs.getBool(MarketplaceService.requireSignedPrefKey) ?? false;
         // Seed the custom-path field only when the current path doesn't match
         // one of the quick options, so the field starts empty for quick picks.
         if (!_isQuickPath(_sdcardPath)) {
@@ -168,6 +172,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
     }
+  }
+
+  Future<void> _saveRequireSigned(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() => _requireSignedCatalog = value);
+    await prefs.setBool(MarketplaceService.requireSignedPrefKey, value);
   }
 
   // ── Shared folder persistence ──────────────────────────────────────────────
@@ -537,6 +547,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _SectionHeader('Security'),
                 const SizedBox(height: 8),
                 const SshAccessCard(),
+                const SizedBox(height: 12),
+                Card(
+                  color: AppColors.surface,
+                  child: SwitchListTile(
+                    value: _requireSignedCatalog,
+                    onChanged: _saveRequireSigned,
+                    secondary: const Icon(Icons.verified_user, color: AppColors.primary),
+                    title: const Text('Require signed community recipes',
+                        style: TextStyle(color: Colors.white, fontSize: 14)),
+                    subtitle: const Text(
+                      'Off: an unsigned AI2TH/linxr-marketplace catalog loads with a '
+                      'warning. On: only a catalog with a valid signature loads. '
+                      'A catalog with a bad signature is always rejected.',
+                      style: TextStyle(color: Colors.white54, fontSize: 12),
+                    ),
+                  ),
+                ),
 
                 const SizedBox(height: 24),
                 _SectionHeader('When changes apply'),

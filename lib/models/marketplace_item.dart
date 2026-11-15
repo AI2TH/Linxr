@@ -24,6 +24,10 @@ class MarketplaceItem {
   final String? notes;
   final bool isCustom;
 
+  /// From the remote AI2TH/linxr-marketplace catalog (not built in, not the
+  /// user's own). Set by MarketplaceService; not part of the export format.
+  final bool isCommunity;
+
   const MarketplaceItem({
     required this.id,
     required this.name,
@@ -42,6 +46,7 @@ class MarketplaceItem {
     this.script,
     this.notes,
     this.isCustom = false,
+    this.isCommunity = false,
   });
 
   IconData get iconData => IconData(
@@ -129,6 +134,7 @@ class MarketplaceItem {
     String? script,
     String? notes,
     bool? isCustom,
+    bool? isCommunity,
   }) {
     return MarketplaceItem(
       id: id ?? this.id,
@@ -148,6 +154,7 @@ class MarketplaceItem {
       script: script ?? this.script,
       notes: notes ?? this.notes,
       isCustom: isCustom ?? this.isCustom,
+      isCommunity: isCommunity ?? this.isCommunity,
     );
   }
 }

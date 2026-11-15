@@ -541,6 +541,10 @@ class VmApiHandler(BaseHTTPRequestHandler):
             self._send_json(200, _get_engine_info())
             return
 
+        if path == "/system/release":
+            self._send_json(200, _get_system_release())
+            return
+
         if path == "/containers":
             mode = _get_engine_mode()
             if mode == "fasttrack" or not os.path.exists("/var/run/docker.sock"):
@@ -1178,6 +1182,40 @@ class VmApiHandler(BaseHTTPRequestHandler):
             return
 
         self._send_error(404, "Not found")
+
+
+LINXR_RELEASE_FILE = "/etc/linxr-release"
+
+
+def _get_system_release() -> dict:
+    """Versions inside the VM, for Settings > About.
+
+    /etc/linxr-release (KEY=VALUE lines) is written by scripts/_build_rootfs.sh
+    since #34; older images fall back to /etc/alpine-release.
+    """
+    info = {}
+    try:
+        with open(LINXR_RELEASE_FILE, "r") as f:
+            for line in f:
+                key, sep, value = line.strip().partition("=")
+                if sep and key:
+                    info[key] = value.strip()
+    except OSError:
+        pass
+    alpine = info.get("ALPINE_VERSION", "")
+    if not alpine:
+        try:
+            with open("/etc/alpine-release", "r") as f:
+                alpine = f.read().strip()
+        except OSError:
+            alpine = ""
+    return {
+        "alpineVersion": alpine,
+        "kernelVersion": info.get("KERNEL_VERSION", ""),
+        "runningKernel": os.uname().release,
+        "buildDate": info.get("BUILD_DATE", ""),
+        "hasReleaseFile": bool(info),
+    }
 
 
 APP_KEY_COMMENT = "linxr-app"

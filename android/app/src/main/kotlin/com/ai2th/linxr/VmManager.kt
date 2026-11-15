@@ -178,6 +178,8 @@ class VmManager(private val context: Context) {
 
     fun checkHealth(): Boolean = apiClient.checkHealth()
 
+    fun getSystemRelease(): Map<String, Any> = apiClient.getSystemRelease()
+
     // ── Virtual Desktop (GUI) ────────────────────────────────────────────────
     fun getDesktopStatus(): Map<String, Any> = apiClient.getDesktopStatus()
     fun startDesktop(resolution: String, wm: String): Map<String, Any> = apiClient.startDesktop(resolution, wm)

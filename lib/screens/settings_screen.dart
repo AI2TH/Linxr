@@ -8,6 +8,7 @@ import '../services/marketplace_service.dart';
 import '../services/vm_platform.dart';
 import '../theme.dart';
 import '../widgets/ssh_access_card.dart';
+import '../widgets/vm_release_card.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -591,6 +592,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                 ),
+
+                const SizedBox(height: 24),
+                _SectionHeader('About'),
+                const SizedBox(height: 8),
+                VmReleaseCard(appVersion: _version),
                 const SizedBox(height: 32),
               ],
             ),

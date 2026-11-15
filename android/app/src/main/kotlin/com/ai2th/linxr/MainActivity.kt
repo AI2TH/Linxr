@@ -467,6 +467,15 @@ class MainActivity : FlutterActivity() {
                         }
                     }
 
+                    "getVmRelease" -> executor.execute {
+                        try {
+                            val info = vmManager.getSystemRelease()
+                            if (!isFinishing) runOnUiThread { result.success(info) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("VM_RELEASE_ERROR", e.message, null) }
+                        }
+                    }
+
                     "getSshCredentials" -> executor.execute {
                         try {
                             val creds = vmManager.getSshCredentials()

@@ -268,6 +268,23 @@ class VmApiClient(private val token: String) {
         }
     }
 
+    // ── System ──────────────────────────────────────────────────────────────
+
+    /** Alpine and kernel versions inside the VM (/etc/linxr-release). */
+    fun getSystemRelease(): Map<String, Any> {
+        val request = Request.Builder()
+            .url("$baseUrl/system/release")
+            .withAuth()
+            .get()
+            .build()
+        val response = client.newCall(request).execute()
+        val json = response.body?.string() ?: "{}"
+        response.close()
+        if (!response.isSuccessful) throw Exception(json.take(300))
+        @Suppress("UNCHECKED_CAST")
+        return (gson.fromJson(json, Map::class.java) as? Map<String, Any>) ?: emptyMap()
+    }
+
     // ── SSH ─────────────────────────────────────────────────────────────────
 
     /**

@@ -331,6 +331,20 @@ class VmPlatform {
     }
   }
 
+  /// Alpine and kernel versions inside the running VM (from
+  /// /etc/linxr-release through the VM API). Null when the VM is not
+  /// reachable.
+  static Future<Map<String, dynamic>?> getVmRelease() async {
+    try {
+      final result = await _channel.invokeMapMethod<String, dynamic>('getVmRelease');
+      return result;
+    } on PlatformException {
+      return null;
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
   static Future<bool> checkHealth() async {
     try {
       final bool? result = await _channel.invokeMethod<bool>('checkHealth');

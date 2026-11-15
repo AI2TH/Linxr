@@ -5,6 +5,29 @@ All notable changes to Linxr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Virtual Desktop log:** a failed start, install or recovery shows its reason on the Desktop screen with a **View desktop log** button. The log combines the launcher log and the Xvfb, window manager, panel, x11vnc, websockify and install logs (`GET /desktop/log`).
+- **Install progress:** installing the desktop shows apk's real progress (`37/199`, current package) and a progress bar, and reports apk's error (for example an unreachable mirror or a full disk) instead of a success message.
+- **Fit this screen** resolution, computed from the phone's aspect ratio (for example 1600×720 on a 20:9 phone), next to the existing presets.
+- **Calculator** (`galculator`), `dbus-x11` and a per-session D-Bus bus in both desktops, so GTK apps start cleanly.
+
+### Changed
+- **Honest start:** `linxr-desktop start` returns only when Xvfb has opened display `:1`, the window manager is running, x11vnc listens on 5900 and websockify listens on 6080. Otherwise it fails with the component that is not up, its last log lines, and leaves nothing half-running. `/desktop/start` returns that error and the app shows it ([#26](https://github.com/AI2TH/Linxr/issues/26)).
+- **Supervised desktop:** one supervisor process owns the desktop. It restarts a crashed window manager, panel, x11vnc or websockify (up to 5 times in 10 minutes), ends the session cleanly if Xvfb dies, and records the state in `/run/linxr-desktop`. Start, stop and restart are idempotent and can be repeated. State lives on tmpfs, so a VM reboot leaves no stale locks, and Start brings the desktop back with the saved resolution and environment (`/etc/linxr/desktop.conf`).
+- **Desktop install runs in the background** (`/desktop/install` returns 202) so a long XFCE install under TCG no longer hits the 600 s API timeout, and it waits for the apk lock instead of killing a running apk.
+- **noVNC viewer** opens `127.0.0.1` (the port forward is IPv4-only) with `reconnect_delay`, and only after checking the desktop is really up. The touch tips describe noVNC's real gestures and the on-screen keyboard.
+- **x11vnc** runs with `-noncache -noxrecord -nowf -noscr -xkb` to cut CPU under TCG and map phone-keyboard symbols correctly.
+- Host ports 2222, 7081, 6080 and 5900 can no longer be taken by a custom port forward, which silently broke SSH, the VM API or the desktop.
+
+### Fixed
+- **Calculator** quick-launch button did nothing (the app sent `calc`, the guest expected `calculator`, and no calculator was installed).
+- **Desktop install** used the `v3.20` repositories on 3.24 images when the bootstrap had written them, which breaks dependency resolution; the installer now points apk at the image's own branch.
+
+### Security
+- `linxr-desktop app` no longer runs `eval "$APP"`: apps come from an allow-list (`terminal`, `files`, `editor`, `calculator`), and the API validates the app, resolution and environment before calling the script. Status JSON from the script is escaped.
+
 ## [3.4.0+30] — 2026-11-06
 
 ### Added

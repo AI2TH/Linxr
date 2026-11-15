@@ -349,8 +349,8 @@ fi
 
 # Ensure FastTrack tools exist
 if ! command -v crun >/dev/null 2>&1 || ! command -v podman >/dev/null 2>&1; then
-    echo "Installing FastTrack container tools (crun, podman, buildah)..."
-    apk add --no-cache crun podman buildah netavark 2>/dev/null || true
+    echo "Installing FastTrack container tools (crun, podman)..."
+    apk add --no-cache crun podman netavark 2>/dev/null || true
 fi
 
 if [ "$ENGINE_MODE" = "docker" ]; then
@@ -396,7 +396,11 @@ DOCKEREOF
     fi
 else
     echo "=== FastTrack Engine active: zero idle CPU overhead (crun + podman) ==="
-    killall -9 dockerd containerd 2>/dev/null || true
+    # Base images built before the fix for #29 still start dockerd from
+    # /sbin/init; stop it so FastTrack really runs without the daemon.
+    if pgrep -x dockerd >/dev/null 2>&1 || pgrep -x containerd >/dev/null 2>&1; then
+        killall dockerd containerd 2>/dev/null || true
+    fi
 fi
 
 # ---------------------------------------------------------------------------

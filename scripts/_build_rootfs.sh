@@ -48,7 +48,6 @@ apk --root "${ROOTFS}" --initdb --no-cache add \
     docker \
     crun \
     podman \
-    buildah \
     netavark \
     fuse-overlayfs \
     iptables \
@@ -425,8 +424,9 @@ fi
 touch /var/log/lastlog
 /usr/sbin/dropbear -E -p 22
 
-# Start Docker daemon in the background
-dockerd --data-root /var/lib/docker --log-level warn >/tmp/dockerd.log 2>&1 &
+# dockerd is NOT started here. /bootstrap/init_bootstrap.sh starts it only
+# when the Docker engine is selected (/etc/linxr_engine.mode = docker), so the
+# default FastTrack (crun + podman) mode pays no daemon cost at boot.
 
 echo "Linxr VM booted successfully in seconds!"
 while true; do

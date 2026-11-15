@@ -524,6 +524,37 @@ export GODEBUG="tlsmlkem=0"
 PROFEIO
 chmod +x /etc/profile.d/k3s.sh
 
+# ---------------------------------------------------------------------------
+# Start k3s again after a VM reboot
+# ---------------------------------------------------------------------------
+# The custom /sbin/init never runs OpenRC, so the k3s service the installer
+# registered is not started on boot. Start the server here when k3s is
+# installed and not already running, with the same environment file the
+# OpenRC service uses (GODEBUG above) and the same --disable traefik choice
+# when the installed service has it.
+start_k3s() {
+    K3S_BIN=/usr/local/bin/k3s
+    [ -x "$K3S_BIN" ] || return 0
+    if pgrep -f "k3s server" >/dev/null 2>&1; then
+        echo "k3s server already running."
+        return 0
+    fi
+    k3s_args="server"
+    if grep -q "traefik" /etc/init.d/k3s 2>/dev/null; then
+        k3s_args="$k3s_args --disable traefik"
+    fi
+    echo "Starting k3s ($k3s_args) in the background (log: /var/log/k3s.log)"
+    (
+        set -a
+        # shellcheck disable=SC1090 # written by the k3s installer and above
+        [ -f "$K3S_ENV_FILE" ] && . "$K3S_ENV_FILE"
+        set +a
+        # shellcheck disable=SC2086 # k3s_args is a list of options
+        exec "$K3S_BIN" $k3s_args >>/var/log/k3s.log 2>&1
+    ) &
+}
+start_k3s
+
 # Install Linxr Virtual Desktop tool
 if [ -f /bootstrap/linxr-desktop.sh ]; then
     cp /bootstrap/linxr-desktop.sh /usr/local/bin/linxr-desktop

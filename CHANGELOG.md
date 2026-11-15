@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Optional full XFCE4 desktop session support.
   - Built-in `x11vnc` RFB server (port 5900) and `websockify` + `noVNC` HTML5 bridge (port 6080).
   - In-app interactive web desktop viewer (`LaunchMode.inAppBrowserView`) with auto-reconnect and scaling.
-  - Desktop control panel in Linxr with 1-tap start/stop, resolution picker (Phone Native 1080x2400, 1920x1080, 1280x720, 1024x768, 800x600), and quick application launchers (Terminal, File Manager, Text Editor).
+  - Desktop control panel in Linxr with 1-tap start/stop, resolution picker (1280x720, 1600x720, 1920x1080, 1024x600), and quick application launchers (Terminal, File Manager, Text Editor).
   - QEMU SLIRP port mappings: `6080:6080` (noVNC web client) and `5900:5900` (RFB VNC server).
   - REST API management endpoints on guest port 7080: `/desktop/status`, `/desktop/start`, `/desktop/stop`, `/desktop/install`, and `/desktop/app`.
 

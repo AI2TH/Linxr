@@ -64,7 +64,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final total = _device?.totalRamMb ?? 4096;
     return max(512, total ~/ 4);
   }
-  int get _autoDiskGb => _maxDiskGb;
+  // "Auto" creates the disk at the base image size (VmManager.kt
+  // VM_DISK_SIZE_GB), not at the free storage size shown before.
+  int get _autoDiskGb => _device?.autoDiskGb ?? DeviceInfo.defaultAutoDiskGb;
+
+  // A set size is capped to free storage minus 2 GB, and never below the
+  // base image size (VmManager.availableOverlaySizeGb).
+  int _createdDiskGb(int pref) =>
+      max(_autoDiskGb, min(pref, (_device?.freeStorageGb ?? 32) - 2));
 
   // Effective displayed values (user setting or auto default)
   int get _effectiveVcpu   => _vcpu   ?? _autoVcpu;
@@ -437,8 +444,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   title: 'Disk Cap',
                   isAuto: _diskGb == null,
                   valueLabel: _diskGb == null
-                      ? 'Auto — $_autoDiskGb GB virtual disk (${_device?.freeStorageGb ?? 32} GB free on device)'
-                      : '$_effectiveDiskGb GB virtual disk (${_device?.freeStorageGb ?? 32} GB free on device)',
+                      ? 'Auto — $_autoDiskGb GB virtual disk (base image size; ${_device?.freeStorageGb ?? 32} GB free on device)'
+                      : '${_createdDiskGb(_effectiveDiskGb)} GB virtual disk (${_device?.freeStorageGb ?? 32} GB free on device)',
                   onClearAuto: () => _saveDisk(null, context),
                   child: _StepSlider(
                     value: _effectiveDiskGb.clamp(8, _maxDiskGb),

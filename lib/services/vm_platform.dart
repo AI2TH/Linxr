@@ -32,6 +32,7 @@ class VmPlatform {
         cores:         (raw['cores']         as num?)?.toInt() ?? 4,
         totalRamMb:    (raw['totalRamMb']    as num?)?.toInt() ?? 4096,
         freeStorageGb: (raw['freeStorageGb'] as num?)?.toInt() ?? 32,
+        autoDiskGb:    (raw['autoDiskGb']    as num?)?.toInt() ?? DeviceInfo.defaultAutoDiskGb,
       );
     } on PlatformException {
       return const DeviceInfo(cores: 4, totalRamMb: 4096, freeStorageGb: 32);
@@ -415,10 +416,20 @@ class DeviceInfo {
   final int cores;
   final int totalRamMb;
   final int freeStorageGb;
+
+  /// Virtual disk size the VM gets when the Disk Cap setting is "Auto"
+  /// (the base image size, VM_DISK_SIZE_GB in VmManager.kt).
+  final int autoDiskGb;
+
+  /// Same value as VM_DISK_SIZE_GB in VmManager.kt, for when the platform
+  /// call fails.
+  static const defaultAutoDiskGb = 4;
+
   const DeviceInfo({
     required this.cores,
     required this.totalRamMb,
     required this.freeStorageGb,
+    this.autoDiskGb = defaultAutoDiskGb,
   });
 }
 

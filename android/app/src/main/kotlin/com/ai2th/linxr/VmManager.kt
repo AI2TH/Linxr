@@ -799,7 +799,9 @@ class VmManager(private val context: Context) {
         return mapOf(
             "cores"        to cores,
             "totalRamMb"   to totalRamMb,
-            "freeStorageGb" to freeStorageGb
+            "freeStorageGb" to freeStorageGb,
+            // Size createUserImage() uses when Settings is on "Auto".
+            "autoDiskGb"   to VM_DISK_SIZE_GB.toInt()
         )
     }
 

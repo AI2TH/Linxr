@@ -22,9 +22,17 @@ grep -q "10.0.2.2" /etc/hosts 2>/dev/null || echo "10.0.2.2 android-host gateway
 # ---------------------------------------------------------------------------
 # Package mirror configuration (NEW-16)
 # ---------------------------------------------------------------------------
+# Use the Alpine branch the image was built from. Hard-coding v3.20 mixed
+# 3.20 packages into images built from a newer release (build_qcow2.sh
+# honours ALPINE_VERSION), which breaks apk dependency resolution.
+ALPINE_BRANCH="v$(cut -d. -f1,2 /etc/alpine-release 2>/dev/null)"
+case "$ALPINE_BRANCH" in
+    v[0-9]*.[0-9]*) ;;
+    *) ALPINE_BRANCH="v3.20" ;;
+esac
 cat > /etc/apk/repositories <<REPOEOF
-http://dl-cdn.alpinelinux.org/alpine/v3.20/main
-http://dl-cdn.alpinelinux.org/alpine/v3.20/community
+http://dl-cdn.alpinelinux.org/alpine/${ALPINE_BRANCH}/main
+http://dl-cdn.alpinelinux.org/alpine/${ALPINE_BRANCH}/community
 REPOEOF
 sed -i 's/\r$//' /etc/apk/repositories 2>/dev/null || true
 
@@ -237,7 +245,9 @@ nft 'add chain ip6 filter output { type filter hook output priority 0 ; policy a
 nft add rule ip6 filter output reject 2>/dev/null || true
 
 # --- Persist for subsequent boots ---
-cat >> /etc/sysctl.conf <<'SYSEOF'
+# Append once: this script runs on every boot and the root filesystem is
+# persistent, so an unconditional append grew sysctl.conf on each boot.
+grep -q '^# Linxr SLIRP network tuning' /etc/sysctl.conf 2>/dev/null || cat >> /etc/sysctl.conf <<'SYSEOF'
 # Linxr SLIRP network tuning
 net.ipv6.conf.all.disable_ipv6=1
 net.ipv6.conf.default.disable_ipv6=1

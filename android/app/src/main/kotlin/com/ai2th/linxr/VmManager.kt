@@ -268,7 +268,11 @@ class VmManager(private val context: Context) {
             Log.d(TAG, "Reusing existing user.qcow2 (state preserved)")
         }
 
-        // Copy bootstrap files and write token to the shared folder for guest VM access
+        // Copy bootstrap files to the shared folder for guest VM access.
+        // The API token is NOT written there: the shared folder is on external
+        // storage that other apps with storage access can read, and the token
+        // guards a root shell (/vm/exec). The guest reads it from fw_cfg or the
+        // kernel command line instead (see api_server.py _load_token).
         val sharedDir = resolveSharedDir()
         if (sharedDir != null && sharedDir.exists() && sharedDir.canWrite()) {
             val guestBootstrapDir = File(sharedDir, "bootstrap")
@@ -277,8 +281,9 @@ class VmManager(private val context: Context) {
                 File(bootstrapDir, "init_bootstrap.sh").copyTo(File(guestBootstrapDir, "init_bootstrap.sh"), overwrite = true)
                 File(bootstrapDir, "api_server.py").copyTo(File(guestBootstrapDir, "api_server.py"), overwrite = true)
                 File(bootstrapDir, "linxr-desktop.sh").copyTo(File(guestBootstrapDir, "linxr-desktop.sh"), overwrite = true)
-                File(guestBootstrapDir, "token").writeText(token)
-                Log.d(TAG, "Successfully prepared guest bootstrap files and token in shared folder: ${guestBootstrapDir.absolutePath}")
+                // Remove the token file left by older versions.
+                File(guestBootstrapDir, "token").delete()
+                Log.d(TAG, "Successfully prepared guest bootstrap files in shared folder: ${guestBootstrapDir.absolutePath}")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to prepare guest bootstrap files: ${e.message}", e)
             }
@@ -291,7 +296,8 @@ class VmManager(private val context: Context) {
             vcpu      = vcpu,
             ramMb     = ramMb
         )
-        Log.d(TAG, "QEMU command: ${cmd.joinToString(" ")}")
+        // Redact the API token: logcat is readable via adb and bug reports.
+        Log.d(TAG, "QEMU command: ${cmd.joinToString(" ").replace(token, "<redacted>")}")
 
         vmProcess = ProcessBuilder(cmd).apply {
             environment()["LD_LIBRARY_PATH"] = nativeLibDir.absolutePath
@@ -468,7 +474,7 @@ class VmManager(private val context: Context) {
 
         cmd += listOf("-smp", vcpu.toString())
         cmd += listOf("-m", ramMb.toString())
-        cmd += listOf("-drive", "if=none,file=$userImage,id=user,format=qcow2,cache=unsafe,file.locking=off")
+        cmd += listOf("-drive", "if=none,file=${qemuOptEscape(userImage)},id=user,format=qcow2,cache=unsafe,file.locking=off")
 
         if (isArm) {
             cmd += listOf("-device", "virtio-blk-device,drive=user")
@@ -526,7 +532,7 @@ class VmManager(private val context: Context) {
         val sharedDir = resolveSharedDir()
         if (sharedDir != null && sharedDir.exists() && sharedDir.canRead()) {
             cmd += listOf(
-                "-fsdev", "local,id=sdcard,path=${sharedDir.absolutePath},security_model=none",
+                "-fsdev", "local,id=sdcard,path=${qemuOptEscape(sharedDir.absolutePath)},security_model=none",
                 "-device", "virtio-9p-${if (isArm) "device" else "pci"},fsdev=sdcard,mount_tag=sdcard"
             )
             Log.d(TAG, "Sharing ${sharedDir.absolutePath} via 9p")
@@ -731,6 +737,11 @@ class VmManager(private val context: Context) {
         )
         return bin
     }
+
+    // QEMU option values are comma-separated; a literal comma is written ",,".
+    // Without this, a shared-folder path containing "," (chosen in Settings)
+    // would inject extra -fsdev / -drive options.
+    private fun qemuOptEscape(value: String): String = value.replace(",", ",,")
 
     private fun isArm64(): Boolean =
         Build.SUPPORTED_ABIS.any { it.startsWith("arm64") }

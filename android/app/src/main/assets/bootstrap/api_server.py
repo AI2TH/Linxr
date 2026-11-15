@@ -42,17 +42,7 @@ def _load_token() -> str:
     except OSError:
         pass
 
-    # 2. Try token file (written to bootstrap dir by asset preparation)
-    try:
-        with open(TOKEN_FILE_PATH, "r") as f:
-            token = f.read().strip()
-            if token:
-                logger.info("Loaded API token from %s", TOKEN_FILE_PATH)
-                return token
-    except OSError:
-        pass
-
-    # 3. Try kernel cmdline (/proc/cmdline: api_token=...)
+    # 2. Try kernel cmdline (/proc/cmdline: api_token=...)
     try:
         with open("/proc/cmdline", "r") as f:
             cmdline = f.read()
@@ -62,6 +52,17 @@ def _load_token() -> str:
                     if token:
                         logger.info("Loaded API token from /proc/cmdline")
                         return token
+    except OSError:
+        pass
+
+    # 3. Legacy token file. Current app versions no longer write it to the
+    #    shared folder (external storage other apps can read); older ones did.
+    try:
+        with open(TOKEN_FILE_PATH, "r") as f:
+            token = f.read().strip()
+            if token:
+                logger.info("Loaded API token from %s", TOKEN_FILE_PATH)
+                return token
     except OSError:
         pass
 

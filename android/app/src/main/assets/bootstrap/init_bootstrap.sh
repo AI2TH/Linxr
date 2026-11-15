@@ -8,6 +8,12 @@ echo "=== Alpine VM Bootstrap Starting ==="
 # Remove slow Go CLI plugins immediately to prevent docker CLI from hanging on TCG CPU
 rm -rf /usr/libexec/docker/cli-plugins 2>/dev/null || true
 
+# The API token comes from fw_cfg or the kernel command line. Older app
+# versions also copied it through the shared folder; drop that copy.
+if grep -q 'api_token=' /proc/cmdline 2>/dev/null; then
+    rm -f /bootstrap/token 2>/dev/null || true
+fi
+
 # ---------------------------------------------------------------------------
 # Network hardening & host configuration
 # ---------------------------------------------------------------------------

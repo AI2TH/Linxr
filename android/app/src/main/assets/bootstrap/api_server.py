@@ -225,72 +225,244 @@ def _is_port_listening(port_hex: str) -> bool:
     return False
 
 
-def _get_desktop_status() -> dict:
-    openbox_installed = os.path.isfile("/usr/bin/openbox") or os.path.isfile("/usr/local/bin/openbox")
-    xfce_installed = (
-        os.path.isfile("/usr/bin/startxfce4") or
-        os.path.isfile("/usr/bin/xfwm4") or
-        os.path.isfile("/usr/local/bin/xfwm4")
+# ── Virtual Desktop ──────────────────────────────────────────────────────────
+# linxr-desktop.sh owns the desktop processes and records their state in the
+# files below. /desktop/status reads those files directly, so the app's 5 s
+# status poll never spawns a shell under TCG. Keep the paths and the "running"
+# rule in sync with linxr-desktop.sh (status_json / desktop_healthy).
+DESKTOP_STATE_DIR = "/run/linxr-desktop"
+DESKTOP_LOG_DIR = "/var/log/linxr-desktop"
+DESKTOP_CONF = "/etc/linxr/desktop.conf"
+DESKTOP_X_SOCKET = "/tmp/.X11-unix/X1"
+DESKTOP_VNC_PORT_HEX = ":170C"  # 5900
+DESKTOP_WEB_PORT_HEX = ":17C0"  # 6080
+DESKTOP_WEB_URL = (
+    "http://127.0.0.1:6080/vnc.html?autoconnect=true&resize=scale&reconnect=true"
+    "&reconnect_delay=2000&show_dot=true&path=websockify"
+)
+DESKTOP_WMS = {"openbox": "openbox", "lightweight": "openbox", "xfce4": "xfce4", "xfce": "xfce4", "full": "xfce4"}
+DESKTOP_APPS = ("terminal", "files", "editor", "calculator", "calc")
+DESKTOP_LOGS = ("desktop", "install", "xvfb", "wm", "panel", "xfdesktop", "xfsettingsd", "dbus", "x11vnc", "websockify", "apps")
+# linxr-desktop gives up after 180 s; this only guards against a hung script.
+DESKTOP_START_TIMEOUT = 300
+# linxr-desktop exit codes -> HTTP status (anything else is a 500).
+DESKTOP_RC_HTTP = {2: 400, 3: 409, 4: 409, 75: 409}
+_desktop_start_lock = threading.Lock()
+
+
+def _read_text(path: str) -> str:
+    try:
+        with open(path, "r", errors="replace") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def _tail_lines(path: str, n: int) -> list:
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - 128 * 1024))
+            data = f.read().decode("utf-8", errors="replace")
+    except OSError:
+        return []
+    return data.splitlines()[-n:] if n > 0 else []
+
+
+def _pid_alive(pid_str: str) -> bool:
+    """True if the process exists and is not a zombie (os.kill(pid, 0) accepts zombies)."""
+    if not pid_str.isascii() or not pid_str.isdigit():
+        return False
+    try:
+        with open(f"/proc/{pid_str}/stat", "r") as f:
+            stat = f.read()
+    except OSError:
+        return False
+    fields = stat.rsplit(")", 1)[-1].split()
+    return bool(fields) and fields[0] != "Z"
+
+
+def _desktop_alive(name: str) -> bool:
+    return _pid_alive(_read_text(os.path.join(DESKTOP_STATE_DIR, name + ".pid")))
+
+
+def _has_bin(name: str) -> bool:
+    return os.path.isfile(f"/usr/bin/{name}") or os.path.isfile(f"/usr/local/bin/{name}")
+
+
+def _desktop_installed(wm: str) -> bool:
+    base = (
+        _has_bin("Xvfb") and _has_bin("x11vnc") and _has_bin("websockify") and
+        os.path.isfile("/usr/share/novnc/vnc.html")
     )
-    base_installed = (
-        (os.path.isfile("/usr/bin/Xvfb") or os.path.isfile("/usr/local/bin/Xvfb")) and
-        (os.path.isfile("/usr/bin/x11vnc") or os.path.isfile("/usr/local/bin/x11vnc")) and
-        (os.path.isfile("/usr/bin/websockify") or os.path.isfile("/usr/local/bin/websockify")) and
-        os.path.isdir("/usr/share/novnc")
-    )
+    if not base:
+        return False
+    if wm == "xfce4":
+        return _has_bin("xfwm4") and _has_bin("xfce4-panel")
+    return _has_bin("openbox")
 
-    res = "1280x720"
-    if os.path.isfile("/tmp/.linxr_desktop_res"):
-        try:
-            with open("/tmp/.linxr_desktop_res", "r") as f:
-                c = f.read().strip()
-                if c:
-                    res = c
-        except Exception:
-            pass
 
-    wm = "openbox"
-    if os.path.isfile("/tmp/.linxr_desktop_wm"):
-        try:
-            with open("/tmp/.linxr_desktop_wm", "r") as f:
-                c = f.read().strip()
-                if c:
-                    wm = c
-        except Exception:
-            pass
+def _valid_resolution(value) -> bool:
+    if not isinstance(value, str):
+        return False
+    w, sep, h = value.partition("x")
+    if not sep or not (w.isascii() and w.isdigit() and h.isascii() and h.isdigit()):
+        return False
+    if len(w) > 4 or len(h) > 4:
+        return False
+    return 320 <= int(w) <= 4096 and 240 <= int(h) <= 4096
 
-    installed = base_installed and (xfce_installed if wm in ("xfce4", "xfce", "full") else openbox_installed)
 
-    running = False
-    if os.path.exists("/tmp/.X11-unix/X1") or os.path.exists("/tmp/.X1-lock"):
-        if _is_port_listening(":17C0"):
-            running = True
-        elif os.path.isfile("/tmp/.linxr_desktop_pids"):
-            try:
-                with open("/tmp/.linxr_desktop_pids", "r") as f:
-                    for pid_str in f.read().split():
-                        if pid_str.isdigit():
-                            try:
-                                os.kill(int(pid_str), 0)
-                                running = True
-                                break
-                            except OSError:
-                                pass
-            except Exception:
-                pass
+def _desktop_conf() -> tuple:
+    res, wm = "1280x720", "openbox"
+    for line in _read_text(DESKTOP_CONF).splitlines():
+        key, _, value = line.partition("=")
+        if key == "RES" and _valid_resolution(value):
+            res = value
+        elif key == "WM" and value in DESKTOP_WMS:
+            wm = DESKTOP_WMS[value]
+    return res, wm
 
+
+def _desktop_install_info() -> dict:
+    state = _read_text(os.path.join(DESKTOP_STATE_DIR, "install.state")) or "idle"
+    error = _read_text(os.path.join(DESKTOP_STATE_DIR, "install.error"))
+    if state == "running" and not _desktop_alive("install"):
+        state = "failed"
+        error = error or "The installer stopped unexpectedly; see the install log"
+    progress, step = "", ""
+    lines = [l for l in _tail_lines(os.path.join(DESKTOP_LOG_DIR, "install.log"), 60) if l.strip()]
+    if lines:
+        step = lines[-1].strip()[:160]
+    for line in reversed(lines):
+        s = line.strip()
+        # apk prints "( 12/199) Installing foo (1.0-r0)"
+        if s.startswith("(") and ")" in s:
+            done, sep, total = s[1:s.index(")")].replace(" ", "").partition("/")
+            if sep and done.isdigit() and total.isdigit():
+                progress = f"{done}/{total}"
+                break
     return {
-        "installed": installed,
+        "install_state": state,
+        "install_mode": _read_text(os.path.join(DESKTOP_STATE_DIR, "install.mode")),
+        "install_progress": progress,
+        "install_step": step,
+        "install_error": error,
+    }
+
+
+def _get_desktop_status() -> dict:
+    res, wm = _desktop_conf()
+    xvfb = _desktop_alive("xvfb")
+    wm_up = _desktop_alive("wm")
+    vnc = _desktop_alive("x11vnc")
+    ws = _desktop_alive("websockify")
+    vnc_listening = _is_port_listening(DESKTOP_VNC_PORT_HEX)
+    web_listening = _is_port_listening(DESKTOP_WEB_PORT_HEX)
+    running = (
+        xvfb and os.path.exists(DESKTOP_X_SOCKET) and wm_up and
+        vnc and vnc_listening and ws and web_listening
+    )
+    supervised = _desktop_alive("monitor")
+    state = _read_text(os.path.join(DESKTOP_STATE_DIR, "phase")) or "stopped"
+    if running:
+        state = "degraded" if state == "degraded" else "running"
+    elif supervised:
+        # The supervisor is starting the desktop or restarting a component.
+        state = "starting" if state == "starting" else "degraded"
+    elif state != "failed":
+        state = "stopped"
+
+    status = {
+        "installed": _desktop_installed(wm),
         "running": running,
-        "openbox_installed": openbox_installed,
-        "xfce_installed": xfce_installed,
+        "state": state,
+        "supervised": supervised,
+        "openbox_installed": _desktop_installed("openbox"),
+        "xfce_installed": _desktop_installed("xfce4"),
+        "xvfb": xvfb,
+        "window_manager": wm_up,
+        "x11vnc": vnc,
+        "websockify": ws,
+        "vnc_listening": vnc_listening,
+        "web_listening": web_listening,
         "display": ":1",
         "resolution": res,
         "wm": wm,
         "web_port": 6080,
         "vnc_port": 5900,
-        "web_url": "http://localhost:6080/vnc.html?autoconnect=true&resize=scale&show_dot=true&reconnect=true&path=websockify",
+        "web_url": DESKTOP_WEB_URL,
+        "error": "" if state == "running" else _read_text(os.path.join(DESKTOP_STATE_DIR, "error")),
+        "failed_component": _read_text(os.path.join(DESKTOP_STATE_DIR, "failed_component")),
+        "stage": _read_text(os.path.join(DESKTOP_STATE_DIR, "stage")),
     }
+    status.update(_desktop_install_info())
+    return status
+
+
+def _desktop_log_text(name: str, lines: int) -> str:
+    if name != "all":
+        return "\n".join(_tail_lines(os.path.join(DESKTOP_LOG_DIR, name + ".log"), lines))
+    st = _get_desktop_status()
+    out = [
+        f"state={st['state']} running={st['running']} wm={st['wm']} resolution={st['resolution']} "
+        f"xvfb={st['xvfb']} window_manager={st['window_manager']} x11vnc={st['x11vnc']} "
+        f"(port 5900 listening={st['vnc_listening']}) websockify={st['websockify']} "
+        f"(port 6080 listening={st['web_listening']}) install={st['install_state']}",
+    ]
+    if st["error"]:
+        out.append(f"error: {st['error']}")
+    if st["install_error"]:
+        out.append(f"install error: {st['install_error']}")
+    for log_name in DESKTOP_LOGS:
+        tail = _tail_lines(os.path.join(DESKTOP_LOG_DIR, log_name + ".log"), lines if log_name in ("desktop", "install") else 40)
+        if any(l.strip() for l in tail):
+            out.append("")
+            out.append(f"===== {log_name}.log =====")
+            out.extend(tail)
+    return "\n".join(out)
+
+
+def _run_desktop_cmd(args: list, timeout: int) -> tuple:
+    """Run linxr-desktop. Returns (exit code, dict from its last JSON line, stderr)."""
+    res = subprocess.run(
+        [_resolve_desktop_bin()] + args,
+        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout,
+    )
+    result = {}
+    for line in reversed(res.stdout.splitlines()):
+        line = line.strip()
+        if line.startswith("{"):
+            try:
+                parsed = json.loads(line)
+                if isinstance(parsed, dict):
+                    result = parsed
+            except ValueError:
+                pass
+            break
+    return res.returncode, result, res.stderr or ""
+
+
+def _wait_for_desktop_install(proc, seconds: float) -> None:
+    """Wait until the install script has recorded its pid (it does so first
+    thing) or has exited, so the reply already describes this install."""
+    import time  # local: keeps this change independent of the module imports
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline and proc.poll() is None:
+        if _read_text(os.path.join(DESKTOP_STATE_DIR, "install.pid")) == str(proc.pid):
+            return
+        time.sleep(0.2)
+
+
+def _desktop_error_detail(result: dict, stderr: str, fallback: str) -> str:
+    detail = str(result.get("error") or "").strip()
+    if not detail:
+        lines = [l.strip() for l in stderr.splitlines() if l.strip()]
+        detail = lines[-1] if lines else fallback
+    if detail.startswith("Error: "):
+        detail = detail[len("Error: "):]
+    return detail[:800]
 
 
 def _resolve_desktop_bin() -> str:
@@ -653,6 +825,19 @@ class VmApiHandler(BaseHTTPRequestHandler):
                 self._send_error(500, str(e))
             return
 
+        if path == "/desktop/log":
+            params = parse_qs(parsed.query)
+            name = params.get("name", ["all"])[0]
+            try:
+                lines = max(1, min(int(params.get("lines", ["200"])[0]), 2000))
+            except ValueError:
+                lines = 200
+            if name != "all" and name not in DESKTOP_LOGS:
+                self._send_error(400, "Unknown log name")
+                return
+            self._send_text(200, _desktop_log_text(name, lines) or "(the log is empty)")
+            return
+
         self._send_error(404, "Not found")
 
     def do_POST(self):
@@ -666,109 +851,105 @@ class VmApiHandler(BaseHTTPRequestHandler):
 
         # ── Virtual Desktop (GUI) ────────────────────────────────────────────
         if path == "/desktop/start":
-            desktop_bin = _resolve_desktop_bin()
             resolution = data.get("resolution", "1280x720")
-            wm = data.get("wm", "openbox")
+            wm = DESKTOP_WMS.get(data.get("wm", "openbox"))
+            if not _valid_resolution(resolution):
+                self._send_error(400, "Invalid resolution: use WIDTHxHEIGHT, for example 1280x720")
+                return
+            if wm is None:
+                self._send_error(400, "Unknown desktop environment: use openbox or xfce4")
+                return
+            if not _desktop_start_lock.acquire(blocking=False):
+                self._send_error(409, "Another desktop start is already in progress")
+                return
             try:
-                res = subprocess.run([desktop_bin, "start", resolution, wm], capture_output=True, text=True, timeout=300)
-                out = res.stdout.strip()
-                last_brace = out.rfind("{")
-                status_dict = {}
-                if last_brace != -1:
-                    try:
-                        status_dict = json.loads(out[last_brace:])
-                    except Exception:
-                        pass
-                if not status_dict:
-                    status_dict = _get_desktop_status()
-                if res.returncode != 0 or not status_dict.get("running", False):
-                    err_detail = res.stderr.strip() or status_dict.get("error", "") or out
-                    self._send_error(500, f"Virtual Desktop failed to start: {err_detail[:400]}")
-                    return
-                self._send_json(200, status_dict)
+                # Blocks until every component is up or one has failed (the
+                # script waits up to 180 s), so a 200 means the desktop works.
+                rc, result, err = _run_desktop_cmd(["start", resolution, wm], DESKTOP_START_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                try:
+                    _run_desktop_cmd(["stop"], 60)
+                except Exception:
+                    pass
+                self._send_error(504, f"The desktop did not start within {DESKTOP_START_TIMEOUT} s. See the desktop log.")
+                return
             except Exception as e:
                 self._send_error(500, f"Desktop start failed: {e}")
+                return
+            finally:
+                _desktop_start_lock.release()
+            status = _get_desktop_status()
+            if rc == 0 and status.get("running"):
+                self._send_json(200, status)
+                return
+            detail = _desktop_error_detail(result, err, f"The desktop did not start (exit {rc}). See the desktop log.")
+            status["error"] = detail
+            status["detail"] = detail
+            self._send_json(DESKTOP_RC_HTTP.get(rc, 500), status)
             return
 
         if path == "/desktop/stop":
-            desktop_bin = _resolve_desktop_bin()
             try:
-                # Direct in-process PID kill for sub-second response
-                if os.path.isfile("/tmp/.linxr_desktop_pids"):
-                    try:
-                        with open("/tmp/.linxr_desktop_pids", "r") as f:
-                            for p in f.read().split():
-                                if p.isdigit():
-                                    try:
-                                        os.kill(int(p), 9)
-                                    except OSError:
-                                        pass
-                        os.remove("/tmp/.linxr_desktop_pids")
-                    except Exception:
-                        pass
-                if os.path.isfile("/tmp/.linxr_websockify.pid"):
-                    try:
-                        with open("/tmp/.linxr_websockify.pid", "r") as f:
-                            p = f.read().strip()
-                            if p.isdigit():
-                                try:
-                                    os.kill(int(p), 9)
-                                except OSError:
-                                    pass
-                        os.remove("/tmp/.linxr_websockify.pid")
-                    except Exception:
-                        pass
-                res = subprocess.run([desktop_bin, "stop"], capture_output=True, text=True, timeout=30)
-                out = res.stdout.strip()
-                last_brace = out.rfind("{")
-                status_dict = {}
-                if last_brace != -1:
-                    try:
-                        status_dict = json.loads(out[last_brace:])
-                    except Exception:
-                        pass
-                if not status_dict:
-                    status_dict = _get_desktop_status()
-                self._send_json(200, status_dict)
+                rc, result, err = _run_desktop_cmd(["stop"], 60)
             except Exception as e:
                 self._send_error(500, f"Desktop stop failed: {e}")
+                return
+            status = _get_desktop_status()
+            if rc != 0 or status.get("running"):
+                status["detail"] = _desktop_error_detail(result, err, "The desktop did not stop. See the desktop log.")
+                self._send_json(500, status)
+                return
+            self._send_json(200, status)
             return
 
         if path == "/desktop/install":
-            desktop_bin = _resolve_desktop_bin()
-            mode = data.get("mode", "lightweight")
+            # Installing XFCE under TCG can take many minutes, so the install
+            # runs in the background; the app polls /desktop/status for
+            # install_state / install_progress / install_error.
+            mode = DESKTOP_WMS.get(data.get("mode", "openbox"))
+            if mode is None:
+                self._send_error(400, "Unknown desktop environment: use openbox or xfce4")
+                return
+            if _desktop_install_info()["install_state"] == "running":
+                self._send_json(202, _get_desktop_status())
+                return
             try:
-                res = subprocess.run([desktop_bin, "install", mode], capture_output=True, text=True, timeout=600)
-                out = res.stdout.strip()
-                last_brace = out.rfind("{")
-                status_dict = {}
-                if last_brace != -1:
-                    try:
-                        status_dict = json.loads(out[last_brace:])
-                    except Exception:
-                        pass
-                if res.returncode != 0:
-                    err_detail = res.stderr.strip() or out
-                    self._send_error(500, f"Virtual Desktop install failed: {err_detail[:400]}")
-                    return
-                self._send_json(200, status_dict if status_dict else {"status": "ok", "message": out})
+                proc = subprocess.Popen(
+                    [_resolve_desktop_bin(), "install", mode],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
             except Exception as e:
-                self._send_error(500, f"Desktop install failed: {e}")
+                self._send_error(500, f"Desktop install failed to start: {e}")
+                return
+            threading.Thread(target=proc.wait, daemon=True).start()
+            _wait_for_desktop_install(proc, 5)
+            status = _get_desktop_status()
+            rc = proc.poll()
+            if rc is not None and rc != 0:
+                status["detail"] = status.get("install_error") or f"Desktop install failed (exit {rc}). See the install log."
+                self._send_json(DESKTOP_RC_HTTP.get(rc, 500), status)
+                return
+            self._send_json(202 if rc is None else 200, status)
             return
 
         if path == "/desktop/app":
-            desktop_bin = _resolve_desktop_bin()
             app = data.get("app", "terminal")
+            if app not in DESKTOP_APPS:
+                self._send_error(400, "Unknown app: use terminal, files, editor or calculator")
+                return
             try:
-                res = subprocess.run([desktop_bin, "app", app], capture_output=True, text=True, timeout=10)
-                out = res.stdout.strip()
-                last_brace = out.rfind("{")
-                if last_brace != -1:
-                    self._send_json(200, json.loads(out[last_brace:]))
-                else:
-                    self._send_json(200, {"status": "ok", "app": app})
+                rc, result, err = _run_desktop_cmd(["app", app], 20)
             except Exception as e:
                 self._send_error(500, f"Desktop app launch failed: {e}")
+                return
+            if rc != 0:
+                self._send_error(
+                    DESKTOP_RC_HTTP.get(rc, 500),
+                    _desktop_error_detail(result, err, f"Could not open {app} (exit {rc})"),
+                )
+                return
+            self._send_json(200, result or {"status": "ok", "app": app})
             return
 
         if path == "/engine":

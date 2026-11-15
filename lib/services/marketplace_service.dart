@@ -462,7 +462,7 @@ class MarketplaceService {
           final body = await response.transform(utf8.decoder).join();
           final list = jsonDecode(body) as List<dynamic>;
           final items = list
-              .map((e) => MarketplaceItem.fromJson(Map<String, dynamic>.from(e as Map)))
+              .map((e) => _remoteItemFromJson(e as Map))
               .toList();
 
           await prefs.setString(_kRemoteRecipesCacheKey, body);
@@ -478,14 +478,18 @@ class MarketplaceService {
     if (cachedJson != null && cachedJson.isNotEmpty) {
       try {
         final list = jsonDecode(cachedJson) as List<dynamic>;
-        return list
-            .map((e) => MarketplaceItem.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList();
+        return list.map((e) => _remoteItemFromJson(e as Map)).toList();
       } catch (_) {}
     }
 
     return [];
   }
+
+  // MarketplaceItem.fromJson defaults isCustom to true (right for imported
+  // JSON), but community recipes are not the user's own: without this they
+  // were counted under "My Custom" and showed a delete button that did nothing.
+  static MarketplaceItem _remoteItemFromJson(Map e) =>
+      MarketplaceItem.fromJson(Map<String, dynamic>.from(e)).copyWith(isCustom: false);
 
   static Future<DateTime?> getLastSyncTime() async {
     final prefs = await SharedPreferences.getInstance();

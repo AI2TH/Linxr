@@ -107,9 +107,27 @@ case "$ALPINE_BRANCH" in
     v[0-9]*.[0-9]*) ;;
     *) ALPINE_BRANCH="v3.20" ;;
 esac
+# Mirror chosen in Settings -> Package mirror, passed through QEMU fw_cfg
+# (opt/apk_mirror). Only https URLs made of plain URL characters are used;
+# anything else falls back to the Alpine CDN. apk verifies package
+# signatures either way, but https keeps the package list private and
+# stops a network attacker from serving stale indexes.
+APK_MIRROR_DEFAULT="https://dl-cdn.alpinelinux.org/alpine"
+APK_MIRROR="$(fw_cfg_read apk_mirror)"
+case "$APK_MIRROR" in
+    https://?*)
+        case "$APK_MIRROR" in
+            *[!A-Za-z0-9.:/_~-]*) APK_MIRROR="" ;;
+        esac
+        ;;
+    *) APK_MIRROR="" ;;
+esac
+APK_MIRROR="${APK_MIRROR%/}"
+[ -n "$APK_MIRROR" ] || APK_MIRROR="$APK_MIRROR_DEFAULT"
+echo "apk mirror: $APK_MIRROR (${ALPINE_BRANCH})"
 cat > /etc/apk/repositories <<REPOEOF
-http://dl-cdn.alpinelinux.org/alpine/${ALPINE_BRANCH}/main
-http://dl-cdn.alpinelinux.org/alpine/${ALPINE_BRANCH}/community
+${APK_MIRROR}/${ALPINE_BRANCH}/main
+${APK_MIRROR}/${ALPINE_BRANCH}/community
 REPOEOF
 sed -i 's/\r$//' /etc/apk/repositories 2>/dev/null || true
 

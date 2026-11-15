@@ -71,10 +71,11 @@ apk --root "${ROOTFS}" --initdb --no-cache add \
 # ---------------------------------------------------------------------------
 # Package mirror configuration (NEW-16) — baked into base.qcow2
 # ---------------------------------------------------------------------------
-# Use Aliyun CDN for faster apk downloads over SLIRP. Fallback to official CDN.
-# Reachability test is done at image-build time; if Aliyun is unreachable,
-# the official CDN is used instead.
-LINXR_APK_MIRROR="${LINXR_APK_MIRROR:-mirrors.aliyun.com/alpine/${ALPINE_BRANCH}}"
+# Default to the official Alpine CDN; set LINXR_APK_MIRROR (host/path, no
+# scheme) to bake another mirror. Reachability is tested at image-build time
+# and the CDN is used if the mirror is unreachable. At runtime
+# init_bootstrap.sh rewrites the list from Settings > Package mirror.
+LINXR_APK_MIRROR="${LINXR_APK_MIRROR:-dl-cdn.alpinelinux.org/alpine/${ALPINE_BRANCH}}"
 LINXR_APK_FALLBACK="dl-cdn.alpinelinux.org/alpine/${ALPINE_BRANCH}"
 if wget -q -T 3 -O /dev/null "https://${LINXR_APK_MIRROR}/main/aarch64/APKINDEX.tar.gz" 2>/dev/null \
 || wget -q -T 3 -O /dev/null "https://${LINXR_APK_MIRROR}/main/x86_64/APKINDEX.tar.gz" 2>/dev/null; then

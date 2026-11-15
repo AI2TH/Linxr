@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import '../constants.dart';
 import '../services/marketplace_service.dart';
 import '../services/vm_platform.dart';
 import '../theme.dart';
@@ -25,6 +26,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   static const _kRam       = 'ram_mb';
   static const _kDisk      = 'disk_gb';
   static const _kSdcardPath = 'sdcard_path';
+  static const _kApkMirror  = 'apk_mirror';
 
   // Default shared folder when the user has never picked one.
   // Matches the value VmManager.kt falls back to when no pref is set.
@@ -42,6 +44,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _loadError;
   String _version = '';
   bool _requireSignedCatalog = false;
+  String _apkMirror = ApkMirrors.defaultUrl;
 
   // ── Derived ranges from device info ────────────────────────────────────────
 
@@ -123,6 +126,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _sdcardPath = prefs.getString(_kSdcardPath) ?? _defaultSdcardPath;
         _requireSignedCatalog =
             prefs.getBool(MarketplaceService.requireSignedPrefKey) ?? false;
+        _apkMirror = prefs.getString(_kApkMirror) ?? ApkMirrors.defaultUrl;
         // Seed the custom-path field only when the current path doesn't match
         // one of the quick options, so the field starts empty for quick picks.
         if (!_isQuickPath(_sdcardPath)) {
@@ -186,6 +190,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final prefs = await SharedPreferences.getInstance();
     setState(() => _requireSignedCatalog = value);
     await prefs.setBool(MarketplaceService.requireSignedPrefKey, value);
+  }
+
+  Future<void> _saveApkMirror(String url) async {
+    if (url == _apkMirror) return;
+    final prefs = await SharedPreferences.getInstance();
+    setState(() => _apkMirror = url);
+    await prefs.setString(_kApkMirror, url);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Package mirror will apply on next VM start'),
+          duration: Duration(seconds: 4),
+        ),
+      );
+    }
   }
 
   // ── Shared folder persistence ──────────────────────────────────────────────
@@ -548,6 +567,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         style: TextStyle(color: Colors.white38, fontSize: 11),
                       ),
                     ],
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+                _SectionHeader('Package mirror (apk)'),
+                const SizedBox(height: 8),
+                Card(
+                  color: AppColors.surface,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final (label, url) in ApkMirrors.options)
+                              ChoiceChip(
+                                label: Text(label),
+                                selected: _apkMirror == url,
+                                onSelected: (_) => _saveApkMirror(url),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        SelectableText(
+                          _apkMirror,
+                          style: const TextStyle(
+                              color: Colors.white54, fontSize: 11, fontFamily: 'monospace'),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Where apk downloads Alpine packages (always over https). '
+                          'Applies on the next VM start.',
+                          style: TextStyle(color: Colors.white38, fontSize: 11),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
 

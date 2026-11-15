@@ -23,6 +23,10 @@ class VmManager(private val context: Context) {
         // so the user.qcow2 overlay is the same size as the pre-expanded base filesystem.
         private const val VM_DISK_SIZE_GB = 4L
 
+        // Alpine package mirror (Settings > Package mirror); see apkMirror().
+        private const val DEFAULT_APK_MIRROR = "https://dl-cdn.alpinelinux.org/alpine"
+        private val APK_MIRROR_RE = Regex("^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?$")
+
         private const val SECRET_ROOT_PASSWORD = "root_password"
         private const val SECRET_SSH_PRIVATE_KEY = "ssh_private_key"
 
@@ -242,6 +246,16 @@ class VmManager(private val context: Context) {
             })
         }
         appPrefs.edit().putString("custom_port_forwards", arr.toString()).apply()
+    }
+
+    /**
+     * Base URL of the Alpine mirror the guest writes into
+     * /etc/apk/repositories (init_bootstrap.sh). Only https URLs of plain URL
+     * characters are passed on; anything else falls back to the Alpine CDN.
+     */
+    fun apkMirror(): String {
+        val pref = getFlutterString("flutter.apk_mirror", "").trim().trimEnd('/')
+        return if (APK_MIRROR_RE.matches(pref)) pref else DEFAULT_APK_MIRROR
     }
 
     fun isLanAccessEnabled(): Boolean = getFlutterBool("flutter.lan_access", false)
@@ -623,6 +637,7 @@ class VmManager(private val context: Context) {
         // Not added to the kernel command line: /proc/cmdline is world-readable.
         cmd += listOf("-fw_cfg", "name=opt/root_password,string=$rootPassword")
         cmd += listOf("-fw_cfg", "name=opt/ssh_key_only,string=${if (sshKeyOnly()) "1" else "0"}")
+        cmd += listOf("-fw_cfg", "name=opt/apk_mirror,string=${qemuOptEscape(apkMirror())}")
 
         val kernel = File(vmDir, "vmlinuz-virt")
         val initrd  = File(vmDir, "initramfs-virt")

@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Recipe export:** the recipe details sheet in the Marketplace has an export button that copies the recipe as JSON to the clipboard, ready to paste into Add Recipe > Import JSON ([#28](https://github.com/AI2TH/Linxr/issues/28)).
 - **`/etc/linxr-release`:** the rootfs build records `ALPINE_VERSION`, `KERNEL_VERSION` and `BUILD_DATE` in the image (part of [#33](https://github.com/AI2TH/Linxr/issues/33)).
+- **About:** Settings shows the app version and the Alpine version, kernel version and image build date inside the VM (`GET /system/release`, from `/etc/linxr-release`) ([#33](https://github.com/AI2TH/Linxr/issues/33)).
+- **Package mirror picker:** Settings > Package mirror chooses the Alpine mirror apk uses (Alpine CDN by default, kernel.org, Aliyun or Tsinghua TUNA), passed to the VM through QEMU fw_cfg. The image build also defaults to the Alpine CDN instead of `mirrors.aliyun.com`.
+- **Recipe port forwards:** after a recipe deploys, the Marketplace offers to add its declared ports as port forwards, skipping ports already forwarded and reporting collisions. UDP ports are not supported; the dialog says so (for example SIP on 5060) ([#31](https://github.com/AI2TH/Linxr/issues/31)).
+- **CI:** a GitHub Actions workflow runs `flutter analyze`, `flutter test`, shellcheck on `scripts/` and the VM bootstrap, pyflakes on the VM API server, and a Kotlin compile.
+- **Disk resize test:** `VmDiskResizeTest` (instrumentation) boots with a 16 GB disk and checks that `df /` reports more than 15 GB ([#27](https://github.com/AI2TH/Linxr/issues/27)).
 
 ### Changed
 - **Docker daemon only in Docker mode:** the custom `/sbin/init` no longer starts `dockerd` on every boot; the bootstrap starts it only when the Docker engine is selected. `buildah` is no longer installed (`podman build` covers image builds) ([#29](https://github.com/AI2TH/Linxr/issues/29)).
@@ -24,11 +29,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **VM lifecycle:** the wakelock and foreground service are released when the VM fails to start or QEMU exits; the app no longer blocks the UI for up to 10 s when the activity is destroyed; the service stops cleanly at Android 15's 6-hour `dataSync` limit instead of crashing; the UI reports an error instead of "booting" forever when QEMU dies during boot.
 - **Terminal:** failed SSH attempts no longer leak connections; the first reconnect waits 500 ms instead of 0; closing a tab left of the active tab keeps the selection.
 - **Marketplace:** community recipes are never treated as custom recipes.
+- **Settings, disk:** "Auto" shows the size the app really creates (the 4 GB base image size) instead of free storage, and a set size shows the free-storage cap.
+- **k3s after reboot:** the bootstrap starts `k3s server` again when k3s is installed, since the custom `/sbin/init` never runs OpenRC.
+- **Foreground service:** at Android 15's 6-hour `dataSync` limit the app now also notifies the user and starts the service again when the app is opened; a `START_STICKY` restart without a running VM stops the service instead of showing "VM is running". The service type stays `dataSync` (see the comment in `AndroidManifest.xml`).
 
 ### Security
 - The VM API token is no longer written to the shared folder on external storage or logged in the QEMU command line.
 - The VM API validates container names and image references (no option injection into the CLI, no header injection into `docker.sock` requests), compares the token in constant time, requires the token for `/engine` and `/desktop/status`, and resolves shared-folder paths safely.
 - Commas in the shared-folder path are escaped in QEMU options.
+- **Per-install SSH credentials:** the root password is generated per install, kept with an Android Keystore key and passed to the VM through QEMU fw_cfg; the Dropbear ed25519 host key is generated on first boot, and the image no longer ships shared host keys. Settings > Security > SSH access shows the password (with copy) and can switch the VM to key-only login with an app key. Older images get the same through the bootstrap.
+- **Community recipes:** a remote recipe can no longer replace a built-in recipe with the same id, and remote recipes are labelled "Community". `recipes.json` is checked against a detached Ed25519 signature (`recipes.json.sig`); a bad signature is rejected, and an unsigned catalog loads with a warning unless "Require signed community recipes" is on. Script recipes show their full script before the first run. Built-in recipes and the bootstrap no longer switch apk to http.
 
 ## [3.4.0+30] — 2026-11-06
 

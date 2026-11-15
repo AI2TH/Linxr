@@ -231,6 +231,15 @@ cp -r /lib/modules/$KVER/. "${ROOTFS}/lib/modules/$KVER/"
 depmod -b "${ROOTFS}" "$KVER"
 echo "--- Kernel modules ready (KVER=$KVER) ---"
 
+# Record what this image ships so a running VM (and bug reports) can tell
+# which Alpine and kernel versions an APK contains (#33).
+cat > "${ROOTFS}/etc/linxr-release" <<RELEOF
+ALPINE_VERSION=$(cat "${ROOTFS}/etc/alpine-release" 2>/dev/null || cat /etc/alpine-release)
+KERNEL_VERSION=${KVER}
+BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+RELEOF
+cat "${ROOTFS}/etc/linxr-release"
+
 # Runs in sysinit after mdev so /dev is populated.
 # Docker networking modules are intentionally NOT loaded here — see start().
 cat > "${ROOTFS}/etc/init.d/cgroups" << 'EOF'

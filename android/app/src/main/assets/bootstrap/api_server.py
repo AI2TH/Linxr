@@ -18,7 +18,6 @@ import re
 import socket
 import shutil
 import subprocess
-import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -201,7 +200,7 @@ def _run_docker(args, timeout=1800):
     try:
         result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
         return result.returncode, result.stdout or "", result.stderr or ""
-    except subprocess.TimeoutExpired as e:
+    except subprocess.TimeoutExpired:
         return 124, "", f"timed out after {timeout}s"
     except Exception as e:
         return -1, "", str(e)

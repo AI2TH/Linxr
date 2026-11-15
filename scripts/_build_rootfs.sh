@@ -221,12 +221,15 @@ echo 'root:100000:65536' >> "${ROOTFS}/etc/subgid"
 echo "--- Installing linux-virt kernel modules into rootfs ---"
 apk add --no-cache linux-virt
 
-KVER=$(ls /lib/modules/ | grep '\-virt' | head -1)
+KVER=""
+for d in /lib/modules/*-virt; do
+    [ -d "$d" ] && { KVER="${d##*/}"; break; }
+done
 echo "Kernel version: $KVER"
 
 # Copy all kernel modules to guest rootfs
 mkdir -p "${ROOTFS}/lib/modules/$KVER"
-cp -r /lib/modules/$KVER/. "${ROOTFS}/lib/modules/$KVER/"
+cp -r "/lib/modules/$KVER/." "${ROOTFS}/lib/modules/$KVER/"
 
 # Build module dependency database inside rootfs
 depmod -b "${ROOTFS}" "$KVER"

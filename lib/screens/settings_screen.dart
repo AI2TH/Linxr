@@ -467,6 +467,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ? 'Auto — $_autoDiskGb GB virtual disk (base image size; ${_device?.freeStorageGb ?? 32} GB free on device)'
                       : '${_createdDiskGb(_effectiveDiskGb)} GB virtual disk (${_device?.freeStorageGb ?? 32} GB free on device)',
                   onClearAuto: () => _saveDisk(null, context),
+                  note: (_diskGb != null && _createdDiskGb(_diskGb!) < _diskGb!)
+                      ? 'Capped to ${_createdDiskGb(_diskGb!)} GB: free storage minus 2 GB'
+                      : null,
                   child: _StepSlider(
                     value: _effectiveDiskGb.clamp(8, _maxDiskGb),
                     min: 8,

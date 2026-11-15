@@ -49,8 +49,13 @@ class MarketplaceItem {
     this.isCommunity = false,
   });
 
+  // Recipes (including imported and community ones) carry their icon as a
+  // code point, so the IconData cannot be const; builds use
+  // --no-tree-shake-icons.
   IconData get iconData => IconData(
+        // ignore: non_const_argument_for_const_parameter
         iconCodePoint,
+        // ignore: non_const_argument_for_const_parameter
         fontFamily: iconFontFamily ?? 'MaterialIcons',
       );
 

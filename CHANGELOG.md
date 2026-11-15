@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Host ports 2222, 7081, 6080 and 5900 can no longer be taken by a custom port forward, which silently broke SSH, the VM API or the desktop.
 
 ### Fixed
+- **Home screen Start Desktop** always started 1280×720 Openbox, even when only XFCE was set up (the old launcher then began installing Openbox without saying so). It now uses the last session's settings and shows the reason when the start fails.
 - **Calculator** quick-launch button did nothing (the app sent `calc`, the guest expected `calculator`, and no calculator was installed).
 - **Desktop install** used the `v3.20` repositories on 3.24 images when the bootstrap had written them, which breaks dependency resolution; the installer now points apk at the image's own branch.
 

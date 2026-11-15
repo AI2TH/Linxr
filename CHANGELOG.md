@@ -5,6 +5,31 @@ All notable changes to Linxr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Recipe export:** the recipe details sheet in the Marketplace has an export button that copies the recipe as JSON to the clipboard, ready to paste into Add Recipe > Import JSON ([#28](https://github.com/AI2TH/Linxr/issues/28)).
+- **`/etc/linxr-release`:** the rootfs build records `ALPINE_VERSION`, `KERNEL_VERSION` and `BUILD_DATE` in the image (part of [#33](https://github.com/AI2TH/Linxr/issues/33)).
+
+### Changed
+- **Docker daemon only in Docker mode:** the custom `/sbin/init` no longer starts `dockerd` on every boot; the bootstrap starts it only when the Docker engine is selected. `buildah` is no longer installed (`podman build` covers image builds) ([#29](https://github.com/AI2TH/Linxr/issues/29)).
+- **Zyvr recipes:** Asterisk's HTTP/ARI port 8088 is mapped to host port 8089, because host 8088 is Linxr's default forward to guest port 80 ([#31](https://github.com/AI2TH/Linxr/issues/31)).
+
+### Fixed
+- **Disk resize:** a larger disk chosen in Settings is now usable. The bootstrap compares the block device size with the ext4 size on every boot and grows the filesystem in the background; the image no longer ships `/etc/.disk_expanded` and the unused `diskexpand` OpenRC service is gone. The overlay size is capped to free storage ([#27](https://github.com/AI2TH/Linxr/issues/27)).
+- **k3s TLS tuning:** `GODEBUG=tlsmlkem=0` now reaches the k3s server through `/etc/rancher/k3s/k3s.env`, not only login shells. The 3.2.0 note below about "RSA 2048 cluster certificates" was wrong: only the kube-apiserver cipher suites are restricted and k3s keeps its ECDSA certificates ([#30](https://github.com/AI2TH/Linxr/issues/30)).
+- **FastTrack container actions:** pull, logs, inspect, exec, update, export, import, save and load use `podman` in FastTrack mode instead of the stopped Docker daemon.
+- **VM API server:** fixed a crash (`time` not imported) when `docker run` timed out, and `nft` rules that never ran because of `shell=True` with a list.
+- **apk repositories:** the bootstrap uses the Alpine branch of the image instead of always `v3.20`, and no longer appends to `/etc/sysctl.conf` on every boot.
+- **VM lifecycle:** the wakelock and foreground service are released when the VM fails to start or QEMU exits; the app no longer blocks the UI for up to 10 s when the activity is destroyed; the service stops cleanly at Android 15's 6-hour `dataSync` limit instead of crashing; the UI reports an error instead of "booting" forever when QEMU dies during boot.
+- **Terminal:** failed SSH attempts no longer leak connections; the first reconnect waits 500 ms instead of 0; closing a tab left of the active tab keeps the selection.
+- **Marketplace:** community recipes are never treated as custom recipes.
+
+### Security
+- The VM API token is no longer written to the shared folder on external storage or logged in the QEMU command line.
+- The VM API validates container names and image references (no option injection into the CLI, no header injection into `docker.sock` requests), compares the token in constant time, requires the token for `/engine` and `/desktop/status`, and resolves shared-folder paths safely.
+- Commas in the shared-folder path are escaped in QEMU options.
+
 ## [3.4.0+30] — 2026-11-06
 
 ### Added
@@ -60,7 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Removed the periodic CR byte (`\r`) keep-alive probe in `terminal_screen.dart` that was spontaneously executing unfinished shell commands and breaking terminal editors (`nano`, `vi`).
   - Added a dedicated, highlighted **Enter** key button on the mobile helper keyboard.
 - **K3s / Kubernetes TLS Handshake Timeout:**
-  - Resolved Go elliptic curve scalar multiplication bottleneck (`p256_arm64.s`) under QEMU TCG by configuring RSA 2048 cluster certificates and `GODEBUG=tlsmlkem=0`. Handshake latency dropped from ~11s down to ~15ms.
+  - Resolved Go elliptic curve scalar multiplication bottleneck (`p256_arm64.s`) under QEMU TCG by restricting kube-apiserver TLS cipher suites and setting `GODEBUG=tlsmlkem=0` (corrected: no RSA certificates are configured, see Unreleased). Handshake latency dropped from ~11s down to ~15ms.
 - **Storage Access Permission Guard:**
   - Added `hasAllFilesAccess` check and `requestAllFilesAccess` (`MANAGE_EXTERNAL_STORAGE`) with warning banner, ensuring 9p shared folders mount with read/write access on Android 11+.
 

@@ -635,7 +635,11 @@ class VmManager(private val context: Context) {
             "libqemu_img.so not found in $nativeLibDir"
         )
         val prefDiskGb = getFlutterInt("flutter.disk_gb", 0).toLong()
-        val sizeGb = if (prefDiskGb > 0) prefDiskGb else availableOverlaySizeGb()
+        // availableOverlaySizeGb() caps the preference to free storage (minus
+        // headroom) and never goes below the base filesystem size. Using the
+        // raw preference let the sparse overlay promise more space than the
+        // phone has, so the guest hit I/O errors once storage ran out.
+        val sizeGb = availableOverlaySizeGb()
         Log.d(TAG, "Creating user.qcow2 with ${sizeGb}G virtual size (pref=${prefDiskGb}G)")
         val proc = ProcessBuilder(
             qemuImg.absolutePath, "create",

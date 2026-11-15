@@ -17,7 +17,6 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 
 class MainActivity : FlutterActivity() {
     companion object {
@@ -84,6 +83,9 @@ class MainActivity : FlutterActivity() {
                             vmManager.startVm()
                             if (!isFinishing) runOnUiThread { result.success(null) }
                         } catch (e: Exception) {
+                            // Don't leave a "VM is running" foreground notification
+                            // (and the service) up when the VM failed to start.
+                            runCatching { stopVmService() }
                             if (!isFinishing) runOnUiThread { result.error("VM_START_ERROR", e.message, null) }
                         }
                     }
@@ -525,8 +527,11 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        // Do not block the main thread waiting for in-flight calls (some wait
+        // up to 40 min for an image pull): that froze the UI for up to 10 s and
+        // risked an ANR. Interrupt them and let them finish in the background;
+        // their results are dropped once the activity is finishing.
         executor.shutdownNow()
-        executor.awaitTermination(10, TimeUnit.SECONDS)
         super.onDestroy()
     }
 

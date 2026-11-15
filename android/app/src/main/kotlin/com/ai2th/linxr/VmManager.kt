@@ -232,9 +232,25 @@ class VmManager(private val context: Context) {
         // Without this, Android Doze/standby throttles or kills the process,
         // causing the VM to die minutes after the user locks their phone.
         val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        releaseWakelock() // never leak a previous lock
         wakelock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Linxr:VM")
         wakelock?.acquire(8 * 60 * 60 * 1000L) // 8-hour safety timeout
 
+        try {
+            launchQemu()
+        } catch (e: Throwable) {
+            // Do not keep the CPU awake (up to 8 h) for a VM that never started.
+            releaseWakelock()
+            throw e
+        }
+    }
+
+    private fun releaseWakelock() {
+        if (wakelock?.isHeld == true) wakelock?.release()
+        wakelock = null
+    }
+
+    private fun launchQemu() {
         val freshExtraction = !assetsReady()
         if (freshExtraction) {
             Log.d(TAG, "Assets not ready, extracting...")
@@ -385,8 +401,7 @@ class VmManager(private val context: Context) {
     @Synchronized
     fun stopVm() {
         Log.d(TAG, "stopVm()")
-        if (wakelock?.isHeld == true) wakelock?.release()
-        wakelock = null
+        releaseWakelock()
         try {
             apiClient.vmExec("sync")
         } catch (e: Exception) {
@@ -437,8 +452,15 @@ class VmManager(private val context: Context) {
             if (proc.isAlive) {
                 return "running"
             } else {
+                // QEMU exited on its own (crash, guest poweroff): drop the
+                // wakelock that startVm() took and the foreground service
+                // whose notification says the VM is running.
+                Log.w(TAG, "QEMU exited with code ${proc.exitValue()}")
                 isRunning = false
                 vmProcess = null
+                releaseWakelock()
+                File(filesDir, "vm.pid").delete()
+                runCatching { context.stopService(android.content.Intent(context, VmService::class.java)) }
                 return "stopped"
             }
         }

@@ -113,7 +113,9 @@ Android Host (Flutter + Kotlin Userland App)
 ```bash
 bash scripts/build_qcow2.sh
 ```
-*Outputs: `android/app/src/main/assets/vm/base.qcow2.gz`*
+*Outputs: `android/app/src/main/assets/vm/base.qcow2.gz`, `vmlinuz-virt` and `initramfs-virt`*
+
+> **Note:** the VM assets above and the QEMU binaries (`android/app/src/main/jniLibs/arm64-v8a/libqemu.so` and `libqemu_img.so`) are not committed to this repository. Build the VM assets with the step above and provide the QEMU libraries yourself before building the APK; without them the app installs but cannot start the VM (see [#32](https://github.com/AI2TH/Linxr/issues/32)). Each image records its Alpine and kernel versions in `/etc/linxr-release`.
 
 ### 2 — Build the Android APK
 ```bash

@@ -404,12 +404,15 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# K3s Kubernetes RSA Acceleration & Client Tuning (NEW-24)
+# K3s Kubernetes TLS & client tuning (NEW-24)
 # ---------------------------------------------------------------------------
-# On emulated TCG CPU architectures, default ECDSA P-256 scalar multiplication
-# in Go takes ~4.5s per handshake (causing 10s mTLS timeout cascade failures).
-# Pre-configure K3s to enforce fast RSA 2048 ciphers, disable WatchList feature
-# gate, and set GODEBUG=tlsmlkem=0 to prevent post-quantum ML-KEM handshake delays.
+# Under QEMU TCG, Go's TLS handshakes are slow enough to trip k3s' internal
+# 10s mTLS timeouts. What this config actually does:
+#   - restricts kube-apiserver to AES-GCM / ChaCha20 ECDHE cipher suites;
+#   - disables the WatchList feature gate and API priority-and-fairness;
+#   - sets GODEBUG=tlsmlkem=0 so Go skips the post-quantum ML-KEM key share.
+# k3s still uses its default ECDSA P-256 certificates; no RSA certificates
+# are generated (earlier comments and release notes claimed RSA 2048).
 mkdir -p /etc/rancher/k3s
 cat > /etc/rancher/k3s/config.yaml <<'K3SEOF'
 write-kubeconfig-mode: "644"
@@ -419,7 +422,15 @@ kube-apiserver-arg:
   - "tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305"
 K3SEOF
 
-# Disable Go ML-KEM for kubectl and internal clients to prevent handshake timeouts
+# GODEBUG for the k3s server process itself: the OpenRC service written by
+# the k3s installer sources /etc/rancher/k3s/k3s.env with allexport. The
+# installer rewrites that file, so re-add the line on every boot rather than
+# overwriting the file (it may hold K3S_* settings from the installer).
+K3S_ENV_FILE=/etc/rancher/k3s/k3s.env
+[ -f "$K3S_ENV_FILE" ] || { touch "$K3S_ENV_FILE"; chmod 600 "$K3S_ENV_FILE"; }
+grep -q '^GODEBUG=' "$K3S_ENV_FILE" 2>/dev/null || echo 'GODEBUG=tlsmlkem=0' >> "$K3S_ENV_FILE"
+
+# Same setting for kubectl and other Go clients started from login shells.
 mkdir -p /etc/profile.d
 cat > /etc/profile.d/k3s.sh <<'PROFEIO'
 export GODEBUG="tlsmlkem=0"

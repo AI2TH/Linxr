@@ -81,7 +81,10 @@ class MarketplaceService {
       description:
           'Lightweight certified Kubernetes (k3s) optimized for ARM64. Installs a fully functional single-node control-plane and worker.',
       script:
-          'curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik --write-kubeconfig-mode 644" sh -',
+          // Install without starting, add GODEBUG to the env file the k3s
+          // OpenRC service sources (the installer overwrites it), then start,
+          // so the server process itself gets tlsmlkem=0 (issue #30).
+          'curl -sfL https://get.k3s.io | INSTALL_K3S_SKIP_START=true INSTALL_K3S_EXEC="--disable traefik --write-kubeconfig-mode 644" sh - && mkdir -p /etc/rancher/k3s && (grep -q "^GODEBUG=" /etc/rancher/k3s/k3s.env 2>/dev/null || echo "GODEBUG=tlsmlkem=0" >> /etc/rancher/k3s/k3s.env) && /etc/init.d/k3s restart',
       notes:
           'Once installation completes, switch to the Terminal tab and run "kubectl get nodes" or "kubectl get pods -A" to monitor your cluster. Kubeconfig is saved at /etc/rancher/k3s/k3s.yaml.',
       isCustom: false,

@@ -57,6 +57,23 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // The foreground service stops itself when Android 15's 6-hour
+        // dataSync limit is reached (VmService.onTimeout). Bringing the app to
+        // the foreground resets that limit, so start it again while the VM runs.
+        if (!VmService.isActive && vmManager.isVmRunning()) {
+            executor.execute {
+                if (vmManager.getStatus() == "running" && !VmService.isActive) {
+                    runOnUiThread {
+                        runCatching { startVmService() }
+                            .onFailure { Log.w(TAG, "Could not restart VmService: ${it.message}") }
+                    }
+                }
+            }
+        }
+    }
+
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,

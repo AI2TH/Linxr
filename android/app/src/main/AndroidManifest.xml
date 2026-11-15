@@ -33,6 +33,22 @@
             </intent-filter>
         </activity>
 
+        <!--
+            Foreground service type: dataSync, on purpose.
+            A long-running VM fits "specialUse" better, but specialUse needs a
+            declaration in Play Console (Policy > App content > Foreground
+            service permissions, with a video) and a review; a rejected or
+            pending declaration would block Play releases. dataSync needs no
+            new review. Its Android 15 limit (6 h in 24 while in the
+            background) is handled in VmService.onTimeout: the service stops
+            cleanly, the user is notified, and MainActivity.onResume starts it
+            again (bringing the app to the foreground resets the limit).
+            To switch later: declare specialUse in Play Console, use
+            foregroundServiceType="specialUse" with the
+            FOREGROUND_SERVICE_SPECIAL_USE permission and a
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+            android:value="Runs a user-started Linux virtual machine"/>.
+        -->
         <service
             android:name=".VmService"
             android:foregroundServiceType="dataSync"

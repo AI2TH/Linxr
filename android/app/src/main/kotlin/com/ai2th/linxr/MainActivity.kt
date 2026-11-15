@@ -335,6 +335,8 @@ class MainActivity : FlutterActivity() {
                         val desc = call.argument<String>("desc") ?: ""
                         if (host == null || guest == null || host !in 1..65535 || guest !in 1..65535) {
                             result.error("PORT_ADD_ERROR", "host and guest ports must be 1-65535", null)
+                        } else if (host in VmManager.RESERVED_HOST_PORTS) {
+                            result.error("PORT_ADD_ERROR", "Host port $host is reserved by Linxr (SSH, VM API or Virtual Desktop)", null)
                         } else {
                             result.success(vmManager.addPortForward(host, guest, desc))
                         }
@@ -435,6 +437,17 @@ class MainActivity : FlutterActivity() {
                             if (!isFinishing) runOnUiThread { result.success(resMap) }
                         } catch (e: Exception) {
                             if (!isFinishing) runOnUiThread { result.error("DESKTOP_INSTALL_ERROR", e.message, null) }
+                        }
+                    }
+
+                    "getDesktopLog" -> executor.execute {
+                        try {
+                            val name = call.argument<String>("name") ?: "all"
+                            val lines = call.argument<Int>("lines") ?: 200
+                            val text = vmManager.getDesktopLog(name, lines)
+                            if (!isFinishing) runOnUiThread { result.success(text) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("DESKTOP_LOG_ERROR", e.message, null) }
                         }
                     }
 

@@ -45,16 +45,48 @@ fi
 # ---------------------------------------------------------------------------
 # Expand filesystem to fill the virtual disk
 # ---------------------------------------------------------------------------
-if [ ! -f /etc/.disk_expanded ]; then
-    echo "Expanding filesystem to fill disk..."
-    if ! command -v resize2fs >/dev/null 2>&1; then
-        apk add --no-cache e2fsprogs >/dev/null 2>&1 || true
+# The base ext4 image is DISK_SIZE_GB (scripts/_build_rootfs.sh). When the
+# user picks a larger disk in Settings, user.qcow2 is created at that size but
+# the filesystem inside stays small. Decide by comparing sizes on every boot
+# (not by a flag file, which older images shipped pre-set) and grow online in
+# the background so boot is not delayed. Growing a mounted ext4 is safe.
+# Old images may still carry the obsolete flag file; it is no longer used.
+rm -f /etc/.disk_expanded 2>/dev/null || true
+expand_rootfs() {
+    dev=/dev/vda
+    sectors=$(cat /sys/block/vda/size 2>/dev/null)
+    if [ -n "$sectors" ]; then
+        dev_bytes=$((sectors * 512))
+    else
+        dev_bytes=$(blockdev --getsize64 "$dev" 2>/dev/null)
     fi
-    resize2fs /dev/vda 2>/dev/null && touch /etc/.disk_expanded || true
-    echo "Disk expansion complete: $(df -h / | awk 'NR==2{print $2}') total"
-else
-    echo "Filesystem already expanded, skipping resize2fs."
+    fs_info=$(tune2fs -l "$dev" 2>/dev/null || dumpe2fs -h "$dev" 2>/dev/null)
+    blocks=$(printf '%s\n' "$fs_info" | awk -F: '/^Block count/ {gsub(/[ \t]/, "", $2); print $2}')
+    bsize=$(printf '%s\n' "$fs_info" | awk -F: '/^Block size/ {gsub(/[ \t]/, "", $2); print $2}')
+    for v in "$dev_bytes" "$blocks" "$bsize"; do
+        case "$v" in
+            ''|*[!0-9]*)
+                echo "Disk size check skipped (dev=${dev_bytes:-?} blocks=${blocks:-?} bsize=${bsize:-?})"
+                return 0
+                ;;
+        esac
+    done
+    fs_bytes=$((blocks * bsize))
+    # Ignore differences under 64 MiB (ext4 metadata / rounding).
+    if [ "$dev_bytes" -gt $((fs_bytes + 64 * 1024 * 1024)) ]; then
+        echo "Growing root filesystem: $((fs_bytes / 1048576)) MiB -> $((dev_bytes / 1048576)) MiB (background, log: /var/log/resize.log)"
+        (
+            resize2fs "$dev" >/var/log/resize.log 2>&1
+            df -h / >>/var/log/resize.log 2>&1
+        ) &
+    else
+        echo "Root filesystem already fills the disk ($((fs_bytes / 1048576)) MiB)."
+    fi
+}
+if ! command -v resize2fs >/dev/null 2>&1 || ! command -v tune2fs >/dev/null 2>&1; then
+    apk add --no-cache e2fsprogs e2fsprogs-extra >/dev/null 2>&1 || true
 fi
+expand_rootfs
 
 # ---------------------------------------------------------------------------
 # Set root password

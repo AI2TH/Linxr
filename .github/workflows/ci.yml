@@ -68,4 +68,4 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: compileDebugKotlin
         working-directory: android
-        run: bash ./gradlew --no-daemon compileDebugKotlin compileDebugAndroidTestKotlin
+        run: bash ./gradlew --no-daemon :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin

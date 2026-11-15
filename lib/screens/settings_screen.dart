@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../services/vm_platform.dart';
 import '../theme.dart';
+import '../widgets/ssh_access_card.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -330,7 +331,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: 4),
                 const Center(
                   child: Text(
-                    'root@localhost:2222  ·  pw: alpine',
+                    'root@localhost:2222  ·  password under SSH access',
                     style: TextStyle(
                       color: Colors.white38,
                       fontSize: 11,
@@ -531,6 +532,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                   ),
                 ),
+
+                const SizedBox(height: 24),
+                _SectionHeader('Security'),
+                const SizedBox(height: 8),
+                const SshAccessCard(),
 
                 const SizedBox(height: 24),
                 _SectionHeader('When changes apply'),

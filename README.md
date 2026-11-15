@@ -60,13 +60,13 @@ Join our official community for technical discussions, feature requests, and sup
 2. Open **Linxr** → tap **Start VM**.
 3. Watch real-time kernel boot logs stream inside the **System & VM Logs** console on the Home Screen.
 4. Switch to the **Terminal** tab — it auto-connects as soon as SSH is active on `port 2222`.
-5. Log in using default credentials: `root` / `alpine`.
+5. The terminal logs in automatically. For other SSH clients, the root password is under **Settings → SSH access**.
 
 ### External SSH Connection
 
 ```bash
 ssh root@localhost -p 2222
-# Password: alpine
+# Password: Settings → SSH access (generated per install)
 ```
 
 ---
@@ -142,9 +142,10 @@ adb install build/linxr-release.apk
 | Parameter | Default Value |
 |---|---|
 | Username | `root` |
-| Password | `alpine` |
+| Password | Generated per install; shown under **Settings → SSH access** |
+| Host key | Dropbear ed25519 key generated on first boot |
 
-> 🔒 *Security Note: Change your root password using `passwd` after first login.*
+> 🔒 *The password is kept in Android Keystore and applied in the VM on every start. Settings → SSH access can also switch the VM to key-only login.*
 
 ---
 

@@ -268,6 +268,15 @@ class VmApiClient(private val token: String) {
         }
     }
 
+    // ── SSH ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Creates a new SSH key pair for the app inside the VM. The guest adds
+     * the public key to /root/.ssh/authorized_keys and returns the private key
+     * (OpenSSH format) without keeping a copy.
+     */
+    fun createAppSshKey(): String = postJsonForField("ssh/app-key", emptyMap(), "privateKey")
+
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     private fun postJson(path: String, body: Map<String, Any>) {

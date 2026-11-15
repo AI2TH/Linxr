@@ -16,7 +16,7 @@ ROOTFS=/tmp/rootfs
 IMAGE_SIZE="${DISK_SIZE_GB}G"
 
 echo "--- Installing build tools ---"
-apk add --no-cache e2fsprogs qemu-img dropbear
+apk add --no-cache e2fsprogs qemu-img
 
 # â”€â”€ Bootstrap rootfs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 echo "--- Bootstrapping Alpine rootfs ---"
@@ -289,10 +289,10 @@ ttyAMA0::respawn:/sbin/getty -L ttyAMA0 115200 vt100
 EOF
 
 # â”€â”€ SSH â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-# ⚠️  SECURITY WARNING — DEVELOPMENT ONLY ⚠️
-# This VM is configured with root SSH access using hardcoded credentials
-# (root:alpine). DO NOT expose port 2222 on a public or shared network.
-# For production use, replace with key-based auth and disable password login.
+# Root login: the app generates a random root password per install and
+# passes it in through QEMU fw_cfg (opt/root_password); /sbin/init below sets
+# it before Dropbear starts. Settings -> SSH access shows it and can switch
+# the VM to key-only login.
 
 echo "--- Configuring dropbear ---"
 # Dropbear is used instead of OpenSSH because its handshake is much lighter
@@ -302,22 +302,11 @@ echo "--- Configuring dropbear ---"
 # Ensure dropbear starts in default runlevel.
 ln -sf /etc/init.d/dropbear "${ROOTFS}/etc/runlevels/default/dropbear" 2>/dev/null || true
 
-# ---------------------------------------------------------------------------
-# Pre-generate dropbear host keys at image build time (boot-time reduction)
-# ---------------------------------------------------------------------------
-# Without pre-generated keys, dropbear generates its RSA / ECDSA / Ed25519 host
-# keys on first boot. Under TCG that takes 1-3 minutes per key (entropy
-# gathering via /dev/urandom is software-emulated). Since the VM rootfs is
-# ephemeral (overlay discarded on stop), baked-in keys are not a security
-# concern and save several minutes of boot time.
+# No host keys are baked into the image: every install would share them, so
+# anyone could impersonate any user's VM. /sbin/init generates one ed25519
+# key on first boot (fast, unlike RSA under TCG) and keeps it in user.qcow2.
 mkdir -p "${ROOTFS}/etc/dropbear"
-# Pre-generate all three key types used by dropbear at image build time
-# so the VM doesn't spend 1-3 minutes per key under TCG on first boot.
-# Keys are ephemeral (regenerated on each VM start), so no permanent security concern.
-dropbearkey -t rsa -f "${ROOTFS}/etc/dropbear/dropbear_rsa_host_key" -s 2048 \
-    2>/dev/null || echo "WARN: RSA key gen failed"
-dropbearkey -t ecdsa -f "${ROOTFS}/etc/dropbear/dropbear_ecdsa_host_key" -s 256
-dropbearkey -t ed25519 -f "${ROOTFS}/etc/dropbear/dropbear_ed25519_host_key" -s 256
+rm -f "${ROOTFS}"/etc/dropbear/dropbear_*_host_key
 
 # â”€â”€ sdcard share service â€” mount Android /sdcard via 9p â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # VmManager exposes the Android external storage directory as a virtio-9p
@@ -347,6 +336,9 @@ chmod +x "${ROOTFS}/etc/init.d/sdcardshare"
 ln -sf /etc/init.d/sdcardshare "${ROOTFS}/etc/runlevels/boot/sdcardshare"
 
 # â”€â”€ Credentials â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Fallback only: replaced on every boot by the per-install password from
+# fw_cfg. The app falls back to it (and then sets its own password) when the
+# guest kernel cannot read fw_cfg.
 echo "root:alpine" | chroot "${ROOTFS}" chpasswd
 
 # â”€â”€ sudo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -429,9 +421,30 @@ if [ -f /bootstrap/api_server.py ]; then
     python3 -u /bootstrap/api_server.py >/var/log/api_server.log 2>&1 &
 fi
 
+# Per-install SSH credentials. The root password and the key-only flag come
+# from QEMU fw_cfg (set by the app); the host key is generated on first boot
+# and kept. /bootstrap/init_bootstrap.sh does the same for older images.
+modprobe qemu_fw_cfg 2>/dev/null || true
+FWCFG=/sys/firmware/qemu_fw_cfg/by_name/opt
+mkdir -p /etc/dropbear
+[ -s /etc/dropbear/dropbear_ed25519_host_key ] || \
+    dropbearkey -t ed25519 -f /etc/dropbear/dropbear_ed25519_host_key >/dev/null 2>&1
+touch /etc/dropbear/.linxr_per_install
+pw="$(cat "$FWCFG/root_password/raw" 2>/dev/null)"
+case "$pw" in
+    ''|*[!A-Za-z0-9]*) echo "WARN: no per-install root password in fw_cfg" ;;
+    *) printf 'root:%s\n' "$pw" | chpasswd ;;
+esac
+unset pw
+DROPBEAR_ARGS="-E -p 22 -r /etc/dropbear/dropbear_ed25519_host_key"
+if [ "$(cat "$FWCFG/ssh_key_only/raw" 2>/dev/null)" = "1" ] && [ -s /root/.ssh/authorized_keys ]; then
+    DROPBEAR_ARGS="$DROPBEAR_ARGS -s"
+fi
+
 # Start Dropbear SSH
 touch /var/log/lastlog
-/usr/sbin/dropbear -E -p 22
+# shellcheck disable=SC2086 # DROPBEAR_ARGS is a list of options
+/usr/sbin/dropbear $DROPBEAR_ARGS && echo "$DROPBEAR_ARGS" > /run/linxr-dropbear.args
 
 # dockerd is NOT started here. /bootstrap/init_bootstrap.sh starts it only
 # when the Docker engine is selected (/etc/linxr_engine.mode = docker), so the

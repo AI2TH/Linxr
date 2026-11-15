@@ -1,7 +1,9 @@
 #!/bin/sh
-# Alpine VM bootstrap — runs on first boot inside the QEMU VM.
+# Alpine VM bootstrap — runs on every boot inside the QEMU VM.
 # Sets up root SSH access and installs essential packages.
-# Connect via:  ssh root@localhost -p 2222   (password: alpine)
+# Connect via:  ssh root@localhost -p 2222
+# The root password is generated per install by the app (Settings -> SSH
+# access) and passed in through QEMU fw_cfg; see "Per-install SSH credentials".
 
 echo "=== Alpine VM Bootstrap Starting ==="
 
@@ -12,6 +14,81 @@ rm -rf /usr/libexec/docker/cli-plugins 2>/dev/null || true
 # versions also copied it through the shared folder; drop that copy.
 if grep -q 'api_token=' /proc/cmdline 2>/dev/null; then
     rm -f /bootstrap/token 2>/dev/null || true
+fi
+
+# ---------------------------------------------------------------------------
+# Per-install SSH credentials (root password, host key, key-only login)
+# ---------------------------------------------------------------------------
+# The app generates a random root password per install, keeps it in Android
+# Keystore and passes it in through QEMU fw_cfg (opt/root_password), like the
+# API token. Base images built before this change shipped the same Dropbear
+# host keys and the root/alpine password on every install: replace both here,
+# early, so the shared password is valid for as short a time as possible.
+# Base images built after it do the same in /sbin/init before Dropbear starts.
+FW_CFG_DIR=/sys/firmware/qemu_fw_cfg/by_name/opt
+[ -d "$FW_CFG_DIR" ] || modprobe qemu_fw_cfg 2>/dev/null || true
+fw_cfg_read() {
+    [ -r "$FW_CFG_DIR/$1/raw" ] && cat "$FW_CFG_DIR/$1/raw" 2>/dev/null
+}
+
+ROOT_PW="$(fw_cfg_read root_password)"
+case "$ROOT_PW" in
+    ''|*[!A-Za-z0-9]*)
+        echo "WARN: no per-install root password in fw_cfg; the root password is unchanged"
+        ;;
+    *)
+        if printf 'root:%s\n' "$ROOT_PW" | chpasswd 2>/dev/null; then
+            echo "Root password set from fw_cfg (per install)."
+        fi
+        ;;
+esac
+unset ROOT_PW
+
+DROPBEAR_DIR=/etc/dropbear
+DROPBEAR_HOSTKEY="$DROPBEAR_DIR/dropbear_ed25519_host_key"
+DROPBEAR_MARK="$DROPBEAR_DIR/.linxr_per_install"
+DROPBEAR_ARGS_FILE=/run/linxr-dropbear.args
+SSH_RESTART=0
+if [ ! -f "$DROPBEAR_MARK" ] || [ ! -s "$DROPBEAR_HOSTKEY" ]; then
+    mkdir -p "$DROPBEAR_DIR"
+    # Remove the host keys baked into older base images (same on every install).
+    rm -f "$DROPBEAR_DIR/dropbear_rsa_host_key" "$DROPBEAR_DIR/dropbear_ecdsa_host_key" \
+          "$DROPBEAR_DIR/dropbear_dss_host_key" "$DROPBEAR_HOSTKEY"
+    if dropbearkey -t ed25519 -f "$DROPBEAR_HOSTKEY" >/dev/null 2>&1; then
+        touch "$DROPBEAR_MARK"
+        SSH_RESTART=1
+        echo "Generated a per-install Dropbear ed25519 host key."
+    else
+        echo "WARN: could not generate a Dropbear host key"
+    fi
+fi
+
+DROPBEAR_ARGS="-E -p 22"
+[ -s "$DROPBEAR_HOSTKEY" ] && DROPBEAR_ARGS="$DROPBEAR_ARGS -r $DROPBEAR_HOSTKEY"
+# Key-only login: the app sets opt/ssh_key_only=1 only after it has stored a
+# private key whose public half is in authorized_keys (Settings -> SSH access).
+if [ "$(fw_cfg_read ssh_key_only)" = "1" ] && [ -s /root/.ssh/authorized_keys ]; then
+    DROPBEAR_ARGS="$DROPBEAR_ARGS -s"
+    echo "SSH password login disabled (key-only)."
+fi
+
+# Restart only the listening Dropbear; open sessions are separate processes
+# and stay connected.
+restart_dropbear() {
+    pid="$(cat /var/run/dropbear.pid 2>/dev/null)"
+    [ -n "$pid" ] || pid="$(pgrep -o -x dropbear 2>/dev/null)"
+    if [ -n "$pid" ]; then
+        kill "$pid" 2>/dev/null || true
+        sleep 1
+    fi
+    # shellcheck disable=SC2086 # DROPBEAR_ARGS is a list of options
+    /usr/sbin/dropbear $DROPBEAR_ARGS && echo "$DROPBEAR_ARGS" > "$DROPBEAR_ARGS_FILE"
+}
+if command -v dropbear >/dev/null 2>&1 && pgrep -x dropbear >/dev/null 2>&1; then
+    if [ "$SSH_RESTART" -eq 1 ] || [ "$(cat "$DROPBEAR_ARGS_FILE" 2>/dev/null)" != "$DROPBEAR_ARGS" ]; then
+        echo "Restarting Dropbear with: $DROPBEAR_ARGS"
+        restart_dropbear
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -101,12 +178,6 @@ if ! command -v resize2fs >/dev/null 2>&1 || ! command -v tune2fs >/dev/null 2>&
     apk add --no-cache e2fsprogs e2fsprogs-extra >/dev/null 2>&1 || true
 fi
 expand_rootfs
-
-# ---------------------------------------------------------------------------
-# Set root password
-# ---------------------------------------------------------------------------
-echo "root:alpine" | chpasswd 2>/dev/null || true
-echo "Root password set to: alpine"
 
 # ---------------------------------------------------------------------------
 # Install and configure OpenSSH
@@ -331,7 +402,7 @@ elif command -v dropbear >/dev/null 2>&1; then
     if pgrep dropbear >/dev/null 2>&1; then
         echo "=== Dropbear is already running on port 22 ==="
     else
-        /usr/sbin/dropbear -E -p 22
+        restart_dropbear
         sleep 1
         if pgrep dropbear >/dev/null 2>&1; then
             echo "=== Dropbear started on port 22 ==="

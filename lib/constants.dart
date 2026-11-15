@@ -7,5 +7,9 @@ class SshDefaults {
   static const String host     = '127.0.0.1';
   static const int    port     = 2222;
   static const String username = 'root';
-  static const String password = 'alpine';
+
+  /// Password baked into the base image. The app replaces it with a
+  /// per-install password (see SshCredentials); it is only used as a
+  /// fallback to reach a VM that has not applied that password yet.
+  static const String legacyPassword = 'alpine';
 }

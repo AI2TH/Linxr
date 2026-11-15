@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import '../constants.dart';
+import 'ssh_credentials.dart';
 
 class VmPlatform {
   static const _channel = MethodChannel('com.ai2th.linxr/vm');
@@ -80,17 +80,7 @@ class VmPlatform {
   static Future<bool> pingSsh() async {
     SSHClient? client;
     try {
-      final socket = await SSHSocket.connect(
-        SshDefaults.host,
-        SshDefaults.port,
-        timeout: const Duration(seconds: 10),
-      );
-      client = SSHClient(
-        socket,
-        username: SshDefaults.username,
-        onPasswordRequest: () => SshDefaults.password,
-      );
-      await client.authenticated.timeout(const Duration(seconds: 25));
+      client = await SshCredentials.connect();
       return true;
     } catch (_) {
       return false;

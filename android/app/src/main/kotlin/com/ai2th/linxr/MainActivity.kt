@@ -450,6 +450,24 @@ class MainActivity : FlutterActivity() {
                         }
                     }
 
+                    "getSshCredentials" -> executor.execute {
+                        try {
+                            val creds = vmManager.getSshCredentials()
+                            if (!isFinishing) runOnUiThread { result.success(creds) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("SSH_CREDENTIALS_ERROR", e.message, null) }
+                        }
+                    }
+
+                    "createSshKey" -> executor.execute {
+                        try {
+                            val ok = vmManager.createSshKey()
+                            if (!isFinishing) runOnUiThread { result.success(ok) }
+                        } catch (e: Exception) {
+                            if (!isFinishing) runOnUiThread { result.error("SSH_KEY_ERROR", e.message, null) }
+                        }
+                    }
+
                     "pickFolder" -> {
                         pendingFolderResult = result
                         try {

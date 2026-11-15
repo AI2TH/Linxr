@@ -955,6 +955,14 @@ class VmApiHandler(BaseHTTPRequestHandler):
                 self._send_json(200, {"status": "pulled", "image": image, "output": out})
             return
 
+        if path == "/ssh/app-key":
+            try:
+                self._send_json(200, {"privateKey": _create_app_ssh_key()})
+            except Exception as e:
+                logger.warning("Could not create the app SSH key: %s", e)
+                self._send_error(500, str(e))
+            return
+
         if path == "/vm/exec":
             cmd_str = data.get("cmd", "")
             if not cmd_str:
@@ -1170,6 +1178,54 @@ class VmApiHandler(BaseHTTPRequestHandler):
             return
 
         self._send_error(404, "Not found")
+
+
+APP_KEY_COMMENT = "linxr-app"
+AUTHORIZED_KEYS = "/root/.ssh/authorized_keys"
+
+
+def _create_app_ssh_key() -> str:
+    """Create an ed25519 key pair for the Linxr app and authorize it for root.
+
+    The public key replaces any earlier app key in authorized_keys; the private
+    key is returned to the app (which stores it in Android Keystore) and is not
+    kept in the guest.
+    """
+    import tempfile
+
+    if shutil.which("ssh-keygen") is None:
+        subprocess.run(["apk", "add", "--no-cache", "openssh-keygen"], capture_output=True, timeout=300)
+    if shutil.which("ssh-keygen") is None:
+        raise RuntimeError("ssh-keygen not found and openssh-keygen could not be installed")
+    os.makedirs("/root/.ssh", mode=0o700, exist_ok=True)
+    os.chmod("/root/.ssh", 0o700)
+    tmpdir = tempfile.mkdtemp(prefix="linxr-key-")
+    try:
+        key_path = os.path.join(tmpdir, "id_ed25519")
+        subprocess.run(
+            ["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", APP_KEY_COMMENT, "-f", key_path],
+            check=True, capture_output=True, timeout=60,
+        )
+        with open(key_path, "r") as f:
+            private_key = f.read()
+        with open(key_path + ".pub", "r") as f:
+            public_key = f.read().strip()
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+    lines = []
+    try:
+        with open(AUTHORIZED_KEYS, "r") as f:
+            lines = [ln.rstrip("\n") for ln in f if not ln.rstrip().endswith(" " + APP_KEY_COMMENT)]
+    except OSError:
+        pass
+    lines.append(public_key)
+    tmp_auth = AUTHORIZED_KEYS + ".tmp"
+    with open(tmp_auth, "w") as f:
+        f.write("\n".join(ln for ln in lines if ln.strip()) + "\n")
+    os.chmod(tmp_auth, 0o600)
+    os.replace(tmp_auth, AUTHORIZED_KEYS)
+    return private_key
 
 
 def _apply_network_hardening():

@@ -13,7 +13,7 @@ dependencies:
   dartssh2: ^2.8.2
   # Ed25519 verification of the community recipe catalog (already a
   # dependency of dartssh2).
-  pinenacl: ^0.6.0
+  pinenacl: ^0.5.1
   xterm: ^4.0.0
   shared_preferences: ^2.2.0
   package_info_plus: 8.0.0

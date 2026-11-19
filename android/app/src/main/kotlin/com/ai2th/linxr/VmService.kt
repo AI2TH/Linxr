@@ -40,6 +40,17 @@ class VmService : Service() {
         Log.d(TAG, "VmService destroyed — VM left running")
     }
 
+    // Android 15+ (targetSdk 35+) limits dataSync foreground services to 6 hours
+    // in 24 and then calls onTimeout(). If the service does not stop within a
+    // few seconds the system crashes the app
+    // (ForegroundServiceDidNotStopInTimeException). Stop cleanly instead; QEMU
+    // is a separate process and keeps running.
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        Log.w(TAG, "Foreground service time limit reached (type=$fgsType), stopping service")
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun createNotificationChannel() {

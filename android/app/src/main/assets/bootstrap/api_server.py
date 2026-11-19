@@ -4,19 +4,25 @@ Ultra-lightweight HTTP server for Docker container management inside Alpine Linu
 Uses Python's standard library http.server (zero third-party dependencies like FastAPI/Uvicorn/Pydantic)
 to ensure instant startup (<1s) and minimal CPU/RAM footprint under QEMU TCG emulation.
 
-Runs on guest 127.0.0.1:7080, accessible from Android host via QEMU hostfwd (host:7081 -> guest:7080).
+Listens on guest 0.0.0.0:7080 (QEMU SLIRP hostfwd delivers to the guest's
+10.0.2.15, so loopback-only would be unreachable); the Android host reaches it
+via hostfwd host 127.0.0.1:7081 -> guest 7080. Every endpoint except /health
+requires the bearer token.
 """
 
+import hmac
 import json
 import logging
 import os
+import re
 import socket
 import shutil
 import subprocess
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("api_server")
@@ -36,17 +42,7 @@ def _load_token() -> str:
     except OSError:
         pass
 
-    # 2. Try token file (written to bootstrap dir by asset preparation)
-    try:
-        with open(TOKEN_FILE_PATH, "r") as f:
-            token = f.read().strip()
-            if token:
-                logger.info("Loaded API token from %s", TOKEN_FILE_PATH)
-                return token
-    except OSError:
-        pass
-
-    # 3. Try kernel cmdline (/proc/cmdline: api_token=...)
+    # 2. Try kernel cmdline (/proc/cmdline: api_token=...)
     try:
         with open("/proc/cmdline", "r") as f:
             cmdline = f.read()
@@ -56,6 +52,17 @@ def _load_token() -> str:
                     if token:
                         logger.info("Loaded API token from /proc/cmdline")
                         return token
+    except OSError:
+        pass
+
+    # 3. Legacy token file. Current app versions no longer write it to the
+    #    shared folder (external storage other apps can read); older ones did.
+    try:
+        with open(TOKEN_FILE_PATH, "r") as f:
+            token = f.read().strip()
+            if token:
+                logger.info("Loaded API token from %s", TOKEN_FILE_PATH)
+                return token
     except OSError:
         pass
 
@@ -70,6 +77,26 @@ def _load_token() -> str:
 
 
 API_TOKEN = _load_token()
+
+# Container names / IDs and image references are passed to the docker/podman
+# CLI and interpolated into Docker Engine API paths. Reject anything that could
+# be read as a CLI option (leading "-") or break the HTTP request line
+# (whitespace, CR/LF, "?", "#").
+_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,254}$")
+_IMAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/:@+-]{0,511}$")
+
+
+def _valid_name(name) -> bool:
+    return isinstance(name, str) and _NAME_RE.match(name) is not None
+
+
+def _valid_image(image) -> bool:
+    return isinstance(image, str) and _IMAGE_RE.match(image) is not None
+
+
+def _q(value: str) -> str:
+    """Percent-encode a validated name or image for a Docker Engine API path."""
+    return quote(value, safe="/:@")
 
 
 def _docker_socket_request(method: str, path: str, body: bytes = None) -> tuple:
@@ -206,8 +233,8 @@ def _resolve_share_file(file_name: str) -> str:
     if os.path.isfile(p2):
         return p2
     # 3. Explicit subpath without directory traversal
-    p3 = os.path.normpath(os.path.join(GUEST_SHARE_DIR, file_name.strip()))
-    if p3.startswith(GUEST_SHARE_DIR) and os.path.isfile(p3):
+    p3 = os.path.realpath(os.path.join(GUEST_SHARE_DIR, file_name.strip()))
+    if p3.startswith(GUEST_SHARE_DIR + os.sep) and os.path.isfile(p3):
         return p3
     return ""
 
@@ -377,10 +404,19 @@ def _get_engine_info() -> dict:
     }
 
 
+def _engine_cli() -> str:
+    """CLI for the active engine: podman in FastTrack mode, docker otherwise.
+
+    In FastTrack mode dockerd is not running, so the docker CLI would fail.
+    """
+    if _get_engine_mode() == "fasttrack" and shutil.which("podman"):
+        return "podman"
+    return "docker"
+
+
 def _run_engine_cmd(args, timeout=600):
     """Run container CLI using active engine (podman for fasttrack, docker for docker mode)."""
-    mode = _get_engine_mode()
-    cli = "podman" if (mode == "fasttrack" and shutil.which("podman")) else "docker"
+    cli = _engine_cli()
     try:
         result = subprocess.run([cli] + args, capture_output=True, text=True, timeout=timeout)
         return result.returncode, result.stdout or "", result.stderr or ""
@@ -440,20 +476,31 @@ class VmApiHandler(BaseHTTPRequestHandler):
             self._send_error(401, "Missing Authorization header")
             return False
         sent_token = auth[len("Bearer "):].strip()
-        if sent_token != API_TOKEN:
+        if not hmac.compare_digest(sent_token.encode("utf-8"), API_TOKEN.encode("utf-8")):
             self._send_error(401, "Invalid token")
             return False
         return True
 
     def _read_json_body(self) -> dict:
-        content_length = int(self.headers.get("Content-Length", 0))
-        if content_length <= 0:
-            return {}
-        raw = self.rfile.read(content_length).decode("utf-8")
         try:
-            return json.loads(raw)
-        except Exception as e:
+            content_length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
             return {}
+        if content_length <= 0 or content_length > 1024 * 1024:
+            return {}
+        raw = self.rfile.read(content_length).decode("utf-8", errors="replace")
+        try:
+            data = json.loads(raw)
+        except Exception:
+            return {}
+        # Handlers call data.get(...); a JSON list or string would crash them.
+        return data if isinstance(data, dict) else {}
+
+    def _require_name(self, name) -> bool:
+        if not _valid_name(name):
+            self._send_error(400, "Invalid container name")
+            return False
+        return True
 
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -482,16 +529,16 @@ class VmApiHandler(BaseHTTPRequestHandler):
                 })
             return
 
+        # Protected endpoints
+        if not self._check_auth():
+            return
+
         if path == "/desktop/status":
             self._send_json(200, _get_desktop_status())
             return
 
         if path == "/engine":
             self._send_json(200, _get_engine_info())
-            return
-
-        # Protected endpoints
-        if not self._check_auth():
             return
 
         if path == "/containers":
@@ -568,14 +615,16 @@ class VmApiHandler(BaseHTTPRequestHandler):
             if not name:
                 self._send_error(400, "Container name required")
                 return
-            try:
-                result = subprocess.run(
-                    ["docker", "logs", "--tail", str(tail), name],
-                    capture_output=True, text=True, check=True, timeout=10
-                )
-                self._send_text(200, result.stdout or result.stderr or "")
-            except Exception as e:
-                self._send_error(500, str(e))
+            if not self._require_name(name):
+                return
+            if tail != "all" and not tail.isdigit():
+                tail = "100"
+            rc, out, err = _run_engine_cmd(["logs", "--tail", tail, name], timeout=10)
+            if rc != 0:
+                self._send_error(500, (err or out or "logs failed").strip()[:500])
+                return
+            # Container logs mix stdout and stderr; return both.
+            self._send_text(200, (out + err) if (out and err) else (out or err or ""))
             return
 
         if path == "/containers/inspect":
@@ -584,7 +633,9 @@ class VmApiHandler(BaseHTTPRequestHandler):
             if not name:
                 self._send_error(400, "Container name required")
                 return
-            rc, out, err = _run_docker(["docker", "inspect", name], timeout=30)
+            if not self._require_name(name):
+                return
+            rc, out, err = _run_engine_cmd(["inspect", "--type", "container", name], timeout=30)
             if rc != 0:
                 self._send_error(404, (err or out or "Not found").strip()[:500])
                 return
@@ -783,22 +834,36 @@ class VmApiHandler(BaseHTTPRequestHandler):
             if not image or not name:
                 self._send_error(400, "image and name required")
                 return
+            if not self._require_name(name):
+                return
+            if not _valid_image(image):
+                self._send_error(400, "Invalid image reference")
+                return
 
             cmd_args = data.get("cmd", [])
             env_vars = data.get("env", [])
             ports = data.get("ports", [])
             network = data.get("network") or "host"
 
-            # Remove existing container with same name if stopped or stale to prevent 409 conflict
-            _docker_socket_request("DELETE", f"/containers/{name}?force=true")
+            mode = _get_engine_mode()
+            cli = _engine_cli()
 
-            # Check if image already exists locally via direct socket (<2ms) to avoid redundant 300s pull
-            code, _ = _docker_socket_request("GET", f"/images/{image}/json")
-            if code != 200:
+            # Remove existing container with same name if stopped or stale to prevent 409 conflict
+            if cli == "docker":
+                _docker_socket_request("DELETE", f"/containers/{_q(name)}?force=true")
+                # Check if image already exists locally via direct socket (<2ms) to avoid redundant 300s pull
+                code, _ = _docker_socket_request("GET", f"/images/{_q(image)}/json")
+                image_cached = code == 200
+            else:
+                # FastTrack: dockerd is not running, so use podman for both.
+                _run_engine_cmd(["rm", "-f", name], timeout=60)
+                rc, _, _ = _run_engine_cmd(["image", "exists", image], timeout=30)
+                image_cached = rc == 0
+            if not image_cached:
                 logger.info("Pulling image: %s", image)
                 try:
                     pull_res = subprocess.run(
-                        ["docker", "pull", image],
+                        [cli, "pull", image],
                         capture_output=True, text=True, timeout=2400
                     )
                     if pull_res.returncode != 0:
@@ -808,11 +873,12 @@ class VmApiHandler(BaseHTTPRequestHandler):
                 except subprocess.TimeoutExpired:
                     self._send_error(504, f"Image pull timed out for '{image}'. Mobile CPU emulation requires extra time for large images.")
                     return
+                except Exception as e:
+                    self._send_error(500, f"Image pull failed: {e}")
+                    return
             else:
                 logger.info("Image %s already cached locally, skipping pull", image)
 
-            mode = _get_engine_mode()
-            cli = "podman" if (mode == "fasttrack" and shutil.which("podman")) else "docker"
             cmd = [cli, "run", "-d", "--network", network, "--name", name]
             for env in env_vars:
                 if isinstance(env, dict) and "key" in env and "value" in env:
@@ -839,7 +905,12 @@ class VmApiHandler(BaseHTTPRequestHandler):
                 # Self-healing: On TCG emulation, docker run may complete or start the container.
                 # Check via docker socket if the container is running.
                 time.sleep(1)
-                c_code, c_data = _docker_socket_request("GET", f"/containers/{name}/json")
+                if cli != "docker":
+                    rc, out, _ = _run_engine_cmd(["inspect", "--format", "{{.Id}}", name], timeout=30)
+                    if rc == 0 and out.strip():
+                        self._send_json(200, {"status": "started", "name": name, "id": out.strip(), "engine": mode})
+                        return
+                c_code, c_data = _docker_socket_request("GET", f"/containers/{_q(name)}/json")
                 if c_code == 200:
                     try:
                         c_info = json.loads(c_data.decode("utf-8"))
@@ -858,11 +929,12 @@ class VmApiHandler(BaseHTTPRequestHandler):
             if not name:
                 self._send_error(400, "name required")
                 return
-            mode = _get_engine_mode()
-            if mode == "fasttrack":
+            if not self._require_name(name):
+                return
+            if _engine_cli() != "docker":
                 _run_engine_cmd(["stop", name], timeout=60)
             else:
-                _docker_socket_request("POST", f"/containers/{name}/stop")
+                _docker_socket_request("POST", f"/containers/{_q(name)}/stop")
             self._send_json(200, {"status": "stopped", "name": name})
             return
 
@@ -871,13 +943,16 @@ class VmApiHandler(BaseHTTPRequestHandler):
             if not image:
                 self._send_error(400, "image required")
                 return
-            try:
-                result = subprocess.run(["docker", "pull", image], capture_output=True, text=True, check=True, timeout=2400)
-                self._send_json(200, {"status": "pulled", "image": image, "output": result.stdout})
-            except subprocess.TimeoutExpired:
+            if not _valid_image(image):
+                self._send_error(400, "Invalid image reference")
+                return
+            rc, out, err = _run_engine_cmd(["pull", image], timeout=2400)
+            if rc == 124:
                 self._send_error(504, "Image pull timed out")
-            except Exception as e:
-                self._send_error(500, str(e))
+            elif rc != 0:
+                self._send_error(500, (err or out or "Pull failed").strip()[:500])
+            else:
+                self._send_json(200, {"status": "pulled", "image": image, "output": out})
             return
 
         if path == "/vm/exec":
@@ -901,8 +976,10 @@ class VmApiHandler(BaseHTTPRequestHandler):
         if path == "/exec":
             name = data.get("name", "").strip()
             cmd_str = data.get("cmd", "")
+            if not self._require_name(name):
+                return
             try:
-                result = subprocess.run(["docker", "exec", name, "sh", "-c", cmd_str], capture_output=True, text=True, timeout=45)
+                result = subprocess.run([_engine_cli(), "exec", name, "sh", "-c", cmd_str], capture_output=True, text=True, timeout=45)
                 self._send_json(200, {
                     "stdout": result.stdout,
                     "stderr": result.stderr,
@@ -921,14 +998,15 @@ class VmApiHandler(BaseHTTPRequestHandler):
             if not name:
                 self._send_error(400, "name required")
                 return
-            mode = _get_engine_mode()
-            if mode == "fasttrack":
+            if not self._require_name(name):
+                return
+            if _engine_cli() != "docker":
                 rc, out, err = _run_engine_cmd(["start", name], timeout=60)
                 if rc != 0:
                     self._send_error(500, f"Failed to start: {err or out}")
                     return
             else:
-                code, _ = _docker_socket_request("POST", f"/containers/{name}/start")
+                code, _ = _docker_socket_request("POST", f"/containers/{_q(name)}/start")
                 if code not in (200, 204, 304):
                     self._send_error(500, f"Failed to start container (status {code})")
                     return
@@ -940,14 +1018,15 @@ class VmApiHandler(BaseHTTPRequestHandler):
             if not name:
                 self._send_error(400, "name required")
                 return
-            mode = _get_engine_mode()
-            if mode == "fasttrack":
+            if not self._require_name(name):
+                return
+            if _engine_cli() != "docker":
                 rc, out, err = _run_engine_cmd(["restart", name], timeout=60)
                 if rc != 0:
                     self._send_error(500, f"Failed to restart: {err or out}")
                     return
             else:
-                code, _ = _docker_socket_request("POST", f"/containers/{name}/restart")
+                code, _ = _docker_socket_request("POST", f"/containers/{_q(name)}/restart")
                 if code not in (200, 204):
                     self._send_error(500, f"Failed to restart container (status {code})")
                     return
@@ -959,14 +1038,15 @@ class VmApiHandler(BaseHTTPRequestHandler):
             if not name:
                 self._send_error(400, "name required")
                 return
-            mode = _get_engine_mode()
-            if mode == "fasttrack":
+            if not self._require_name(name):
+                return
+            if _engine_cli() != "docker":
                 rc, out, err = _run_engine_cmd(["rm", "-f", name], timeout=60)
                 if rc != 0:
                     self._send_error(500, f"Failed to delete: {err or out}")
                     return
             else:
-                code, _ = _docker_socket_request("DELETE", f"/containers/{name}?force=true")
+                code, _ = _docker_socket_request("DELETE", f"/containers/{_q(name)}?force=true")
                 if code not in (200, 204):
                     self._send_error(500, f"Failed to delete container (status {code})")
                     return
@@ -978,7 +1058,9 @@ class VmApiHandler(BaseHTTPRequestHandler):
             if not name:
                 self._send_error(400, "name required")
                 return
-            cmd = ["docker", "update"]
+            if not self._require_name(name):
+                return
+            cmd = [_engine_cli(), "update"]
             restart_policy = data.get("restartPolicy")
             if restart_policy:
                 cmd += ["--restart", str(restart_policy)]
@@ -1007,6 +1089,8 @@ class VmApiHandler(BaseHTTPRequestHandler):
             if not name:
                 self._send_error(400, "name required")
                 return
+            if not self._require_name(name):
+                return
             if not os.path.isdir(GUEST_SHARE_DIR):
                 self._send_error(500, "Shared folder (/mnt/sdcard) not available")
                 return
@@ -1016,7 +1100,7 @@ class VmApiHandler(BaseHTTPRequestHandler):
                 self._send_error(500, f"Could not create export dir: {e}")
                 return
             file_path = os.path.join(EXPORT_DIR, f"{_safe_filename(name)}.tar")
-            rc, out, err = _run_docker(["docker", "export", "-o", file_path, name], timeout=2400)
+            rc, out, err = _run_docker([_engine_cli(), "export", "-o", file_path, name], timeout=2400)
             if rc != 0:
                 self._send_error(500, (err or out or "Export failed").strip()[:500])
                 return
@@ -1029,11 +1113,14 @@ class VmApiHandler(BaseHTTPRequestHandler):
             if not name or not file_name:
                 self._send_error(400, "name and file required")
                 return
+            if not _valid_image(name):
+                self._send_error(400, "Invalid image name")
+                return
             src = _resolve_share_file(file_name)
             if not src:
                 self._send_error(404, f"File not found in shared folder or linxr-exports: {file_name}")
                 return
-            rc, out, err = _run_docker(["docker", "import", src, name], timeout=2400)
+            rc, out, err = _run_docker([_engine_cli(), "import", src, name], timeout=2400)
             if rc != 0:
                 self._send_error(500, (err or out or "Import failed").strip()[:500])
                 return
@@ -1047,6 +1134,9 @@ class VmApiHandler(BaseHTTPRequestHandler):
             if not image:
                 self._send_error(400, "image required")
                 return
+            if not _valid_image(image):
+                self._send_error(400, "Invalid image reference")
+                return
             if not os.path.isdir(GUEST_SHARE_DIR):
                 self._send_error(500, "Shared folder (/mnt/sdcard) not available")
                 return
@@ -1056,7 +1146,7 @@ class VmApiHandler(BaseHTTPRequestHandler):
                 self._send_error(500, f"Could not create export dir: {e}")
                 return
             file_path = os.path.join(EXPORT_DIR, f"{_safe_filename(image)}.tar")
-            rc, out, err = _run_docker(["docker", "save", "-o", file_path, image], timeout=2400)
+            rc, out, err = _run_docker([_engine_cli(), "save", "-o", file_path, image], timeout=2400)
             if rc != 0:
                 self._send_error(500, (err or out or "Save failed").strip()[:500])
                 return
@@ -1072,7 +1162,7 @@ class VmApiHandler(BaseHTTPRequestHandler):
             if not src:
                 self._send_error(404, f"File not found in shared folder or linxr-exports: {file_name}")
                 return
-            rc, out, err = _run_docker(["docker", "load", "-i", src], timeout=2400)
+            rc, out, err = _run_docker([_engine_cli(), "load", "-i", src], timeout=2400)
             if rc != 0:
                 self._send_error(500, (err or out or "Load failed").strip()[:500])
                 return
@@ -1096,12 +1186,25 @@ def _apply_network_hardening():
         subprocess.run(["sysctl", "-w", "net.ipv6.conf.default.disable_ipv6=1"], capture_output=True, timeout=5)
         subprocess.run(["sysctl", "-w", "net.ipv4.tcp_mtu_probing=2"], capture_output=True, timeout=5)
         subprocess.run(["ip", "link", "set", "eth0", "mtu", "1200"], capture_output=True, timeout=5)
-        subprocess.run(["nft", "add", "table", "ip6", "filter"], capture_output=True, timeout=5)
-        subprocess.run(["nft", "add chain ip6 filter output { type filter hook output priority 0 ; policy accept ; }"], shell=True, capture_output=True, timeout=5)
-        subprocess.run(["nft", "add rule ip6 filter output reject"], shell=True, capture_output=True, timeout=5)
-        subprocess.run(["nft", "add", "table", "ip", "filter"], capture_output=True, timeout=5)
-        subprocess.run(["nft", "add chain ip filter output { type filter hook output priority 0 ; policy accept ; }"], shell=True, capture_output=True, timeout=5)
-        subprocess.run(["nft", "add rule ip filter output tcp flags syn tcp option maxseg size set 1160"], shell=True, capture_output=True, timeout=5)
+        # With shell=True and a list, only "nft" ran (the rule became $0), so
+        # these rules were never added. Pass each nft command as one argument.
+        for nft_cmd in (
+            "add table ip6 filter",
+            "add chain ip6 filter output { type filter hook output priority 0 ; policy accept ; }",
+            "add table ip filter",
+            "add chain ip filter output { type filter hook output priority 0 ; policy accept ; }",
+        ):
+            subprocess.run(["nft", nft_cmd], capture_output=True, timeout=5)
+        # Rules are appended, so only add them once (init_bootstrap.sh may
+        # already have added them).
+        for family, rule, marker in (
+            ("ip6", "add rule ip6 filter output reject", "reject"),
+            ("ip", "add rule ip filter output tcp flags syn tcp option maxseg size set 1160", "maxseg size set 1160"),
+        ):
+            listing = subprocess.run(["nft", "list", "chain", family, "filter", "output"],
+                                     capture_output=True, text=True, timeout=5)
+            if marker not in (listing.stdout or ""):
+                subprocess.run(["nft", rule], capture_output=True, timeout=5)
     except Exception as e:
         logger.warning("Could not apply network hardening: %s", e)
 

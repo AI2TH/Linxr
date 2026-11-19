@@ -81,7 +81,10 @@ class MarketplaceService {
       description:
           'Lightweight certified Kubernetes (k3s) optimized for ARM64. Installs a fully functional single-node control-plane and worker.',
       script:
-          'curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik --write-kubeconfig-mode 644" sh -',
+          // Install without starting, add GODEBUG to the env file the k3s
+          // OpenRC service sources (the installer overwrites it), then start,
+          // so the server process itself gets tlsmlkem=0 (issue #30).
+          'curl -sfL https://get.k3s.io | INSTALL_K3S_SKIP_START=true INSTALL_K3S_EXEC="--disable traefik --write-kubeconfig-mode 644" sh - && mkdir -p /etc/rancher/k3s && (grep -q "^GODEBUG=" /etc/rancher/k3s/k3s.env 2>/dev/null || echo "GODEBUG=tlsmlkem=0" >> /etc/rancher/k3s/k3s.env) && /etc/init.d/k3s restart',
       notes:
           'Once installation completes, switch to the Terminal tab and run "kubectl get nodes" or "kubectl get pods -A" to monitor your cluster. Kubeconfig is saved at /etc/rancher/k3s/k3s.yaml.',
       isCustom: false,
@@ -308,12 +311,14 @@ class MarketplaceService {
       image: 'andrius/asterisk:latest',
       ports: [
         {'host': 5060, 'container': 5060},
-        {'host': 8088, 'container': 8088},
+        // Host 8088 is Linxr's default forward to guest port 80 (VmManager),
+        // so expose Asterisk's HTTP/ARI port 8088 on host 8089 (issue #31).
+        {'host': 8089, 'container': 8088},
       ],
       description:
           'Containerized Asterisk 20 PBX telephony server. Run isolated SIP PBX in Docker or daemonless FastTrack OCI mode.',
       notes:
-          'Runs Asterisk inside an isolated container. Connect SIP softphones to port 5060. WebRTC/HTTP listens on port 8088.',
+          'Runs Asterisk inside an isolated container. Connect SIP softphones to port 5060. WebRTC/HTTP listens on port 8088 inside the VM; add a port forward from phone port 8089 to VM port 8088 in Containers > Port forwarding (TCP only) to reach it from the phone (phone port 8088 already forwards to VM port 80).',
       isCustom: false,
     ),
     const MarketplaceItem(
@@ -330,10 +335,12 @@ class MarketplaceService {
           'sed -i "s/https:/http:/g" /etc/apk/repositories 2>/dev/null || true && apk update && apk add --no-cache asterisk asterisk-sample-config asterisk-sounds-en asterisk-srtp openssl python3 && mkdir -p /etc/asterisk /var/log/asterisk /var/spool/asterisk /var/run/asterisk && chown -R asterisk:asterisk /var/run/asterisk /var/log/asterisk /var/spool/asterisk /etc/asterisk && rc-update add asterisk default 2>/dev/null || true && (rc-service asterisk restart 2>/dev/null || asterisk -U asterisk -G asterisk) && echo "Zyvr Asterisk PBX installed successfully!"',
       ports: [
         {'host': 5060, 'container': 5060},
-        {'host': 8088, 'container': 8088},
+        // Host 8088 is Linxr's default forward to guest port 80 (VmManager),
+        // so expose Asterisk's HTTP/ARI port 8088 on host 8089 (issue #31).
+        {'host': 8089, 'container': 8088},
       ],
       notes:
-          'Native Asterisk PBX listening on port 5060 (SIP UDP/TCP) and 8088 (HTTP/WebSockets). Connect any SIP softphone (Linphone, Zoiper, MicroSIP) to 127.0.0.1:5060.',
+          'Native Asterisk PBX listening on port 5060 (SIP UDP/TCP) and 8088 (HTTP/WebSockets) inside the VM. Add TCP port forwards for 5060 and for phone port 8089 to VM port 8088 in Containers > Port forwarding (phone port 8088 already forwards to VM port 80), then connect any SIP softphone (Linphone, Zoiper, MicroSIP) to 127.0.0.1:5060.',
       isCustom: false,
     ),
     const MarketplaceItem(
@@ -455,7 +462,7 @@ class MarketplaceService {
           final body = await response.transform(utf8.decoder).join();
           final list = jsonDecode(body) as List<dynamic>;
           final items = list
-              .map((e) => MarketplaceItem.fromJson(Map<String, dynamic>.from(e as Map)))
+              .map((e) => _remoteItemFromJson(e as Map))
               .toList();
 
           await prefs.setString(_kRemoteRecipesCacheKey, body);
@@ -471,14 +478,18 @@ class MarketplaceService {
     if (cachedJson != null && cachedJson.isNotEmpty) {
       try {
         final list = jsonDecode(cachedJson) as List<dynamic>;
-        return list
-            .map((e) => MarketplaceItem.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList();
+        return list.map((e) => _remoteItemFromJson(e as Map)).toList();
       } catch (_) {}
     }
 
     return [];
   }
+
+  // MarketplaceItem.fromJson defaults isCustom to true (right for imported
+  // JSON), but community recipes are not the user's own: without this they
+  // were counted under "My Custom" and showed a delete button that did nothing.
+  static MarketplaceItem _remoteItemFromJson(Map e) =>
+      MarketplaceItem.fromJson(Map<String, dynamic>.from(e)).copyWith(isCustom: false);
 
   static Future<DateTime?> getLastSyncTime() async {
     final prefs = await SharedPreferences.getInstance();

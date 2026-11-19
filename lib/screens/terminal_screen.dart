@@ -222,6 +222,9 @@ class _TerminalScreenState extends State<TerminalScreen> with WidgetsBindingObse
     _tabs[i].close();
     _tabs.removeAt(i);
     setState(() {
+      // Closing a tab left of the active one shifts the active tab left;
+      // without this the selection jumped to its right-hand neighbour.
+      if (i < _activeIdx) _activeIdx--;
       if (_activeIdx >= _tabs.length) _activeIdx = _tabs.length - 1;
     });
   }
@@ -236,10 +239,12 @@ class _TerminalScreenState extends State<TerminalScreen> with WidgetsBindingObse
 
   void _scheduleConnect(_Tab tab, {int? delaySeconds}) {
     tab.retryTimer?.cancel();
-    final delay = delaySeconds ??
-        (tab.retryCount > 0 ? _reconnectDelay(tab.retryCount - 1).inSeconds : 0);
-    tab.retryTimer =
-        Timer(Duration(seconds: delay), () => _connect(tab));
+    // Keep millisecond precision: converting the backoff to whole seconds
+    // made the first retry immediate (500 ms -> 0 s).
+    final delay = delaySeconds != null
+        ? Duration(seconds: delaySeconds)
+        : (tab.retryCount > 0 ? _reconnectDelay(tab.retryCount - 1) : Duration.zero);
+    tab.retryTimer = Timer(delay, () => _connect(tab));
   }
 
   Future<void> _connect(_Tab tab) async {
@@ -252,7 +257,10 @@ class _TerminalScreenState extends State<TerminalScreen> with WidgetsBindingObse
     try {
       final socket = await SSHSocket.connect(SshDefaults.host, SshDefaults.port)
           .timeout(const Duration(seconds: 10));
-      if (!mounted) return;
+      if (!mounted) {
+        socket.destroy();
+        return;
+      }
 
       tab.client = SSHClient(
         socket,
@@ -267,7 +275,10 @@ class _TerminalScreenState extends State<TerminalScreen> with WidgetsBindingObse
           height: tab.terminal.viewHeight,
         ),
       );
-      if (!mounted) return;
+      if (!mounted) {
+        _dropConnection(tab);
+        return;
+      }
 
       tab._stdoutSub = tab.session!.stdout.listen(
         (data) => tab.terminal.write(utf8.decode(data, allowMalformed: true)),
@@ -287,10 +298,24 @@ class _TerminalScreenState extends State<TerminalScreen> with WidgetsBindingObse
       tab.retryCount = 0;
       if (mounted) setState(() => tab.connState = _ConnState.connected);
     } on TimeoutException {
+      _dropConnection(tab);
       _retryOrError(tab, 'Timed out (${tab.retryCount + 1}/${_Tab._maxRetries})');
     } catch (e) {
+      _dropConnection(tab);
       _retryOrError(tab, 'Failed: $e');
     }
+  }
+
+  /// Closes a half-open connection after a failed attempt. Without this, a
+  /// failure after the TCP/SSH connection was made (e.g. while opening the
+  /// shell) leaked one SSH connection per retry, up to 24 per tab.
+  void _dropConnection(_Tab tab) {
+    tab._stdoutSub?.cancel();
+    tab._stderrSub?.cancel();
+    tab.session?.close();
+    tab.client?.close();
+    tab.session = null;
+    tab.client = null;
   }
 
   void _retryOrError(_Tab tab, String msg) {

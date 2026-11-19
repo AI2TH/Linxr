@@ -17,8 +17,8 @@ class VmPlatform {
 
   static Future<String> getVmStatus() async {
     try {
-      final String result = await _channel.invokeMethod('getVmStatus');
-      return result;
+      final String? result = await _channel.invokeMethod<String>('getVmStatus');
+      return result ?? 'unknown';
     } on PlatformException {
       return 'unknown';
     }
@@ -489,6 +489,18 @@ class VmState extends ChangeNotifier {
       if (_isPingingSsh) return;
       _isPingingSsh = true;
       try {
+        // If QEMU died during boot (bad image, out of memory), stop waiting
+        // for SSH instead of showing "booting" forever.
+        if (await VmPlatform.getVmStatus() == 'stopped') {
+          _sshPingTimer?.cancel();
+          _sshPingTimer = null;
+          if (_status == 'booting') {
+            _status = 'error';
+            _errorMessage = 'The VM stopped while booting. Check the VM logs on the Home screen.';
+            notifyListeners();
+          }
+          return;
+        }
         final alive = await VmPlatform.pingSsh();
         if (alive) {
           _status = 'running';

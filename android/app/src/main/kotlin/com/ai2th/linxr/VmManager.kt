@@ -232,9 +232,25 @@ class VmManager(private val context: Context) {
         // Without this, Android Doze/standby throttles or kills the process,
         // causing the VM to die minutes after the user locks their phone.
         val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        releaseWakelock() // never leak a previous lock
         wakelock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Linxr:VM")
         wakelock?.acquire(8 * 60 * 60 * 1000L) // 8-hour safety timeout
 
+        try {
+            launchQemu()
+        } catch (e: Throwable) {
+            // Do not keep the CPU awake (up to 8 h) for a VM that never started.
+            releaseWakelock()
+            throw e
+        }
+    }
+
+    private fun releaseWakelock() {
+        if (wakelock?.isHeld == true) wakelock?.release()
+        wakelock = null
+    }
+
+    private fun launchQemu() {
         val freshExtraction = !assetsReady()
         if (freshExtraction) {
             Log.d(TAG, "Assets not ready, extracting...")
@@ -268,7 +284,11 @@ class VmManager(private val context: Context) {
             Log.d(TAG, "Reusing existing user.qcow2 (state preserved)")
         }
 
-        // Copy bootstrap files and write token to the shared folder for guest VM access
+        // Copy bootstrap files to the shared folder for guest VM access.
+        // The API token is NOT written there: the shared folder is on external
+        // storage that other apps with storage access can read, and the token
+        // guards a root shell (/vm/exec). The guest reads it from fw_cfg or the
+        // kernel command line instead (see api_server.py _load_token).
         val sharedDir = resolveSharedDir()
         if (sharedDir != null && sharedDir.exists() && sharedDir.canWrite()) {
             val guestBootstrapDir = File(sharedDir, "bootstrap")
@@ -277,8 +297,9 @@ class VmManager(private val context: Context) {
                 File(bootstrapDir, "init_bootstrap.sh").copyTo(File(guestBootstrapDir, "init_bootstrap.sh"), overwrite = true)
                 File(bootstrapDir, "api_server.py").copyTo(File(guestBootstrapDir, "api_server.py"), overwrite = true)
                 File(bootstrapDir, "linxr-desktop.sh").copyTo(File(guestBootstrapDir, "linxr-desktop.sh"), overwrite = true)
-                File(guestBootstrapDir, "token").writeText(token)
-                Log.d(TAG, "Successfully prepared guest bootstrap files and token in shared folder: ${guestBootstrapDir.absolutePath}")
+                // Remove the token file left by older versions.
+                File(guestBootstrapDir, "token").delete()
+                Log.d(TAG, "Successfully prepared guest bootstrap files in shared folder: ${guestBootstrapDir.absolutePath}")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to prepare guest bootstrap files: ${e.message}", e)
             }
@@ -291,7 +312,8 @@ class VmManager(private val context: Context) {
             vcpu      = vcpu,
             ramMb     = ramMb
         )
-        Log.d(TAG, "QEMU command: ${cmd.joinToString(" ")}")
+        // Redact the API token: logcat is readable via adb and bug reports.
+        Log.d(TAG, "QEMU command: ${cmd.joinToString(" ").replace(token, "<redacted>")}")
 
         vmProcess = ProcessBuilder(cmd).apply {
             environment()["LD_LIBRARY_PATH"] = nativeLibDir.absolutePath
@@ -379,8 +401,7 @@ class VmManager(private val context: Context) {
     @Synchronized
     fun stopVm() {
         Log.d(TAG, "stopVm()")
-        if (wakelock?.isHeld == true) wakelock?.release()
-        wakelock = null
+        releaseWakelock()
         try {
             apiClient.vmExec("sync")
         } catch (e: Exception) {
@@ -431,8 +452,15 @@ class VmManager(private val context: Context) {
             if (proc.isAlive) {
                 return "running"
             } else {
+                // QEMU exited on its own (crash, guest poweroff): drop the
+                // wakelock that startVm() took and the foreground service
+                // whose notification says the VM is running.
+                Log.w(TAG, "QEMU exited with code ${proc.exitValue()}")
                 isRunning = false
                 vmProcess = null
+                releaseWakelock()
+                File(filesDir, "vm.pid").delete()
+                runCatching { context.stopService(android.content.Intent(context, VmService::class.java)) }
                 return "stopped"
             }
         }
@@ -468,7 +496,7 @@ class VmManager(private val context: Context) {
 
         cmd += listOf("-smp", vcpu.toString())
         cmd += listOf("-m", ramMb.toString())
-        cmd += listOf("-drive", "if=none,file=$userImage,id=user,format=qcow2,cache=unsafe,file.locking=off")
+        cmd += listOf("-drive", "if=none,file=${qemuOptEscape(userImage)},id=user,format=qcow2,cache=unsafe,file.locking=off")
 
         if (isArm) {
             cmd += listOf("-device", "virtio-blk-device,drive=user")
@@ -526,7 +554,7 @@ class VmManager(private val context: Context) {
         val sharedDir = resolveSharedDir()
         if (sharedDir != null && sharedDir.exists() && sharedDir.canRead()) {
             cmd += listOf(
-                "-fsdev", "local,id=sdcard,path=${sharedDir.absolutePath},security_model=none",
+                "-fsdev", "local,id=sdcard,path=${qemuOptEscape(sharedDir.absolutePath)},security_model=none",
                 "-device", "virtio-9p-${if (isArm) "device" else "pci"},fsdev=sdcard,mount_tag=sdcard"
             )
             Log.d(TAG, "Sharing ${sharedDir.absolutePath} via 9p")
@@ -635,7 +663,11 @@ class VmManager(private val context: Context) {
             "libqemu_img.so not found in $nativeLibDir"
         )
         val prefDiskGb = getFlutterInt("flutter.disk_gb", 0).toLong()
-        val sizeGb = if (prefDiskGb > 0) prefDiskGb else availableOverlaySizeGb()
+        // availableOverlaySizeGb() caps the preference to free storage (minus
+        // headroom) and never goes below the base filesystem size. Using the
+        // raw preference let the sparse overlay promise more space than the
+        // phone has, so the guest hit I/O errors once storage ran out.
+        val sizeGb = availableOverlaySizeGb()
         Log.d(TAG, "Creating user.qcow2 with ${sizeGb}G virtual size (pref=${prefDiskGb}G)")
         val proc = ProcessBuilder(
             qemuImg.absolutePath, "create",
@@ -727,6 +759,11 @@ class VmManager(private val context: Context) {
         )
         return bin
     }
+
+    // QEMU option values are comma-separated; a literal comma is written ",,".
+    // Without this, a shared-folder path containing "," (chosen in Settings)
+    // would inject extra -fsdev / -drive options.
+    private fun qemuOptEscape(value: String): String = value.replace(",", ",,")
 
     private fun isArm64(): Boolean =
         Build.SUPPORTED_ABIS.any { it.startsWith("arm64") }

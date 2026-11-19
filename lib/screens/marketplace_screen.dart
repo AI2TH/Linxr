@@ -148,6 +148,22 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     return _runningContainersByImage[base];
   }
 
+  /// Copies the recipe as JSON to the clipboard so it can be shared and later
+  /// pasted into Add Recipe > Import JSON.
+  Future<void> _exportRecipe(MarketplaceItem item, BuildContext sheetCtx) async {
+    final json = MarketplaceService.exportRecipeToJson(item);
+    await Clipboard.setData(ClipboardData(text: json));
+    if (!mounted) return;
+    if (sheetCtx.mounted) Navigator.pop(sheetCtx);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('"${item.name}" copied to the clipboard as JSON. '
+            'Paste it into Add Recipe > Import JSON to import it.'),
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
   Future<void> _openWebUrl(String url) async {
     try {
       final uri = Uri.parse(url);
@@ -926,6 +942,11 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                               ),
                             ],
                           ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.ios_share, color: Colors.white70),
+                          tooltip: 'Export recipe as JSON',
+                          onPressed: () => _exportRecipe(item, sheetCtx),
                         ),
                         if (item.isCustom)
                           IconButton(

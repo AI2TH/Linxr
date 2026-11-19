@@ -164,7 +164,7 @@ class VmApiClient(private val token: String) {
     fun getLogs(name: String, tail: Int): String {
         return try {
             val request = Request.Builder()
-                .url("$baseUrl/logs?name=$name&tail=$tail")
+                .url("$baseUrl/logs?name=${java.net.URLEncoder.encode(name, "UTF-8")}&tail=$tail")
                 .withAuth()
                 .get()
                 .build()

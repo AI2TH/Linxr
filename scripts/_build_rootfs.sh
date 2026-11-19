@@ -48,7 +48,6 @@ apk --root "${ROOTFS}" --initdb --no-cache add \
     docker \
     crun \
     podman \
-    buildah \
     netavark \
     fuse-overlayfs \
     iptables \
@@ -232,6 +231,15 @@ cp -r /lib/modules/$KVER/. "${ROOTFS}/lib/modules/$KVER/"
 depmod -b "${ROOTFS}" "$KVER"
 echo "--- Kernel modules ready (KVER=$KVER) ---"
 
+# Record what this image ships so a running VM (and bug reports) can tell
+# which Alpine and kernel versions an APK contains (#33).
+cat > "${ROOTFS}/etc/linxr-release" <<RELEOF
+ALPINE_VERSION=$(cat "${ROOTFS}/etc/alpine-release" 2>/dev/null || cat /etc/alpine-release)
+KERNEL_VERSION=${KVER}
+BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+RELEOF
+cat "${ROOTFS}/etc/linxr-release"
+
 # Runs in sysinit after mdev so /dev is populated.
 # Docker networking modules are intentionally NOT loaded here — see start().
 cat > "${ROOTFS}/etc/init.d/cgroups" << 'EOF'
@@ -240,7 +248,7 @@ description="Mount cgroup2 and create device nodes"
 depend() {
     need sysfs
     after mdev
-    before diskexpand sshd docker
+    before sshd docker
 }
 start() {
     ebegin "Mounting cgroup2"
@@ -265,31 +273,10 @@ EOF
 chmod +x "${ROOTFS}/etc/init.d/cgroups"
 ln -sf /etc/init.d/cgroups "${ROOTFS}/etc/runlevels/sysinit/cgroups"
 
-# â”€â”€ diskexpand OpenRC service â€” expand fs when overlay > base fs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-# The base filesystem is pre-expanded to DISK_SIZE_GB. If the user chooses a
-# larger disk in Settings, the overlay is created at that size but the ext4
-# filesystem inside remains DISK_SIZE_GB. This service expands it to fill the
-# overlay, but only when needed, so the default fast-path boot skips resize2fs.
-cat > "${ROOTFS}/etc/init.d/diskexpand" << 'EOF'
-#!/sbin/openrc-run
-description="Expand filesystem to fill virtual disk"
-depend() {
-    after modules bootmisc
-    use dev
-}
-start() {
-    # Always run resize2fs. On a pre-expanded filesystem it is a fast no-op;
-    # on a larger overlay it expands /dev/vda to fill the virtual disk.
-    ebegin "Expanding filesystem to disk size"
-    /usr/sbin/resize2fs /dev/vda >/tmp/resize.log 2>&1
-    local ret=$?
-    /bin/df -h / >> /tmp/resize.log 2>&1
-    [ $ret -eq 0 ] && /bin/touch /etc/.disk_expanded
-    eend 0
-}
-EOF
-chmod +x "${ROOTFS}/etc/init.d/diskexpand"
-ln -sf /etc/init.d/diskexpand "${ROOTFS}/etc/runlevels/boot/diskexpand"
+# Root filesystem growth (when the user picks a disk larger than DISK_SIZE_GB
+# in Settings) is handled by /bootstrap/init_bootstrap.sh, which compares the
+# block device size with the ext4 size on every boot. There is no OpenRC
+# diskexpand service: the custom /sbin/init below never runs OpenRC.
 
 # â”€â”€ inittab â€” ttyAMA0 console â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 cat > "${ROOTFS}/etc/inittab" << 'EOF'
@@ -367,10 +354,6 @@ printf '%%wheel ALL=(ALL) NOPASSWD: ALL\n' >> "${ROOTFS}/etc/sudoers"
 printf 'root ALL=(ALL) NOPASSWD: ALL\n'    >  "${ROOTFS}/etc/sudoers.d/root"
 chmod 440 "${ROOTFS}/etc/sudoers"
 chmod 440 "${ROOTFS}/etc/sudoers.d/root"
-
-# Mark filesystem as already expanded so first-boot resize2fs is skipped.
-# Resize under TCG was taking 5+ minutes and caused boots >3 hours.
-touch "${ROOTFS}/etc/.disk_expanded"
 
 # Replace standard OpenRC init with custom high-speed init script to boot in seconds
 echo "--- Installing high-speed custom init ---"
@@ -450,8 +433,9 @@ fi
 touch /var/log/lastlog
 /usr/sbin/dropbear -E -p 22
 
-# Start Docker daemon in the background
-dockerd --data-root /var/lib/docker --log-level warn >/tmp/dockerd.log 2>&1 &
+# dockerd is NOT started here. /bootstrap/init_bootstrap.sh starts it only
+# when the Docker engine is selected (/etc/linxr_engine.mode = docker), so the
+# default FastTrack (crun + podman) mode pays no daemon cost at boot.
 
 echo "Linxr VM booted successfully in seconds!"
 while true; do

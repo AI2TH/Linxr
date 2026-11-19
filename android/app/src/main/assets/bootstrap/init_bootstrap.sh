@@ -8,6 +8,12 @@ echo "=== Alpine VM Bootstrap Starting ==="
 # Remove slow Go CLI plugins immediately to prevent docker CLI from hanging on TCG CPU
 rm -rf /usr/libexec/docker/cli-plugins 2>/dev/null || true
 
+# The API token comes from fw_cfg or the kernel command line. Older app
+# versions also copied it through the shared folder; drop that copy.
+if grep -q 'api_token=' /proc/cmdline 2>/dev/null; then
+    rm -f /bootstrap/token 2>/dev/null || true
+fi
+
 # ---------------------------------------------------------------------------
 # Network hardening & host configuration
 # ---------------------------------------------------------------------------
@@ -16,9 +22,17 @@ grep -q "10.0.2.2" /etc/hosts 2>/dev/null || echo "10.0.2.2 android-host gateway
 # ---------------------------------------------------------------------------
 # Package mirror configuration (NEW-16)
 # ---------------------------------------------------------------------------
+# Use the Alpine branch the image was built from. Hard-coding v3.20 mixed
+# 3.20 packages into images built from a newer release (build_qcow2.sh
+# honours ALPINE_VERSION), which breaks apk dependency resolution.
+ALPINE_BRANCH="v$(cut -d. -f1,2 /etc/alpine-release 2>/dev/null)"
+case "$ALPINE_BRANCH" in
+    v[0-9]*.[0-9]*) ;;
+    *) ALPINE_BRANCH="v3.20" ;;
+esac
 cat > /etc/apk/repositories <<REPOEOF
-http://dl-cdn.alpinelinux.org/alpine/v3.20/main
-http://dl-cdn.alpinelinux.org/alpine/v3.20/community
+http://dl-cdn.alpinelinux.org/alpine/${ALPINE_BRANCH}/main
+http://dl-cdn.alpinelinux.org/alpine/${ALPINE_BRANCH}/community
 REPOEOF
 sed -i 's/\r$//' /etc/apk/repositories 2>/dev/null || true
 
@@ -45,16 +59,48 @@ fi
 # ---------------------------------------------------------------------------
 # Expand filesystem to fill the virtual disk
 # ---------------------------------------------------------------------------
-if [ ! -f /etc/.disk_expanded ]; then
-    echo "Expanding filesystem to fill disk..."
-    if ! command -v resize2fs >/dev/null 2>&1; then
-        apk add --no-cache e2fsprogs >/dev/null 2>&1 || true
+# The base ext4 image is DISK_SIZE_GB (scripts/_build_rootfs.sh). When the
+# user picks a larger disk in Settings, user.qcow2 is created at that size but
+# the filesystem inside stays small. Decide by comparing sizes on every boot
+# (not by a flag file, which older images shipped pre-set) and grow online in
+# the background so boot is not delayed. Growing a mounted ext4 is safe.
+# Old images may still carry the obsolete flag file; it is no longer used.
+rm -f /etc/.disk_expanded 2>/dev/null || true
+expand_rootfs() {
+    dev=/dev/vda
+    sectors=$(cat /sys/block/vda/size 2>/dev/null)
+    if [ -n "$sectors" ]; then
+        dev_bytes=$((sectors * 512))
+    else
+        dev_bytes=$(blockdev --getsize64 "$dev" 2>/dev/null)
     fi
-    resize2fs /dev/vda 2>/dev/null && touch /etc/.disk_expanded || true
-    echo "Disk expansion complete: $(df -h / | awk 'NR==2{print $2}') total"
-else
-    echo "Filesystem already expanded, skipping resize2fs."
+    fs_info=$(tune2fs -l "$dev" 2>/dev/null || dumpe2fs -h "$dev" 2>/dev/null)
+    blocks=$(printf '%s\n' "$fs_info" | awk -F: '/^Block count/ {gsub(/[ \t]/, "", $2); print $2}')
+    bsize=$(printf '%s\n' "$fs_info" | awk -F: '/^Block size/ {gsub(/[ \t]/, "", $2); print $2}')
+    for v in "$dev_bytes" "$blocks" "$bsize"; do
+        case "$v" in
+            ''|*[!0-9]*)
+                echo "Disk size check skipped (dev=${dev_bytes:-?} blocks=${blocks:-?} bsize=${bsize:-?})"
+                return 0
+                ;;
+        esac
+    done
+    fs_bytes=$((blocks * bsize))
+    # Ignore differences under 64 MiB (ext4 metadata / rounding).
+    if [ "$dev_bytes" -gt $((fs_bytes + 64 * 1024 * 1024)) ]; then
+        echo "Growing root filesystem: $((fs_bytes / 1048576)) MiB -> $((dev_bytes / 1048576)) MiB (background, log: /var/log/resize.log)"
+        (
+            resize2fs "$dev" >/var/log/resize.log 2>&1
+            df -h / >>/var/log/resize.log 2>&1
+        ) &
+    else
+        echo "Root filesystem already fills the disk ($((fs_bytes / 1048576)) MiB)."
+    fi
+}
+if ! command -v resize2fs >/dev/null 2>&1 || ! command -v tune2fs >/dev/null 2>&1; then
+    apk add --no-cache e2fsprogs e2fsprogs-extra >/dev/null 2>&1 || true
 fi
+expand_rootfs
 
 # ---------------------------------------------------------------------------
 # Set root password
@@ -199,7 +245,9 @@ nft 'add chain ip6 filter output { type filter hook output priority 0 ; policy a
 nft add rule ip6 filter output reject 2>/dev/null || true
 
 # --- Persist for subsequent boots ---
-cat >> /etc/sysctl.conf <<'SYSEOF'
+# Append once: this script runs on every boot and the root filesystem is
+# persistent, so an unconditional append grew sysctl.conf on each boot.
+grep -q '^# Linxr SLIRP network tuning' /etc/sysctl.conf 2>/dev/null || cat >> /etc/sysctl.conf <<'SYSEOF'
 # Linxr SLIRP network tuning
 net.ipv6.conf.all.disable_ipv6=1
 net.ipv6.conf.default.disable_ipv6=1
@@ -317,8 +365,8 @@ fi
 
 # Ensure FastTrack tools exist
 if ! command -v crun >/dev/null 2>&1 || ! command -v podman >/dev/null 2>&1; then
-    echo "Installing FastTrack container tools (crun, podman, buildah)..."
-    apk add --no-cache crun podman buildah netavark 2>/dev/null || true
+    echo "Installing FastTrack container tools (crun, podman)..."
+    apk add --no-cache crun podman netavark 2>/dev/null || true
 fi
 
 if [ "$ENGINE_MODE" = "docker" ]; then
@@ -364,16 +412,23 @@ DOCKEREOF
     fi
 else
     echo "=== FastTrack Engine active: zero idle CPU overhead (crun + podman) ==="
-    killall -9 dockerd containerd 2>/dev/null || true
+    # Base images built before the fix for #29 still start dockerd from
+    # /sbin/init; stop it so FastTrack really runs without the daemon.
+    if pgrep -x dockerd >/dev/null 2>&1 || pgrep -x containerd >/dev/null 2>&1; then
+        killall dockerd containerd 2>/dev/null || true
+    fi
 fi
 
 # ---------------------------------------------------------------------------
-# K3s Kubernetes RSA Acceleration & Client Tuning (NEW-24)
+# K3s Kubernetes TLS & client tuning (NEW-24)
 # ---------------------------------------------------------------------------
-# On emulated TCG CPU architectures, default ECDSA P-256 scalar multiplication
-# in Go takes ~4.5s per handshake (causing 10s mTLS timeout cascade failures).
-# Pre-configure K3s to enforce fast RSA 2048 ciphers, disable WatchList feature
-# gate, and set GODEBUG=tlsmlkem=0 to prevent post-quantum ML-KEM handshake delays.
+# Under QEMU TCG, Go's TLS handshakes are slow enough to trip k3s' internal
+# 10s mTLS timeouts. What this config actually does:
+#   - restricts kube-apiserver to AES-GCM / ChaCha20 ECDHE cipher suites;
+#   - disables the WatchList feature gate and API priority-and-fairness;
+#   - sets GODEBUG=tlsmlkem=0 so Go skips the post-quantum ML-KEM key share.
+# k3s still uses its default ECDSA P-256 certificates; no RSA certificates
+# are generated (earlier comments and release notes claimed RSA 2048).
 mkdir -p /etc/rancher/k3s
 cat > /etc/rancher/k3s/config.yaml <<'K3SEOF'
 write-kubeconfig-mode: "644"
@@ -383,7 +438,15 @@ kube-apiserver-arg:
   - "tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305"
 K3SEOF
 
-# Disable Go ML-KEM for kubectl and internal clients to prevent handshake timeouts
+# GODEBUG for the k3s server process itself: the OpenRC service written by
+# the k3s installer sources /etc/rancher/k3s/k3s.env with allexport. The
+# installer rewrites that file, so re-add the line on every boot rather than
+# overwriting the file (it may hold K3S_* settings from the installer).
+K3S_ENV_FILE=/etc/rancher/k3s/k3s.env
+[ -f "$K3S_ENV_FILE" ] || { touch "$K3S_ENV_FILE"; chmod 600 "$K3S_ENV_FILE"; }
+grep -q '^GODEBUG=' "$K3S_ENV_FILE" 2>/dev/null || echo 'GODEBUG=tlsmlkem=0' >> "$K3S_ENV_FILE"
+
+# Same setting for kubectl and other Go clients started from login shells.
 mkdir -p /etc/profile.d
 cat > /etc/profile.d/k3s.sh <<'PROFEIO'
 export GODEBUG="tlsmlkem=0"

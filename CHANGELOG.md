@@ -5,7 +5,7 @@ All notable changes to Linxr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.5.0+31] — 2026-11-19
 
 ### Added
 - **Recipe export:** the recipe details sheet in the Marketplace has an export button that copies the recipe as JSON to the clipboard, ready to paste into Add Recipe > Import JSON ([#28](https://github.com/AI2TH/Linxr/issues/28)).
@@ -155,7 +155,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **In-App Text File Viewer Modal:** Replaced raw `file://` launcher in `FilesScreen` with safe internal preview modal to prevent `FileUriExposedException` on Android 11+.
 - **R8 ProGuard Rules:** Added `-dontwarn com.google.android.play.core.**` to `proguard-rules.pro` for clean release builds.
 
-## [Unreleased] — Bugs Branch (`bugs`)
+## [3.4.0-bugs] — Bugs Branch (`bugs`)
 
 This release applies all 35 fixes from the codebase audit documented in
 [`bug-report/BUGFIX_REPORT.md`](bug-report/BUGFIX_REPORT.md). Detailed per-line

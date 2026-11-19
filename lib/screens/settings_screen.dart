@@ -4,8 +4,12 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import '../constants.dart';
+import '../services/marketplace_service.dart';
 import '../services/vm_platform.dart';
 import '../theme.dart';
+import '../widgets/ssh_access_card.dart';
+import '../widgets/vm_release_card.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -22,6 +26,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   static const _kRam       = 'ram_mb';
   static const _kDisk      = 'disk_gb';
   static const _kSdcardPath = 'sdcard_path';
+  static const _kApkMirror  = 'apk_mirror';
 
   // Default shared folder when the user has never picked one.
   // Matches the value VmManager.kt falls back to when no pref is set.
@@ -38,6 +43,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _restarting = false;
   String? _loadError;
   String _version = '';
+  bool _requireSignedCatalog = false;
+  String _apkMirror = ApkMirrors.defaultUrl;
 
   // ── Derived ranges from device info ────────────────────────────────────────
 
@@ -61,7 +68,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final total = _device?.totalRamMb ?? 4096;
     return max(512, total ~/ 4);
   }
-  int get _autoDiskGb => _maxDiskGb;
+  // "Auto" creates the disk at the base image size (VmManager.kt
+  // VM_DISK_SIZE_GB), not at the free storage size shown before.
+  int get _autoDiskGb => _device?.autoDiskGb ?? DeviceInfo.defaultAutoDiskGb;
+
+  // A set size is capped to free storage minus 2 GB, and never below the
+  // base image size (VmManager.availableOverlaySizeGb).
+  int _createdDiskGb(int pref) =>
+      max(_autoDiskGb, min(pref, (_device?.freeStorageGb ?? 32) - 2));
 
   // Effective displayed values (user setting or auto default)
   int get _effectiveVcpu   => _vcpu   ?? _autoVcpu;
@@ -110,6 +124,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _ramMb  = (r != null && r > 0) ? r : null;
         _diskGb = (d != null && d > 0) ? d : null;
         _sdcardPath = prefs.getString(_kSdcardPath) ?? _defaultSdcardPath;
+        _requireSignedCatalog =
+            prefs.getBool(MarketplaceService.requireSignedPrefKey) ?? false;
+        _apkMirror = prefs.getString(_kApkMirror) ?? ApkMirrors.defaultUrl;
         // Seed the custom-path field only when the current path doesn't match
         // one of the quick options, so the field starts empty for quick picks.
         if (!_isQuickPath(_sdcardPath)) {
@@ -164,6 +181,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
             textColor: AppColors.danger,
             onPressed: () => _resetStorage(vm),
           ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _saveRequireSigned(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() => _requireSignedCatalog = value);
+    await prefs.setBool(MarketplaceService.requireSignedPrefKey, value);
+  }
+
+  Future<void> _saveApkMirror(String url) async {
+    if (url == _apkMirror) return;
+    final prefs = await SharedPreferences.getInstance();
+    setState(() => _apkMirror = url);
+    await prefs.setString(_kApkMirror, url);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Package mirror will apply on next VM start'),
+          duration: Duration(seconds: 4),
         ),
       );
     }
@@ -330,7 +368,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: 4),
                 const Center(
                   child: Text(
-                    'root@localhost:2222  ·  pw: alpine',
+                    'root@localhost:2222  ·  password under SSH access',
                     style: TextStyle(
                       color: Colors.white38,
                       fontSize: 11,
@@ -426,9 +464,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   title: 'Disk Cap',
                   isAuto: _diskGb == null,
                   valueLabel: _diskGb == null
-                      ? 'Auto — $_autoDiskGb GB virtual disk (${_device?.freeStorageGb ?? 32} GB free on device)'
-                      : '$_effectiveDiskGb GB virtual disk (${_device?.freeStorageGb ?? 32} GB free on device)',
+                      ? 'Auto — $_autoDiskGb GB virtual disk (base image size; ${_device?.freeStorageGb ?? 32} GB free on device)'
+                      : '${_createdDiskGb(_effectiveDiskGb)} GB virtual disk (${_device?.freeStorageGb ?? 32} GB free on device)',
                   onClearAuto: () => _saveDisk(null, context),
+                  note: (_diskGb != null && _createdDiskGb(_diskGb!) < _diskGb!)
+                      ? 'Capped to ${_createdDiskGb(_diskGb!)} GB: free storage minus 2 GB'
+                      : null,
                   child: _StepSlider(
                     value: _effectiveDiskGb.clamp(8, _maxDiskGb),
                     min: 8,
@@ -533,6 +574,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
 
                 const SizedBox(height: 24),
+                _SectionHeader('Package mirror (apk)'),
+                const SizedBox(height: 8),
+                Card(
+                  color: AppColors.surface,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final (label, url) in ApkMirrors.options)
+                              ChoiceChip(
+                                label: Text(label),
+                                selected: _apkMirror == url,
+                                onSelected: (_) => _saveApkMirror(url),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        SelectableText(
+                          _apkMirror,
+                          style: const TextStyle(
+                              color: Colors.white54, fontSize: 11, fontFamily: 'monospace'),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Where apk downloads Alpine packages (always over https). '
+                          'Applies on the next VM start.',
+                          style: TextStyle(color: Colors.white38, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+                _SectionHeader('Security'),
+                const SizedBox(height: 8),
+                const SshAccessCard(),
+                const SizedBox(height: 12),
+                Card(
+                  color: AppColors.surface,
+                  child: SwitchListTile(
+                    value: _requireSignedCatalog,
+                    onChanged: _saveRequireSigned,
+                    secondary: const Icon(Icons.verified_user, color: AppColors.primary),
+                    title: const Text('Require signed community recipes',
+                        style: TextStyle(color: Colors.white, fontSize: 14)),
+                    subtitle: const Text(
+                      'Off: an unsigned AI2TH/linxr-marketplace catalog loads with a '
+                      'warning. On: only a catalog with a valid signature loads. '
+                      'A catalog with a bad signature is always rejected.',
+                      style: TextStyle(color: Colors.white54, fontSize: 12),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 24),
                 _SectionHeader('When changes apply'),
                 const SizedBox(height: 8),
                 Card(
@@ -551,6 +653,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                 ),
+
+                const SizedBox(height: 24),
+                _SectionHeader('About'),
+                const SizedBox(height: 8),
+                VmReleaseCard(appVersion: _version),
                 const SizedBox(height: 32),
               ],
             ),

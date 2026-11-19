@@ -1,12 +1,95 @@
 #!/bin/sh
-# Alpine VM bootstrap — runs on first boot inside the QEMU VM.
+# Alpine VM bootstrap — runs on every boot inside the QEMU VM.
 # Sets up root SSH access and installs essential packages.
-# Connect via:  ssh root@localhost -p 2222   (password: alpine)
+# Connect via:  ssh root@localhost -p 2222
+# The root password is generated per install by the app (Settings -> SSH
+# access) and passed in through QEMU fw_cfg; see "Per-install SSH credentials".
 
 echo "=== Alpine VM Bootstrap Starting ==="
 
 # Remove slow Go CLI plugins immediately to prevent docker CLI from hanging on TCG CPU
 rm -rf /usr/libexec/docker/cli-plugins 2>/dev/null || true
+
+# The API token comes from fw_cfg or the kernel command line. Older app
+# versions also copied it through the shared folder; drop that copy.
+if grep -q 'api_token=' /proc/cmdline 2>/dev/null; then
+    rm -f /bootstrap/token 2>/dev/null || true
+fi
+
+# ---------------------------------------------------------------------------
+# Per-install SSH credentials (root password, host key, key-only login)
+# ---------------------------------------------------------------------------
+# The app generates a random root password per install, keeps it in Android
+# Keystore and passes it in through QEMU fw_cfg (opt/root_password), like the
+# API token. Base images built before this change shipped the same Dropbear
+# host keys and the root/alpine password on every install: replace both here,
+# early, so the shared password is valid for as short a time as possible.
+# Base images built after it do the same in /sbin/init before Dropbear starts.
+FW_CFG_DIR=/sys/firmware/qemu_fw_cfg/by_name/opt
+[ -d "$FW_CFG_DIR" ] || modprobe qemu_fw_cfg 2>/dev/null || true
+fw_cfg_read() {
+    [ -r "$FW_CFG_DIR/$1/raw" ] && cat "$FW_CFG_DIR/$1/raw" 2>/dev/null
+}
+
+ROOT_PW="$(fw_cfg_read root_password)"
+case "$ROOT_PW" in
+    ''|*[!A-Za-z0-9]*)
+        echo "WARN: no per-install root password in fw_cfg; the root password is unchanged"
+        ;;
+    *)
+        if printf 'root:%s\n' "$ROOT_PW" | chpasswd 2>/dev/null; then
+            echo "Root password set from fw_cfg (per install)."
+        fi
+        ;;
+esac
+unset ROOT_PW
+
+DROPBEAR_DIR=/etc/dropbear
+DROPBEAR_HOSTKEY="$DROPBEAR_DIR/dropbear_ed25519_host_key"
+DROPBEAR_MARK="$DROPBEAR_DIR/.linxr_per_install"
+DROPBEAR_ARGS_FILE=/run/linxr-dropbear.args
+SSH_RESTART=0
+if [ ! -f "$DROPBEAR_MARK" ] || [ ! -s "$DROPBEAR_HOSTKEY" ]; then
+    mkdir -p "$DROPBEAR_DIR"
+    # Remove the host keys baked into older base images (same on every install).
+    rm -f "$DROPBEAR_DIR/dropbear_rsa_host_key" "$DROPBEAR_DIR/dropbear_ecdsa_host_key" \
+          "$DROPBEAR_DIR/dropbear_dss_host_key" "$DROPBEAR_HOSTKEY"
+    if dropbearkey -t ed25519 -f "$DROPBEAR_HOSTKEY" >/dev/null 2>&1; then
+        touch "$DROPBEAR_MARK"
+        SSH_RESTART=1
+        echo "Generated a per-install Dropbear ed25519 host key."
+    else
+        echo "WARN: could not generate a Dropbear host key"
+    fi
+fi
+
+DROPBEAR_ARGS="-E -p 22"
+[ -s "$DROPBEAR_HOSTKEY" ] && DROPBEAR_ARGS="$DROPBEAR_ARGS -r $DROPBEAR_HOSTKEY"
+# Key-only login: the app sets opt/ssh_key_only=1 only after it has stored a
+# private key whose public half is in authorized_keys (Settings -> SSH access).
+if [ "$(fw_cfg_read ssh_key_only)" = "1" ] && [ -s /root/.ssh/authorized_keys ]; then
+    DROPBEAR_ARGS="$DROPBEAR_ARGS -s"
+    echo "SSH password login disabled (key-only)."
+fi
+
+# Restart only the listening Dropbear; open sessions are separate processes
+# and stay connected.
+restart_dropbear() {
+    pid="$(cat /var/run/dropbear.pid 2>/dev/null)"
+    [ -n "$pid" ] || pid="$(pgrep -o -x dropbear 2>/dev/null)"
+    if [ -n "$pid" ]; then
+        kill "$pid" 2>/dev/null || true
+        sleep 1
+    fi
+    # shellcheck disable=SC2086 # DROPBEAR_ARGS is a list of options
+    /usr/sbin/dropbear $DROPBEAR_ARGS && echo "$DROPBEAR_ARGS" > "$DROPBEAR_ARGS_FILE"
+}
+if command -v dropbear >/dev/null 2>&1 && pgrep -x dropbear >/dev/null 2>&1; then
+    if [ "$SSH_RESTART" -eq 1 ] || [ "$(cat "$DROPBEAR_ARGS_FILE" 2>/dev/null)" != "$DROPBEAR_ARGS" ]; then
+        echo "Restarting Dropbear with: $DROPBEAR_ARGS"
+        restart_dropbear
+    fi
+fi
 
 # ---------------------------------------------------------------------------
 # Network hardening & host configuration
@@ -16,9 +99,35 @@ grep -q "10.0.2.2" /etc/hosts 2>/dev/null || echo "10.0.2.2 android-host gateway
 # ---------------------------------------------------------------------------
 # Package mirror configuration (NEW-16)
 # ---------------------------------------------------------------------------
+# Use the Alpine branch the image was built from. Hard-coding v3.20 mixed
+# 3.20 packages into images built from a newer release (build_qcow2.sh
+# honours ALPINE_VERSION), which breaks apk dependency resolution.
+ALPINE_BRANCH="v$(cut -d. -f1,2 /etc/alpine-release 2>/dev/null)"
+case "$ALPINE_BRANCH" in
+    v[0-9]*.[0-9]*) ;;
+    *) ALPINE_BRANCH="v3.20" ;;
+esac
+# Mirror chosen in Settings -> Package mirror, passed through QEMU fw_cfg
+# (opt/apk_mirror). Only https URLs made of plain URL characters are used;
+# anything else falls back to the Alpine CDN. apk verifies package
+# signatures either way, but https keeps the package list private and
+# stops a network attacker from serving stale indexes.
+APK_MIRROR_DEFAULT="https://dl-cdn.alpinelinux.org/alpine"
+APK_MIRROR="$(fw_cfg_read apk_mirror)"
+case "$APK_MIRROR" in
+    https://?*)
+        case "$APK_MIRROR" in
+            *[!A-Za-z0-9.:/_~-]*) APK_MIRROR="" ;;
+        esac
+        ;;
+    *) APK_MIRROR="" ;;
+esac
+APK_MIRROR="${APK_MIRROR%/}"
+[ -n "$APK_MIRROR" ] || APK_MIRROR="$APK_MIRROR_DEFAULT"
+echo "apk mirror: $APK_MIRROR (${ALPINE_BRANCH})"
 cat > /etc/apk/repositories <<REPOEOF
-http://dl-cdn.alpinelinux.org/alpine/v3.20/main
-http://dl-cdn.alpinelinux.org/alpine/v3.20/community
+${APK_MIRROR}/${ALPINE_BRANCH}/main
+${APK_MIRROR}/${ALPINE_BRANCH}/community
 REPOEOF
 sed -i 's/\r$//' /etc/apk/repositories 2>/dev/null || true
 
@@ -45,22 +154,48 @@ fi
 # ---------------------------------------------------------------------------
 # Expand filesystem to fill the virtual disk
 # ---------------------------------------------------------------------------
-if [ ! -f /etc/.disk_expanded ]; then
-    echo "Expanding filesystem to fill disk..."
-    if ! command -v resize2fs >/dev/null 2>&1; then
-        apk add --no-cache e2fsprogs >/dev/null 2>&1 || true
+# The base ext4 image is DISK_SIZE_GB (scripts/_build_rootfs.sh). When the
+# user picks a larger disk in Settings, user.qcow2 is created at that size but
+# the filesystem inside stays small. Decide by comparing sizes on every boot
+# (not by a flag file, which older images shipped pre-set) and grow online in
+# the background so boot is not delayed. Growing a mounted ext4 is safe.
+# Old images may still carry the obsolete flag file; it is no longer used.
+rm -f /etc/.disk_expanded 2>/dev/null || true
+expand_rootfs() {
+    dev=/dev/vda
+    sectors=$(cat /sys/block/vda/size 2>/dev/null)
+    if [ -n "$sectors" ]; then
+        dev_bytes=$((sectors * 512))
+    else
+        dev_bytes=$(blockdev --getsize64 "$dev" 2>/dev/null)
     fi
-    resize2fs /dev/vda 2>/dev/null && touch /etc/.disk_expanded || true
-    echo "Disk expansion complete: $(df -h / | awk 'NR==2{print $2}') total"
-else
-    echo "Filesystem already expanded, skipping resize2fs."
+    fs_info=$(tune2fs -l "$dev" 2>/dev/null || dumpe2fs -h "$dev" 2>/dev/null)
+    blocks=$(printf '%s\n' "$fs_info" | awk -F: '/^Block count/ {gsub(/[ \t]/, "", $2); print $2}')
+    bsize=$(printf '%s\n' "$fs_info" | awk -F: '/^Block size/ {gsub(/[ \t]/, "", $2); print $2}')
+    for v in "$dev_bytes" "$blocks" "$bsize"; do
+        case "$v" in
+            ''|*[!0-9]*)
+                echo "Disk size check skipped (dev=${dev_bytes:-?} blocks=${blocks:-?} bsize=${bsize:-?})"
+                return 0
+                ;;
+        esac
+    done
+    fs_bytes=$((blocks * bsize))
+    # Ignore differences under 64 MiB (ext4 metadata / rounding).
+    if [ "$dev_bytes" -gt $((fs_bytes + 64 * 1024 * 1024)) ]; then
+        echo "Growing root filesystem: $((fs_bytes / 1048576)) MiB -> $((dev_bytes / 1048576)) MiB (background, log: /var/log/resize.log)"
+        (
+            resize2fs "$dev" >/var/log/resize.log 2>&1
+            df -h / >>/var/log/resize.log 2>&1
+        ) &
+    else
+        echo "Root filesystem already fills the disk ($((fs_bytes / 1048576)) MiB)."
+    fi
+}
+if ! command -v resize2fs >/dev/null 2>&1 || ! command -v tune2fs >/dev/null 2>&1; then
+    apk add --no-cache e2fsprogs e2fsprogs-extra >/dev/null 2>&1 || true
 fi
-
-# ---------------------------------------------------------------------------
-# Set root password
-# ---------------------------------------------------------------------------
-echo "root:alpine" | chpasswd 2>/dev/null || true
-echo "Root password set to: alpine"
+expand_rootfs
 
 # ---------------------------------------------------------------------------
 # Install and configure OpenSSH
@@ -199,7 +334,9 @@ nft 'add chain ip6 filter output { type filter hook output priority 0 ; policy a
 nft add rule ip6 filter output reject 2>/dev/null || true
 
 # --- Persist for subsequent boots ---
-cat >> /etc/sysctl.conf <<'SYSEOF'
+# Append once: this script runs on every boot and the root filesystem is
+# persistent, so an unconditional append grew sysctl.conf on each boot.
+grep -q '^# Linxr SLIRP network tuning' /etc/sysctl.conf 2>/dev/null || cat >> /etc/sysctl.conf <<'SYSEOF'
 # Linxr SLIRP network tuning
 net.ipv6.conf.all.disable_ipv6=1
 net.ipv6.conf.default.disable_ipv6=1
@@ -283,7 +420,7 @@ elif command -v dropbear >/dev/null 2>&1; then
     if pgrep dropbear >/dev/null 2>&1; then
         echo "=== Dropbear is already running on port 22 ==="
     else
-        /usr/sbin/dropbear -E -p 22
+        restart_dropbear
         sleep 1
         if pgrep dropbear >/dev/null 2>&1; then
             echo "=== Dropbear started on port 22 ==="
@@ -317,8 +454,8 @@ fi
 
 # Ensure FastTrack tools exist
 if ! command -v crun >/dev/null 2>&1 || ! command -v podman >/dev/null 2>&1; then
-    echo "Installing FastTrack container tools (crun, podman, buildah)..."
-    apk add --no-cache crun podman buildah netavark 2>/dev/null || true
+    echo "Installing FastTrack container tools (crun, podman)..."
+    apk add --no-cache crun podman netavark 2>/dev/null || true
 fi
 
 if [ "$ENGINE_MODE" = "docker" ]; then
@@ -364,16 +501,23 @@ DOCKEREOF
     fi
 else
     echo "=== FastTrack Engine active: zero idle CPU overhead (crun + podman) ==="
-    killall -9 dockerd containerd 2>/dev/null || true
+    # Base images built before the fix for #29 still start dockerd from
+    # /sbin/init; stop it so FastTrack really runs without the daemon.
+    if pgrep -x dockerd >/dev/null 2>&1 || pgrep -x containerd >/dev/null 2>&1; then
+        killall dockerd containerd 2>/dev/null || true
+    fi
 fi
 
 # ---------------------------------------------------------------------------
-# K3s Kubernetes RSA Acceleration & Client Tuning (NEW-24)
+# K3s Kubernetes TLS & client tuning (NEW-24)
 # ---------------------------------------------------------------------------
-# On emulated TCG CPU architectures, default ECDSA P-256 scalar multiplication
-# in Go takes ~4.5s per handshake (causing 10s mTLS timeout cascade failures).
-# Pre-configure K3s to enforce fast RSA 2048 ciphers, disable WatchList feature
-# gate, and set GODEBUG=tlsmlkem=0 to prevent post-quantum ML-KEM handshake delays.
+# Under QEMU TCG, Go's TLS handshakes are slow enough to trip k3s' internal
+# 10s mTLS timeouts. What this config actually does:
+#   - restricts kube-apiserver to AES-GCM / ChaCha20 ECDHE cipher suites;
+#   - disables the WatchList feature gate and API priority-and-fairness;
+#   - sets GODEBUG=tlsmlkem=0 so Go skips the post-quantum ML-KEM key share.
+# k3s still uses its default ECDSA P-256 certificates; no RSA certificates
+# are generated (earlier comments and release notes claimed RSA 2048).
 mkdir -p /etc/rancher/k3s
 cat > /etc/rancher/k3s/config.yaml <<'K3SEOF'
 write-kubeconfig-mode: "644"
@@ -383,12 +527,51 @@ kube-apiserver-arg:
   - "tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305"
 K3SEOF
 
-# Disable Go ML-KEM for kubectl and internal clients to prevent handshake timeouts
+# GODEBUG for the k3s server process itself: the OpenRC service written by
+# the k3s installer sources /etc/rancher/k3s/k3s.env with allexport. The
+# installer rewrites that file, so re-add the line on every boot rather than
+# overwriting the file (it may hold K3S_* settings from the installer).
+K3S_ENV_FILE=/etc/rancher/k3s/k3s.env
+[ -f "$K3S_ENV_FILE" ] || { touch "$K3S_ENV_FILE"; chmod 600 "$K3S_ENV_FILE"; }
+grep -q '^GODEBUG=' "$K3S_ENV_FILE" 2>/dev/null || echo 'GODEBUG=tlsmlkem=0' >> "$K3S_ENV_FILE"
+
+# Same setting for kubectl and other Go clients started from login shells.
 mkdir -p /etc/profile.d
 cat > /etc/profile.d/k3s.sh <<'PROFEIO'
 export GODEBUG="tlsmlkem=0"
 PROFEIO
 chmod +x /etc/profile.d/k3s.sh
+
+# ---------------------------------------------------------------------------
+# Start k3s again after a VM reboot
+# ---------------------------------------------------------------------------
+# The custom /sbin/init never runs OpenRC, so the k3s service the installer
+# registered is not started on boot. Start the server here when k3s is
+# installed and not already running, with the same environment file the
+# OpenRC service uses (GODEBUG above) and the same --disable traefik choice
+# when the installed service has it.
+start_k3s() {
+    K3S_BIN=/usr/local/bin/k3s
+    [ -x "$K3S_BIN" ] || return 0
+    if pgrep -f "k3s server" >/dev/null 2>&1; then
+        echo "k3s server already running."
+        return 0
+    fi
+    k3s_args="server"
+    if grep -q "traefik" /etc/init.d/k3s 2>/dev/null; then
+        k3s_args="$k3s_args --disable traefik"
+    fi
+    echo "Starting k3s ($k3s_args) in the background (log: /var/log/k3s.log)"
+    (
+        set -a
+        # shellcheck disable=SC1090 # written by the k3s installer and above
+        [ -f "$K3S_ENV_FILE" ] && . "$K3S_ENV_FILE"
+        set +a
+        # shellcheck disable=SC2086 # k3s_args is a list of options
+        exec "$K3S_BIN" $k3s_args >>/var/log/k3s.log 2>&1
+    ) &
+}
+start_k3s
 
 # Install Linxr Virtual Desktop tool
 if [ -f /bootstrap/linxr-desktop.sh ]; then

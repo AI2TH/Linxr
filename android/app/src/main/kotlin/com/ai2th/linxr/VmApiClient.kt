@@ -164,7 +164,7 @@ class VmApiClient(private val token: String) {
     fun getLogs(name: String, tail: Int): String {
         return try {
             val request = Request.Builder()
-                .url("$baseUrl/logs?name=$name&tail=$tail")
+                .url("$baseUrl/logs?name=${java.net.URLEncoder.encode(name, "UTF-8")}&tail=$tail")
                 .withAuth()
                 .get()
                 .build()
@@ -267,6 +267,32 @@ class VmApiClient(private val token: String) {
             emptyList()
         }
     }
+
+    // ── System ──────────────────────────────────────────────────────────────
+
+    /** Alpine and kernel versions inside the VM (/etc/linxr-release). */
+    fun getSystemRelease(): Map<String, Any> {
+        val request = Request.Builder()
+            .url("$baseUrl/system/release")
+            .withAuth()
+            .get()
+            .build()
+        val response = client.newCall(request).execute()
+        val json = response.body?.string() ?: "{}"
+        response.close()
+        if (!response.isSuccessful) throw Exception(json.take(300))
+        @Suppress("UNCHECKED_CAST")
+        return (gson.fromJson(json, Map::class.java) as? Map<String, Any>) ?: emptyMap()
+    }
+
+    // ── SSH ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Creates a new SSH key pair for the app inside the VM. The guest adds
+     * the public key to /root/.ssh/authorized_keys and returns the private key
+     * (OpenSSH format) without keeping a copy.
+     */
+    fun createAppSshKey(): String = postJsonForField("ssh/app-key", emptyMap(), "privateKey")
 
     // ── Helpers ─────────────────────────────────────────────────────────────
 

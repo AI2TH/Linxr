@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flutter:
+    name: Flutter analyze and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          # Pinned: Flutter 3.50+ requires Gradle 9.3.1, and the Android
+          # project still uses the Gradle 8.11.1 wrapper.
+          flutter-version: '3.44.0'
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze --no-fatal-infos
+      - run: flutter test
+
+  scripts:
+    name: Shell and Python checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # linxr-desktop.sh is left out for now: the desktop launcher is being
+      # rewritten on another branch.
+      - name: shellcheck (scripts/ and the VM bootstrap)
+        run: |
+          shellcheck --version
+          shellcheck -S warning scripts/*.sh android/app/src/main/assets/bootstrap/init_bootstrap.sh
+      - name: pyflakes (VM API server)
+        run: |
+          python3 -m pip install --quiet pyflakes
+          python3 -m pyflakes android/app/src/main/assets/bootstrap/api_server.py
+
+  kotlin:
+    name: Kotlin compile
+    runs-on: ubuntu-latest
+    # The VM assets (kernel, initramfs, base.qcow2, libqemu*.so) are not in the
+    # repository; compiling the Kotlin sources does not need them.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          # Pinned: Flutter 3.50+ requires Gradle 9.3.1, and the Android
+          # project still uses the Gradle 8.11.1 wrapper.
+          flutter-version: '3.44.0'
+          cache: true
+      # Writes android/local.properties (flutter.sdk, sdk.dir).
+      - run: flutter pub get
+      - uses: gradle/actions/setup-gradle@v4
+      - name: compileDebugKotlin
+        working-directory: android
+        run: bash ./gradlew --no-daemon :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin

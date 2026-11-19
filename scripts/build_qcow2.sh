@@ -29,8 +29,8 @@ mkdir -p "${OUTPUT_DIR}"
 
 echo "=== Building Alpine Linux base.qcow2 for Linxr ==="
 echo "Platform : linux/arm64 (aarch64)"
-echo "Packages : openssh + sudo + bash"
-echo "Output   : "${OUTPUT_DIR}"/base.qcow2.gz"
+echo "Packages : dropbear + sudo + bash"
+echo "Output   : ${OUTPUT_DIR}/base.qcow2.gz"
 echo ""
 
 ALPINE_TAG="alpine:${ALPINE_VERSION:-3.20}"

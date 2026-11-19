@@ -16,7 +16,7 @@ ROOTFS=/tmp/rootfs
 IMAGE_SIZE="${DISK_SIZE_GB}G"
 
 echo "--- Installing build tools ---"
-apk add --no-cache e2fsprogs qemu-img dropbear
+apk add --no-cache e2fsprogs qemu-img
 
 # â”€â”€ Bootstrap rootfs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 echo "--- Bootstrapping Alpine rootfs ---"
@@ -48,7 +48,6 @@ apk --root "${ROOTFS}" --initdb --no-cache add \
     docker \
     crun \
     podman \
-    buildah \
     netavark \
     fuse-overlayfs \
     iptables \
@@ -72,10 +71,11 @@ apk --root "${ROOTFS}" --initdb --no-cache add \
 # ---------------------------------------------------------------------------
 # Package mirror configuration (NEW-16) — baked into base.qcow2
 # ---------------------------------------------------------------------------
-# Use Aliyun CDN for faster apk downloads over SLIRP. Fallback to official CDN.
-# Reachability test is done at image-build time; if Aliyun is unreachable,
-# the official CDN is used instead.
-LINXR_APK_MIRROR="${LINXR_APK_MIRROR:-mirrors.aliyun.com/alpine/${ALPINE_BRANCH}}"
+# Default to the official Alpine CDN; set LINXR_APK_MIRROR (host/path, no
+# scheme) to bake another mirror. Reachability is tested at image-build time
+# and the CDN is used if the mirror is unreachable. At runtime
+# init_bootstrap.sh rewrites the list from Settings > Package mirror.
+LINXR_APK_MIRROR="${LINXR_APK_MIRROR:-dl-cdn.alpinelinux.org/alpine/${ALPINE_BRANCH}}"
 LINXR_APK_FALLBACK="dl-cdn.alpinelinux.org/alpine/${ALPINE_BRANCH}"
 if wget -q -T 3 -O /dev/null "https://${LINXR_APK_MIRROR}/main/aarch64/APKINDEX.tar.gz" 2>/dev/null \
 || wget -q -T 3 -O /dev/null "https://${LINXR_APK_MIRROR}/main/x86_64/APKINDEX.tar.gz" 2>/dev/null; then
@@ -221,16 +221,28 @@ echo 'root:100000:65536' >> "${ROOTFS}/etc/subgid"
 echo "--- Installing linux-virt kernel modules into rootfs ---"
 apk add --no-cache linux-virt
 
-KVER=$(ls /lib/modules/ | grep '\-virt' | head -1)
+KVER=""
+for d in /lib/modules/*-virt; do
+    [ -d "$d" ] && { KVER="${d##*/}"; break; }
+done
 echo "Kernel version: $KVER"
 
 # Copy all kernel modules to guest rootfs
 mkdir -p "${ROOTFS}/lib/modules/$KVER"
-cp -r /lib/modules/$KVER/. "${ROOTFS}/lib/modules/$KVER/"
+cp -r "/lib/modules/$KVER/." "${ROOTFS}/lib/modules/$KVER/"
 
 # Build module dependency database inside rootfs
 depmod -b "${ROOTFS}" "$KVER"
 echo "--- Kernel modules ready (KVER=$KVER) ---"
+
+# Record what this image ships so a running VM (and bug reports) can tell
+# which Alpine and kernel versions an APK contains (#33).
+cat > "${ROOTFS}/etc/linxr-release" <<RELEOF
+ALPINE_VERSION=$(cat "${ROOTFS}/etc/alpine-release" 2>/dev/null || cat /etc/alpine-release)
+KERNEL_VERSION=${KVER}
+BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+RELEOF
+cat "${ROOTFS}/etc/linxr-release"
 
 # Runs in sysinit after mdev so /dev is populated.
 # Docker networking modules are intentionally NOT loaded here — see start().
@@ -240,7 +252,7 @@ description="Mount cgroup2 and create device nodes"
 depend() {
     need sysfs
     after mdev
-    before diskexpand sshd docker
+    before sshd docker
 }
 start() {
     ebegin "Mounting cgroup2"
@@ -265,31 +277,10 @@ EOF
 chmod +x "${ROOTFS}/etc/init.d/cgroups"
 ln -sf /etc/init.d/cgroups "${ROOTFS}/etc/runlevels/sysinit/cgroups"
 
-# â”€â”€ diskexpand OpenRC service â€” expand fs when overlay > base fs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-# The base filesystem is pre-expanded to DISK_SIZE_GB. If the user chooses a
-# larger disk in Settings, the overlay is created at that size but the ext4
-# filesystem inside remains DISK_SIZE_GB. This service expands it to fill the
-# overlay, but only when needed, so the default fast-path boot skips resize2fs.
-cat > "${ROOTFS}/etc/init.d/diskexpand" << 'EOF'
-#!/sbin/openrc-run
-description="Expand filesystem to fill virtual disk"
-depend() {
-    after modules bootmisc
-    use dev
-}
-start() {
-    # Always run resize2fs. On a pre-expanded filesystem it is a fast no-op;
-    # on a larger overlay it expands /dev/vda to fill the virtual disk.
-    ebegin "Expanding filesystem to disk size"
-    /usr/sbin/resize2fs /dev/vda >/tmp/resize.log 2>&1
-    local ret=$?
-    /bin/df -h / >> /tmp/resize.log 2>&1
-    [ $ret -eq 0 ] && /bin/touch /etc/.disk_expanded
-    eend 0
-}
-EOF
-chmod +x "${ROOTFS}/etc/init.d/diskexpand"
-ln -sf /etc/init.d/diskexpand "${ROOTFS}/etc/runlevels/boot/diskexpand"
+# Root filesystem growth (when the user picks a disk larger than DISK_SIZE_GB
+# in Settings) is handled by /bootstrap/init_bootstrap.sh, which compares the
+# block device size with the ext4 size on every boot. There is no OpenRC
+# diskexpand service: the custom /sbin/init below never runs OpenRC.
 
 # â”€â”€ inittab â€” ttyAMA0 console â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 cat > "${ROOTFS}/etc/inittab" << 'EOF'
@@ -302,10 +293,10 @@ ttyAMA0::respawn:/sbin/getty -L ttyAMA0 115200 vt100
 EOF
 
 # â”€â”€ SSH â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-# ⚠️  SECURITY WARNING — DEVELOPMENT ONLY ⚠️
-# This VM is configured with root SSH access using hardcoded credentials
-# (root:alpine). DO NOT expose port 2222 on a public or shared network.
-# For production use, replace with key-based auth and disable password login.
+# Root login: the app generates a random root password per install and
+# passes it in through QEMU fw_cfg (opt/root_password); /sbin/init below sets
+# it before Dropbear starts. Settings -> SSH access shows it and can switch
+# the VM to key-only login.
 
 echo "--- Configuring dropbear ---"
 # Dropbear is used instead of OpenSSH because its handshake is much lighter
@@ -315,22 +306,11 @@ echo "--- Configuring dropbear ---"
 # Ensure dropbear starts in default runlevel.
 ln -sf /etc/init.d/dropbear "${ROOTFS}/etc/runlevels/default/dropbear" 2>/dev/null || true
 
-# ---------------------------------------------------------------------------
-# Pre-generate dropbear host keys at image build time (boot-time reduction)
-# ---------------------------------------------------------------------------
-# Without pre-generated keys, dropbear generates its RSA / ECDSA / Ed25519 host
-# keys on first boot. Under TCG that takes 1-3 minutes per key (entropy
-# gathering via /dev/urandom is software-emulated). Since the VM rootfs is
-# ephemeral (overlay discarded on stop), baked-in keys are not a security
-# concern and save several minutes of boot time.
+# No host keys are baked into the image: every install would share them, so
+# anyone could impersonate any user's VM. /sbin/init generates one ed25519
+# key on first boot (fast, unlike RSA under TCG) and keeps it in user.qcow2.
 mkdir -p "${ROOTFS}/etc/dropbear"
-# Pre-generate all three key types used by dropbear at image build time
-# so the VM doesn't spend 1-3 minutes per key under TCG on first boot.
-# Keys are ephemeral (regenerated on each VM start), so no permanent security concern.
-dropbearkey -t rsa -f "${ROOTFS}/etc/dropbear/dropbear_rsa_host_key" -s 2048 \
-    2>/dev/null || echo "WARN: RSA key gen failed"
-dropbearkey -t ecdsa -f "${ROOTFS}/etc/dropbear/dropbear_ecdsa_host_key" -s 256
-dropbearkey -t ed25519 -f "${ROOTFS}/etc/dropbear/dropbear_ed25519_host_key" -s 256
+rm -f "${ROOTFS}"/etc/dropbear/dropbear_*_host_key
 
 # â”€â”€ sdcard share service â€” mount Android /sdcard via 9p â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # VmManager exposes the Android external storage directory as a virtio-9p
@@ -360,6 +340,9 @@ chmod +x "${ROOTFS}/etc/init.d/sdcardshare"
 ln -sf /etc/init.d/sdcardshare "${ROOTFS}/etc/runlevels/boot/sdcardshare"
 
 # â”€â”€ Credentials â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Fallback only: replaced on every boot by the per-install password from
+# fw_cfg. The app falls back to it (and then sets its own password) when the
+# guest kernel cannot read fw_cfg.
 echo "root:alpine" | chroot "${ROOTFS}" chpasswd
 
 # â”€â”€ sudo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -367,10 +350,6 @@ printf '%%wheel ALL=(ALL) NOPASSWD: ALL\n' >> "${ROOTFS}/etc/sudoers"
 printf 'root ALL=(ALL) NOPASSWD: ALL\n'    >  "${ROOTFS}/etc/sudoers.d/root"
 chmod 440 "${ROOTFS}/etc/sudoers"
 chmod 440 "${ROOTFS}/etc/sudoers.d/root"
-
-# Mark filesystem as already expanded so first-boot resize2fs is skipped.
-# Resize under TCG was taking 5+ minutes and caused boots >3 hours.
-touch "${ROOTFS}/etc/.disk_expanded"
 
 # Replace standard OpenRC init with custom high-speed init script to boot in seconds
 echo "--- Installing high-speed custom init ---"
@@ -446,12 +425,34 @@ if [ -f /bootstrap/api_server.py ]; then
     python3 -u /bootstrap/api_server.py >/var/log/api_server.log 2>&1 &
 fi
 
+# Per-install SSH credentials. The root password and the key-only flag come
+# from QEMU fw_cfg (set by the app); the host key is generated on first boot
+# and kept. /bootstrap/init_bootstrap.sh does the same for older images.
+modprobe qemu_fw_cfg 2>/dev/null || true
+FWCFG=/sys/firmware/qemu_fw_cfg/by_name/opt
+mkdir -p /etc/dropbear
+[ -s /etc/dropbear/dropbear_ed25519_host_key ] || \
+    dropbearkey -t ed25519 -f /etc/dropbear/dropbear_ed25519_host_key >/dev/null 2>&1
+touch /etc/dropbear/.linxr_per_install
+pw="$(cat "$FWCFG/root_password/raw" 2>/dev/null)"
+case "$pw" in
+    ''|*[!A-Za-z0-9]*) echo "WARN: no per-install root password in fw_cfg" ;;
+    *) printf 'root:%s\n' "$pw" | chpasswd ;;
+esac
+unset pw
+DROPBEAR_ARGS="-E -p 22 -r /etc/dropbear/dropbear_ed25519_host_key"
+if [ "$(cat "$FWCFG/ssh_key_only/raw" 2>/dev/null)" = "1" ] && [ -s /root/.ssh/authorized_keys ]; then
+    DROPBEAR_ARGS="$DROPBEAR_ARGS -s"
+fi
+
 # Start Dropbear SSH
 touch /var/log/lastlog
-/usr/sbin/dropbear -E -p 22
+# shellcheck disable=SC2086 # DROPBEAR_ARGS is a list of options
+/usr/sbin/dropbear $DROPBEAR_ARGS && echo "$DROPBEAR_ARGS" > /run/linxr-dropbear.args
 
-# Start Docker daemon in the background
-dockerd --data-root /var/lib/docker --log-level warn >/tmp/dockerd.log 2>&1 &
+# dockerd is NOT started here. /bootstrap/init_bootstrap.sh starts it only
+# when the Docker engine is selected (/etc/linxr_engine.mode = docker), so the
+# default FastTrack (crun + podman) mode pays no daemon cost at boot.
 
 echo "Linxr VM booted successfully in seconds!"
 while true; do

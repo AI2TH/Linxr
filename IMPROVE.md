@@ -1,3 +1,5 @@
+> **Historical.** This was the original plan against vmConsole; most of it has shipped. Current work is tracked in [IMPROVEMENTS.md](IMPROVEMENTS.md).
+
 # Linxr — Improvements to Beat vmConsole
 
 ## Why vmConsole Lost

@@ -23,6 +23,13 @@ class VmManager(private val context: Context) {
         // so the user.qcow2 overlay is the same size as the pre-expanded base filesystem.
         private const val VM_DISK_SIZE_GB = 4L
 
+        // Alpine package mirror (Settings > Package mirror); see apkMirror().
+        private const val DEFAULT_APK_MIRROR = "https://dl-cdn.alpinelinux.org/alpine"
+        private val APK_MIRROR_RE = Regex("^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?$")
+
+        private const val SECRET_ROOT_PASSWORD = "root_password"
+        private const val SECRET_SSH_PRIVATE_KEY = "ssh_private_key"
+
         // Host -> guest port forwards exposed through QEMU SLIRP.
         // These are the ports the Android host (and, when LAN access is enabled,
         // other devices on the same network) can reach inside the VM.
@@ -80,6 +87,52 @@ class VmManager(private val context: Context) {
 
     val apiClient: VmApiClient by lazy { VmApiClient(token) }
 
+    private val secrets: SecretStore by lazy { SecretStore(context) }
+
+    /**
+     * Per-install root password for the VM. Generated once, kept encrypted
+     * with an Android Keystore key, and passed into the guest through QEMU
+     * fw_cfg (opt/root_password); /sbin/init or init_bootstrap.sh applies it
+     * with chpasswd on every boot. Replaces the root/alpine password that
+     * every install used to share.
+     */
+    val rootPassword: String by lazy { getOrCreateRootPassword() }
+
+    private fun getOrCreateRootPassword(): String {
+        secrets.get(SECRET_ROOT_PASSWORD)?.takeIf { it.isNotEmpty() }?.let { return it }
+        val pw = SecretStore.randomPassword()
+        secrets.put(SECRET_ROOT_PASSWORD, pw)
+        Log.d(TAG, "Generated a new per-install VM root password")
+        return pw
+    }
+
+    /** OpenSSH private key the app uses for key login, or null if none was created. */
+    fun getSshPrivateKey(): String? = secrets.get(SECRET_SSH_PRIVATE_KEY)
+
+    /**
+     * Asks the guest for a new app SSH key pair (the public half goes into
+     * /root/.ssh/authorized_keys, the private half is returned and deleted in
+     * the guest) and stores the private key in the Keystore-backed store.
+     */
+    fun createSshKey(): Boolean {
+        val pem = apiClient.createAppSshKey()
+        if (!pem.contains("PRIVATE KEY")) throw IllegalStateException("VM returned no private key")
+        secrets.put(SECRET_SSH_PRIVATE_KEY, pem)
+        return true
+    }
+
+    // Key-only login is passed to the guest only when the app holds a private
+    // key, so turning it on can never lock the app out of its own VM.
+    private fun sshKeyOnly(): Boolean =
+        getFlutterBool("flutter.ssh_key_only", false) && getSshPrivateKey() != null
+
+    fun getSshCredentials(): Map<String, Any?> = mapOf(
+        "username" to "root",
+        "password" to rootPassword,
+        "privateKey" to getSshPrivateKey(),
+        "keyOnly" to sshKeyOnly(),
+    )
+
     private fun getOrCreateToken(): String {
         var t = appPrefs.getString("api_token", null)
         if (t == null) {
@@ -133,6 +186,8 @@ class VmManager(private val context: Context) {
     fun vmExec(cmd: String): Map<String, Any> = apiClient.vmExec(cmd)
 
     fun checkHealth(): Boolean = apiClient.checkHealth()
+
+    fun getSystemRelease(): Map<String, Any> = apiClient.getSystemRelease()
 
     // ── Virtual Desktop (GUI) ────────────────────────────────────────────────
     fun getDesktopStatus(): Map<String, Any> = apiClient.getDesktopStatus()
@@ -199,6 +254,16 @@ class VmManager(private val context: Context) {
         appPrefs.edit().putString("custom_port_forwards", arr.toString()).apply()
     }
 
+    /**
+     * Base URL of the Alpine mirror the guest writes into
+     * /etc/apk/repositories (init_bootstrap.sh). Only https URLs of plain URL
+     * characters are passed on; anything else falls back to the Alpine CDN.
+     */
+    fun apkMirror(): String {
+        val pref = getFlutterString("flutter.apk_mirror", "").trim().trimEnd('/')
+        return if (APK_MIRROR_RE.matches(pref)) pref else DEFAULT_APK_MIRROR
+    }
+
     fun isLanAccessEnabled(): Boolean = getFlutterBool("flutter.lan_access", false)
 
     fun getLanIp(): String {
@@ -238,9 +303,25 @@ class VmManager(private val context: Context) {
         // Without this, Android Doze/standby throttles or kills the process,
         // causing the VM to die minutes after the user locks their phone.
         val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        releaseWakelock() // never leak a previous lock
         wakelock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Linxr:VM")
         wakelock?.acquire(8 * 60 * 60 * 1000L) // 8-hour safety timeout
 
+        try {
+            launchQemu()
+        } catch (e: Throwable) {
+            // Do not keep the CPU awake (up to 8 h) for a VM that never started.
+            releaseWakelock()
+            throw e
+        }
+    }
+
+    private fun releaseWakelock() {
+        if (wakelock?.isHeld == true) wakelock?.release()
+        wakelock = null
+    }
+
+    private fun launchQemu() {
         val freshExtraction = !assetsReady()
         if (freshExtraction) {
             Log.d(TAG, "Assets not ready, extracting...")
@@ -274,7 +355,11 @@ class VmManager(private val context: Context) {
             Log.d(TAG, "Reusing existing user.qcow2 (state preserved)")
         }
 
-        // Copy bootstrap files and write token to the shared folder for guest VM access
+        // Copy bootstrap files to the shared folder for guest VM access.
+        // The API token is NOT written there: the shared folder is on external
+        // storage that other apps with storage access can read, and the token
+        // guards a root shell (/vm/exec). The guest reads it from fw_cfg or the
+        // kernel command line instead (see api_server.py _load_token).
         val sharedDir = resolveSharedDir()
         if (sharedDir != null && sharedDir.exists() && sharedDir.canWrite()) {
             val guestBootstrapDir = File(sharedDir, "bootstrap")
@@ -283,8 +368,9 @@ class VmManager(private val context: Context) {
                 File(bootstrapDir, "init_bootstrap.sh").copyTo(File(guestBootstrapDir, "init_bootstrap.sh"), overwrite = true)
                 File(bootstrapDir, "api_server.py").copyTo(File(guestBootstrapDir, "api_server.py"), overwrite = true)
                 File(bootstrapDir, "linxr-desktop.sh").copyTo(File(guestBootstrapDir, "linxr-desktop.sh"), overwrite = true)
-                File(guestBootstrapDir, "token").writeText(token)
-                Log.d(TAG, "Successfully prepared guest bootstrap files and token in shared folder: ${guestBootstrapDir.absolutePath}")
+                // Remove the token file left by older versions.
+                File(guestBootstrapDir, "token").delete()
+                Log.d(TAG, "Successfully prepared guest bootstrap files in shared folder: ${guestBootstrapDir.absolutePath}")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to prepare guest bootstrap files: ${e.message}", e)
             }
@@ -297,7 +383,9 @@ class VmManager(private val context: Context) {
             vcpu      = vcpu,
             ramMb     = ramMb
         )
-        Log.d(TAG, "QEMU command: ${cmd.joinToString(" ")}")
+        // Redact the API token and root password: logcat is readable via adb
+        // and bug reports.
+        Log.d(TAG, "QEMU command: ${cmd.joinToString(" ").replace(token, "<redacted>").replace(rootPassword, "<redacted>")}")
 
         vmProcess = ProcessBuilder(cmd).apply {
             environment()["LD_LIBRARY_PATH"] = nativeLibDir.absolutePath
@@ -385,8 +473,7 @@ class VmManager(private val context: Context) {
     @Synchronized
     fun stopVm() {
         Log.d(TAG, "stopVm()")
-        if (wakelock?.isHeld == true) wakelock?.release()
-        wakelock = null
+        releaseWakelock()
         try {
             apiClient.vmExec("sync")
         } catch (e: Exception) {
@@ -437,8 +524,15 @@ class VmManager(private val context: Context) {
             if (proc.isAlive) {
                 return "running"
             } else {
+                // QEMU exited on its own (crash, guest poweroff): drop the
+                // wakelock that startVm() took and the foreground service
+                // whose notification says the VM is running.
+                Log.w(TAG, "QEMU exited with code ${proc.exitValue()}")
                 isRunning = false
                 vmProcess = null
+                releaseWakelock()
+                File(filesDir, "vm.pid").delete()
+                runCatching { context.stopService(android.content.Intent(context, VmService::class.java)) }
                 return "stopped"
             }
         }
@@ -474,7 +568,7 @@ class VmManager(private val context: Context) {
 
         cmd += listOf("-smp", vcpu.toString())
         cmd += listOf("-m", ramMb.toString())
-        cmd += listOf("-drive", "if=none,file=$userImage,id=user,format=qcow2,cache=unsafe,file.locking=off")
+        cmd += listOf("-drive", "if=none,file=${qemuOptEscape(userImage)},id=user,format=qcow2,cache=unsafe,file.locking=off")
 
         if (isArm) {
             cmd += listOf("-device", "virtio-blk-device,drive=user")
@@ -533,7 +627,7 @@ class VmManager(private val context: Context) {
         val sharedDir = resolveSharedDir()
         if (sharedDir != null && sharedDir.exists() && sharedDir.canRead()) {
             cmd += listOf(
-                "-fsdev", "local,id=sdcard,path=${sharedDir.absolutePath},security_model=none",
+                "-fsdev", "local,id=sdcard,path=${qemuOptEscape(sharedDir.absolutePath)},security_model=none",
                 "-device", "virtio-9p-${if (isArm) "device" else "pci"},fsdev=sdcard,mount_tag=sdcard"
             )
             Log.d(TAG, "Sharing ${sharedDir.absolutePath} via 9p")
@@ -545,6 +639,12 @@ class VmManager(private val context: Context) {
         cmd += listOf("-display", "none")
         cmd += listOf("-serial", "file:${serialLog.absolutePath}")
         cmd += listOf("-fw_cfg", "name=opt/api_token,string=$token")
+        // Per-install SSH credentials (read by /sbin/init and init_bootstrap.sh).
+        // The password is alphanumeric, so it needs no QEMU option escaping.
+        // Not added to the kernel command line: /proc/cmdline is world-readable.
+        cmd += listOf("-fw_cfg", "name=opt/root_password,string=$rootPassword")
+        cmd += listOf("-fw_cfg", "name=opt/ssh_key_only,string=${if (sshKeyOnly()) "1" else "0"}")
+        cmd += listOf("-fw_cfg", "name=opt/apk_mirror,string=${qemuOptEscape(apkMirror())}")
 
         val kernel = File(vmDir, "vmlinuz-virt")
         val initrd  = File(vmDir, "initramfs-virt")
@@ -642,7 +742,11 @@ class VmManager(private val context: Context) {
             "libqemu_img.so not found in $nativeLibDir"
         )
         val prefDiskGb = getFlutterInt("flutter.disk_gb", 0).toLong()
-        val sizeGb = if (prefDiskGb > 0) prefDiskGb else availableOverlaySizeGb()
+        // availableOverlaySizeGb() caps the preference to free storage (minus
+        // headroom) and never goes below the base filesystem size. Using the
+        // raw preference let the sparse overlay promise more space than the
+        // phone has, so the guest hit I/O errors once storage ran out.
+        val sizeGb = availableOverlaySizeGb()
         Log.d(TAG, "Creating user.qcow2 with ${sizeGb}G virtual size (pref=${prefDiskGb}G)")
         val proc = ProcessBuilder(
             qemuImg.absolutePath, "create",
@@ -719,7 +823,9 @@ class VmManager(private val context: Context) {
         return mapOf(
             "cores"        to cores,
             "totalRamMb"   to totalRamMb,
-            "freeStorageGb" to freeStorageGb
+            "freeStorageGb" to freeStorageGb,
+            // Size createUserImage() uses when Settings is on "Auto".
+            "autoDiskGb"   to VM_DISK_SIZE_GB.toInt()
         )
     }
 
@@ -734,6 +840,11 @@ class VmManager(private val context: Context) {
         )
         return bin
     }
+
+    // QEMU option values are comma-separated; a literal comma is written ",,".
+    // Without this, a shared-folder path containing "," (chosen in Settings)
+    // would inject extra -fsdev / -drive options.
+    private fun qemuOptEscape(value: String): String = value.replace(",", ",,")
 
     private fun isArm64(): Boolean =
         Build.SUPPORTED_ABIS.any { it.startsWith("arm64") }

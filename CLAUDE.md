@@ -50,7 +50,7 @@ Four screens: Home (VM start/stop), Terminal (SSH sessions), Settings (resources
 
 **Starting the VM:** Flutter `startVm()` → MethodChannel → `VmManager.startVm()` on executor → decompress `base.qcow2.gz` (first run), create `user.qcow2` overlay, build QEMU command with vCPU/RAM from `SharedPreferences`, spawn `ProcessBuilder`, start `VmService`. Then `VmState` polls SSH every 5s; status transitions `stopped → booting → running`.
 
-**Terminal connection:** `TerminalScreen` detects `running`, opens `dartssh2` session to `127.0.0.1:2222` (root/alpine), allocates a PTY, renders via `xterm`. Up to 5 concurrent tabs; reconnects with exponential backoff (24 retries ≈ 2 min).
+**Terminal connection:** `TerminalScreen` detects `running`, opens `dartssh2` session to `127.0.0.1:2222` (`SshCredentials.connect`, per-install password or app key), allocates a PTY, renders via `xterm`. Up to 5 concurrent tabs; reconnects with exponential backoff (24 retries ≈ 2 min).
 
 **Settings flow:** vCPU/RAM/disk stored as Flutter `SharedPreferences`, read by Kotlin in `VmManager.startVm()` before building the QEMU command. Changes only take effect on next VM start.
 
@@ -76,4 +76,4 @@ Four screens: Home (VM start/stop), Terminal (SSH sessions), Settings (resources
 - QEMU runs TCG (software emulation), so CPU throughput is ~3× slower than native — avoid compute-intensive workloads in the VM
 - QEMU stdout/stderr must be drained on a daemon thread to prevent pipe buffer deadlock (already handled in `VmManager`)
 - `resetStorage` deletes `user.qcow2` only; `base.qcow2` is never modified at runtime
-- SSH credentials are hardcoded: `root` / `alpine` (set by `assets/bootstrap/init_bootstrap.sh` at first boot)
+- SSH: the root password is generated per install (`SecretStore.kt`, Android Keystore) and passed to the guest via QEMU fw_cfg `opt/root_password`; `/sbin/init` (new images) or `init_bootstrap.sh` applies it and generates the Dropbear host key on first boot

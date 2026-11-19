@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/marketplace_item.dart';
 import '../services/marketplace_service.dart';
+import '../services/port_forward_planner.dart';
+import '../services/recipe_signature.dart';
 import '../services/vm_platform.dart';
 import '../theme.dart';
 
@@ -39,6 +41,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     'IoT & Network',
     'Utilities',
     'Dev Tools',
+    'Community',
     'My Custom',
   ];
 
@@ -110,6 +113,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
 
     if (cat == 'All') return source.length;
     if (cat == 'My Custom') return source.where((i) => i.isCustom).length;
+    if (cat == 'Community') return source.where((i) => i.isCommunity).length;
     return source.where((i) => i.category == cat).length;
   }
 
@@ -120,6 +124,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
 
       if (_selectedCategory == 'My Custom') {
         if (!item.isCustom) return false;
+      } else if (_selectedCategory == 'Community') {
+        if (!item.isCommunity) return false;
       } else if (_selectedCategory != 'All') {
         if (item.category != _selectedCategory) return false;
       }
@@ -500,8 +506,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
               ),
               const Spacer(),
               Text(
-                'Pull to sync community updates',
-                style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.35)),
+                _catalogStatusText(),
+                style: TextStyle(fontSize: 10, color: _catalogStatusColor()),
               ),
             ],
           ),
@@ -676,7 +682,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '${item.author} • ${item.version}',
+                          '${item.author} • ${item.version}${item.isCommunity ? ' • Community' : ''}',
                           style: TextStyle(color: Colors.white.withOpacity(0.45), fontSize: 11),
                         ),
                       ],
@@ -937,7 +943,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                '${item.author} • ${item.version}',
+                                '${item.author} • ${item.version}${item.isCommunity ? ' • Community' : ''}',
                                 style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12),
                               ),
                             ],
@@ -1204,13 +1210,120 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   // Dedicated Live Deployment Progress Modal (Eliminates Unknown Errors)
   // ---------------------------------------------------------------------------
 
-  void _startDeploymentWithProgressModal(
+  // ---------------------------------------------------------------------------
+  // Catalog signature status
+  // ---------------------------------------------------------------------------
+
+  String _catalogStatusText() {
+    if (MarketplaceService.lastCatalogRejection != null) return 'Catalog rejected: see Settings';
+    switch (MarketplaceService.lastCatalogSignature) {
+      case CatalogSignature.verified:
+        return 'Signed catalog • pull to sync';
+      case CatalogSignature.unsigned:
+        return 'Unsigned catalog • review scripts';
+      case CatalogSignature.invalid:
+        return 'Invalid signature';
+      case null:
+        return 'Pull to sync community updates';
+    }
+  }
+
+  Color _catalogStatusColor() {
+    if (MarketplaceService.lastCatalogRejection != null) return AppColors.danger;
+    switch (MarketplaceService.lastCatalogSignature) {
+      case CatalogSignature.verified:
+        return AppColors.secondary;
+      case CatalogSignature.unsigned:
+        return AppColors.warning;
+      case CatalogSignature.invalid:
+        return AppColors.danger;
+      case null:
+        return Colors.white.withOpacity(0.35);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Script review before the first run
+  // ---------------------------------------------------------------------------
+
+  /// Shows a script recipe's full script before it first runs as root (and
+  /// again whenever the script changes). Returns true when the user accepts.
+  Future<bool> _reviewScriptBeforeFirstRun(MarketplaceItem item) async {
+    if (!item.isScript) return true;
+    if (await MarketplaceService.isScriptApproved(item)) return true;
+    if (!mounted) return false;
+    final script = item.script ?? '';
+    final httpApk = MarketplaceService.downgradesApkToHttp(script);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text('Review "${item.name}"', style: const TextStyle(color: Colors.white)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                item.isCommunity
+                    ? 'Community recipe by ${item.author}. This script runs as root in the VM:'
+                    : 'This script runs as root in the VM:',
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+              if (httpApk) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  'Warning: this script switches apk to plain http.',
+                  style: TextStyle(color: AppColors.warning, fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ],
+              const SizedBox(height: 10),
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.black38,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: SingleChildScrollView(
+                    child: SelectableText(
+                      script,
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 12, fontFamily: 'monospace'),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.termMagenta),
+            child: const Text('Run as root'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      await MarketplaceService.approveScript(item);
+      return true;
+    }
+    return false;
+  }
+
+  Future<void> _startDeploymentWithProgressModal(
     MarketplaceItem item, {
     String? customName,
-  }) {
+  }) async {
+    if (!await _reviewScriptBeforeFirstRun(item)) return;
+    if (!mounted) return;
     setState(() => _inProgressItemIds.add(item.id));
 
-    showDialog(
+    showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (dlgCtx) => _LiveDeploymentDialog(
@@ -1218,12 +1331,120 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
         customName: customName,
         onDone: () {},
       ),
-    ).then((_) {
+    ).then((deployed) {
       if (mounted) {
         setState(() => _inProgressItemIds.remove(item.id));
         _loadData();
+        if (deployed == true) _offerPortForwards(item);
       }
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Port forwards for a deployed recipe
+  // ---------------------------------------------------------------------------
+
+  /// After a successful deploy, offers to add the recipe's declared ports as
+  /// host -> guest forwards, skipping ports that are already forwarded and
+  /// reporting collisions. Forwards are QEMU options, so they apply on the
+  /// next VM start.
+  Future<void> _offerPortForwards(MarketplaceItem item) async {
+    if (item.ports.isEmpty) return;
+    List<Map<String, dynamic>> existing;
+    try {
+      existing = await VmPlatform.getPortForwards();
+    } catch (_) {
+      return;
+    }
+    final plans = PortForwardPlanner.plan(item, existing);
+    final toAdd = plans.where((p) => p.status == PortPlanStatus.add).toList();
+    final needsNote = plans.any((p) =>
+        p.status != PortPlanStatus.alreadyForwarded || p.mayNeedUdp);
+    if (toAdd.isEmpty && !needsNote) return;
+    if (!mounted) return;
+
+    String line(PortPlan p) {
+      final base = 'Host ${p.host} -> VM ${p.guest}';
+      switch (p.status) {
+        case PortPlanStatus.add:
+          return '$base: will be added';
+        case PortPlanStatus.alreadyForwarded:
+          return '$base: already forwarded';
+        case PortPlanStatus.conflict:
+          return '$base: host port in use by ${p.conflictWith}';
+        case PortPlanStatus.reserved:
+          return '$base: reserved by Linxr';
+        case PortPlanStatus.udpUnsupported:
+          return '$base (UDP): not supported';
+      }
+    }
+
+    final add = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Forward recipe ports?', style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${item.name} declares these ports:',
+                style: const TextStyle(color: Colors.white70, fontSize: 13)),
+            const SizedBox(height: 8),
+            for (final p in plans)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  line(p),
+                  style: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                    color: p.status == PortPlanStatus.add
+                        ? AppColors.secondary
+                        : p.status == PortPlanStatus.alreadyForwarded
+                            ? Colors.white54
+                            : AppColors.warning,
+                  ),
+                ),
+              ),
+            const SizedBox(height: 8),
+            Text(
+              'Only TCP is forwarded (QEMU user networking).'
+              '${plans.any((p) => p.mayNeedUdp) ? ' Services that use UDP, such as SIP on 5060, are not reachable over UDP from outside the VM.' : ''}'
+              ' New forwards apply after the VM restarts.',
+              style: const TextStyle(color: Colors.white54, fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(toAdd.isEmpty ? 'OK' : 'Not now'),
+          ),
+          if (toAdd.isNotEmpty)
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text('Add ${toAdd.length} forward${toAdd.length == 1 ? '' : 's'}'),
+            ),
+        ],
+      ),
+    );
+    if (add != true || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      for (final p in toAdd) {
+        await VmPlatform.addPortForward(p.host, p.guest, item.name);
+      }
+      messenger.showSnackBar(SnackBar(
+        content: Text('Added ${toAdd.length} port forward${toAdd.length == 1 ? '' : 's'}. '
+            'Restart the VM to apply.'),
+      ));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(
+        content: Text('Could not add port forwards: $e'),
+        backgroundColor: AppColors.danger,
+      ));
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1862,7 +2083,7 @@ class _LiveDeploymentDialogState extends State<_LiveDeploymentDialog> {
           ),
         ] else if (isDone) ...[
           ElevatedButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.secondary, foregroundColor: Colors.black),
             child: const Text('Done', style: TextStyle(fontWeight: FontWeight.bold)),
           ),

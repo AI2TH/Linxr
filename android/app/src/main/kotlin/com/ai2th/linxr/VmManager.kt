@@ -23,6 +23,13 @@ class VmManager(private val context: Context) {
         // so the user.qcow2 overlay is the same size as the pre-expanded base filesystem.
         private const val VM_DISK_SIZE_GB = 4L
 
+        // Alpine package mirror (Settings > Package mirror); see apkMirror().
+        private const val DEFAULT_APK_MIRROR = "https://dl-cdn.alpinelinux.org/alpine"
+        private val APK_MIRROR_RE = Regex("^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?$")
+
+        private const val SECRET_ROOT_PASSWORD = "root_password"
+        private const val SECRET_SSH_PRIVATE_KEY = "ssh_private_key"
+
         // Host -> guest port forwards exposed through QEMU SLIRP.
         // These are the ports the Android host (and, when LAN access is enabled,
         // other devices on the same network) can reach inside the VM.
@@ -74,6 +81,52 @@ class VmManager(private val context: Context) {
     private val token: String by lazy { getOrCreateToken() }
 
     val apiClient: VmApiClient by lazy { VmApiClient(token) }
+
+    private val secrets: SecretStore by lazy { SecretStore(context) }
+
+    /**
+     * Per-install root password for the VM. Generated once, kept encrypted
+     * with an Android Keystore key, and passed into the guest through QEMU
+     * fw_cfg (opt/root_password); /sbin/init or init_bootstrap.sh applies it
+     * with chpasswd on every boot. Replaces the root/alpine password that
+     * every install used to share.
+     */
+    val rootPassword: String by lazy { getOrCreateRootPassword() }
+
+    private fun getOrCreateRootPassword(): String {
+        secrets.get(SECRET_ROOT_PASSWORD)?.takeIf { it.isNotEmpty() }?.let { return it }
+        val pw = SecretStore.randomPassword()
+        secrets.put(SECRET_ROOT_PASSWORD, pw)
+        Log.d(TAG, "Generated a new per-install VM root password")
+        return pw
+    }
+
+    /** OpenSSH private key the app uses for key login, or null if none was created. */
+    fun getSshPrivateKey(): String? = secrets.get(SECRET_SSH_PRIVATE_KEY)
+
+    /**
+     * Asks the guest for a new app SSH key pair (the public half goes into
+     * /root/.ssh/authorized_keys, the private half is returned and deleted in
+     * the guest) and stores the private key in the Keystore-backed store.
+     */
+    fun createSshKey(): Boolean {
+        val pem = apiClient.createAppSshKey()
+        if (!pem.contains("PRIVATE KEY")) throw IllegalStateException("VM returned no private key")
+        secrets.put(SECRET_SSH_PRIVATE_KEY, pem)
+        return true
+    }
+
+    // Key-only login is passed to the guest only when the app holds a private
+    // key, so turning it on can never lock the app out of its own VM.
+    private fun sshKeyOnly(): Boolean =
+        getFlutterBool("flutter.ssh_key_only", false) && getSshPrivateKey() != null
+
+    fun getSshCredentials(): Map<String, Any?> = mapOf(
+        "username" to "root",
+        "password" to rootPassword,
+        "privateKey" to getSshPrivateKey(),
+        "keyOnly" to sshKeyOnly(),
+    )
 
     private fun getOrCreateToken(): String {
         var t = appPrefs.getString("api_token", null)
@@ -128,6 +181,8 @@ class VmManager(private val context: Context) {
     fun vmExec(cmd: String): Map<String, Any> = apiClient.vmExec(cmd)
 
     fun checkHealth(): Boolean = apiClient.checkHealth()
+
+    fun getSystemRelease(): Map<String, Any> = apiClient.getSystemRelease()
 
     // ── Virtual Desktop (GUI) ────────────────────────────────────────────────
     fun getDesktopStatus(): Map<String, Any> = apiClient.getDesktopStatus()
@@ -191,6 +246,16 @@ class VmManager(private val context: Context) {
             })
         }
         appPrefs.edit().putString("custom_port_forwards", arr.toString()).apply()
+    }
+
+    /**
+     * Base URL of the Alpine mirror the guest writes into
+     * /etc/apk/repositories (init_bootstrap.sh). Only https URLs of plain URL
+     * characters are passed on; anything else falls back to the Alpine CDN.
+     */
+    fun apkMirror(): String {
+        val pref = getFlutterString("flutter.apk_mirror", "").trim().trimEnd('/')
+        return if (APK_MIRROR_RE.matches(pref)) pref else DEFAULT_APK_MIRROR
     }
 
     fun isLanAccessEnabled(): Boolean = getFlutterBool("flutter.lan_access", false)
@@ -312,8 +377,9 @@ class VmManager(private val context: Context) {
             vcpu      = vcpu,
             ramMb     = ramMb
         )
-        // Redact the API token: logcat is readable via adb and bug reports.
-        Log.d(TAG, "QEMU command: ${cmd.joinToString(" ").replace(token, "<redacted>")}")
+        // Redact the API token and root password: logcat is readable via adb
+        // and bug reports.
+        Log.d(TAG, "QEMU command: ${cmd.joinToString(" ").replace(token, "<redacted>").replace(rootPassword, "<redacted>")}")
 
         vmProcess = ProcessBuilder(cmd).apply {
             environment()["LD_LIBRARY_PATH"] = nativeLibDir.absolutePath
@@ -566,6 +632,12 @@ class VmManager(private val context: Context) {
         cmd += listOf("-display", "none")
         cmd += listOf("-serial", "file:${serialLog.absolutePath}")
         cmd += listOf("-fw_cfg", "name=opt/api_token,string=$token")
+        // Per-install SSH credentials (read by /sbin/init and init_bootstrap.sh).
+        // The password is alphanumeric, so it needs no QEMU option escaping.
+        // Not added to the kernel command line: /proc/cmdline is world-readable.
+        cmd += listOf("-fw_cfg", "name=opt/root_password,string=$rootPassword")
+        cmd += listOf("-fw_cfg", "name=opt/ssh_key_only,string=${if (sshKeyOnly()) "1" else "0"}")
+        cmd += listOf("-fw_cfg", "name=opt/apk_mirror,string=${qemuOptEscape(apkMirror())}")
 
         val kernel = File(vmDir, "vmlinuz-virt")
         val initrd  = File(vmDir, "initramfs-virt")
@@ -744,7 +816,9 @@ class VmManager(private val context: Context) {
         return mapOf(
             "cores"        to cores,
             "totalRamMb"   to totalRamMb,
-            "freeStorageGb" to freeStorageGb
+            "freeStorageGb" to freeStorageGb,
+            // Size createUserImage() uses when Settings is on "Auto".
+            "autoDiskGb"   to VM_DISK_SIZE_GB.toInt()
         )
     }
 

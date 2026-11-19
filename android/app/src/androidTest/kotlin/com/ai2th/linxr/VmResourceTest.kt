@@ -156,18 +156,30 @@ class VmResourceTest {
         val jsch = JSch()
         while (System.currentTimeMillis() < deadline) {
             try {
-                val session = jsch.getSession("root", "127.0.0.1", 2222)
-                session.setPassword("alpine")
-                session.setConfig("StrictHostKeyChecking", "no")
-                session.setConfig("PreferredAuthentications", "password")
-                session.connect(15_000)
-                return session
+                // Per-install password (fw_cfg); the image's legacy password
+                // only works until the guest has applied it.
+                return connectWithPassword(jsch, vmManager.rootPassword, 15_000)
+                    ?: connectWithPassword(jsch, "alpine", 15_000)
+                    ?: throw IllegalStateException("password rejected")
             } catch (e: Exception) {
                 Log.w(TAG, "SSH connection attempt failed: ${e.message}, retrying in 5s...")
                 try { Thread.sleep(5_000) } catch (_: InterruptedException) {}
             }
         }
         throw AssertionError("Failed to connect SSH session within 90 minutes")
+    }
+
+    private fun connectWithPassword(jsch: JSch, password: String, timeoutMs: Int): Session? {
+        val session = jsch.getSession("root", "127.0.0.1", 2222)
+        session.setPassword(password)
+        session.setConfig("StrictHostKeyChecking", "no")
+        session.setConfig("PreferredAuthentications", "password")
+        return try {
+            session.connect(timeoutMs)
+            session
+        } catch (e: com.jcraft.jsch.JSchException) {
+            if (e.message?.contains("Auth fail", ignoreCase = true) == true) null else throw e
+        }
     }
 
     private fun exec(session: Session, cmd: String): String {

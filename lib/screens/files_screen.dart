@@ -642,7 +642,7 @@ class _FilesScreenState extends State<FilesScreen> with WidgetsBindingObserver {
                     onTap: () async {
                       if (entity is File) {
                         try {
-                          final file = entity as File;
+                          final file = entity;
                           final bytes = await file.readAsBytes();
                           String textContent;
                           try {

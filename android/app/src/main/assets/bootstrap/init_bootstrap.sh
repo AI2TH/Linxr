@@ -1,7 +1,9 @@
 #!/bin/sh
-# Alpine VM bootstrap — runs on first boot inside the QEMU VM.
+# Alpine VM bootstrap — runs on every boot inside the QEMU VM.
 # Sets up root SSH access and installs essential packages.
-# Connect via:  ssh root@localhost -p 2222   (password: alpine)
+# Connect via:  ssh root@localhost -p 2222
+# The root password is generated per install by the app (Settings -> SSH
+# access) and passed in through QEMU fw_cfg; see "Per-install SSH credentials".
 
 echo "=== Alpine VM Bootstrap Starting ==="
 
@@ -12,6 +14,81 @@ rm -rf /usr/libexec/docker/cli-plugins 2>/dev/null || true
 # versions also copied it through the shared folder; drop that copy.
 if grep -q 'api_token=' /proc/cmdline 2>/dev/null; then
     rm -f /bootstrap/token 2>/dev/null || true
+fi
+
+# ---------------------------------------------------------------------------
+# Per-install SSH credentials (root password, host key, key-only login)
+# ---------------------------------------------------------------------------
+# The app generates a random root password per install, keeps it in Android
+# Keystore and passes it in through QEMU fw_cfg (opt/root_password), like the
+# API token. Base images built before this change shipped the same Dropbear
+# host keys and the root/alpine password on every install: replace both here,
+# early, so the shared password is valid for as short a time as possible.
+# Base images built after it do the same in /sbin/init before Dropbear starts.
+FW_CFG_DIR=/sys/firmware/qemu_fw_cfg/by_name/opt
+[ -d "$FW_CFG_DIR" ] || modprobe qemu_fw_cfg 2>/dev/null || true
+fw_cfg_read() {
+    [ -r "$FW_CFG_DIR/$1/raw" ] && cat "$FW_CFG_DIR/$1/raw" 2>/dev/null
+}
+
+ROOT_PW="$(fw_cfg_read root_password)"
+case "$ROOT_PW" in
+    ''|*[!A-Za-z0-9]*)
+        echo "WARN: no per-install root password in fw_cfg; the root password is unchanged"
+        ;;
+    *)
+        if printf 'root:%s\n' "$ROOT_PW" | chpasswd 2>/dev/null; then
+            echo "Root password set from fw_cfg (per install)."
+        fi
+        ;;
+esac
+unset ROOT_PW
+
+DROPBEAR_DIR=/etc/dropbear
+DROPBEAR_HOSTKEY="$DROPBEAR_DIR/dropbear_ed25519_host_key"
+DROPBEAR_MARK="$DROPBEAR_DIR/.linxr_per_install"
+DROPBEAR_ARGS_FILE=/run/linxr-dropbear.args
+SSH_RESTART=0
+if [ ! -f "$DROPBEAR_MARK" ] || [ ! -s "$DROPBEAR_HOSTKEY" ]; then
+    mkdir -p "$DROPBEAR_DIR"
+    # Remove the host keys baked into older base images (same on every install).
+    rm -f "$DROPBEAR_DIR/dropbear_rsa_host_key" "$DROPBEAR_DIR/dropbear_ecdsa_host_key" \
+          "$DROPBEAR_DIR/dropbear_dss_host_key" "$DROPBEAR_HOSTKEY"
+    if dropbearkey -t ed25519 -f "$DROPBEAR_HOSTKEY" >/dev/null 2>&1; then
+        touch "$DROPBEAR_MARK"
+        SSH_RESTART=1
+        echo "Generated a per-install Dropbear ed25519 host key."
+    else
+        echo "WARN: could not generate a Dropbear host key"
+    fi
+fi
+
+DROPBEAR_ARGS="-E -p 22"
+[ -s "$DROPBEAR_HOSTKEY" ] && DROPBEAR_ARGS="$DROPBEAR_ARGS -r $DROPBEAR_HOSTKEY"
+# Key-only login: the app sets opt/ssh_key_only=1 only after it has stored a
+# private key whose public half is in authorized_keys (Settings -> SSH access).
+if [ "$(fw_cfg_read ssh_key_only)" = "1" ] && [ -s /root/.ssh/authorized_keys ]; then
+    DROPBEAR_ARGS="$DROPBEAR_ARGS -s"
+    echo "SSH password login disabled (key-only)."
+fi
+
+# Restart only the listening Dropbear; open sessions are separate processes
+# and stay connected.
+restart_dropbear() {
+    pid="$(cat /var/run/dropbear.pid 2>/dev/null)"
+    [ -n "$pid" ] || pid="$(pgrep -o -x dropbear 2>/dev/null)"
+    if [ -n "$pid" ]; then
+        kill "$pid" 2>/dev/null || true
+        sleep 1
+    fi
+    # shellcheck disable=SC2086 # DROPBEAR_ARGS is a list of options
+    /usr/sbin/dropbear $DROPBEAR_ARGS && echo "$DROPBEAR_ARGS" > "$DROPBEAR_ARGS_FILE"
+}
+if command -v dropbear >/dev/null 2>&1 && pgrep -x dropbear >/dev/null 2>&1; then
+    if [ "$SSH_RESTART" -eq 1 ] || [ "$(cat "$DROPBEAR_ARGS_FILE" 2>/dev/null)" != "$DROPBEAR_ARGS" ]; then
+        echo "Restarting Dropbear with: $DROPBEAR_ARGS"
+        restart_dropbear
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -30,9 +107,27 @@ case "$ALPINE_BRANCH" in
     v[0-9]*.[0-9]*) ;;
     *) ALPINE_BRANCH="v3.20" ;;
 esac
+# Mirror chosen in Settings -> Package mirror, passed through QEMU fw_cfg
+# (opt/apk_mirror). Only https URLs made of plain URL characters are used;
+# anything else falls back to the Alpine CDN. apk verifies package
+# signatures either way, but https keeps the package list private and
+# stops a network attacker from serving stale indexes.
+APK_MIRROR_DEFAULT="https://dl-cdn.alpinelinux.org/alpine"
+APK_MIRROR="$(fw_cfg_read apk_mirror)"
+case "$APK_MIRROR" in
+    https://?*)
+        case "$APK_MIRROR" in
+            *[!A-Za-z0-9.:/_~-]*) APK_MIRROR="" ;;
+        esac
+        ;;
+    *) APK_MIRROR="" ;;
+esac
+APK_MIRROR="${APK_MIRROR%/}"
+[ -n "$APK_MIRROR" ] || APK_MIRROR="$APK_MIRROR_DEFAULT"
+echo "apk mirror: $APK_MIRROR (${ALPINE_BRANCH})"
 cat > /etc/apk/repositories <<REPOEOF
-http://dl-cdn.alpinelinux.org/alpine/${ALPINE_BRANCH}/main
-http://dl-cdn.alpinelinux.org/alpine/${ALPINE_BRANCH}/community
+${APK_MIRROR}/${ALPINE_BRANCH}/main
+${APK_MIRROR}/${ALPINE_BRANCH}/community
 REPOEOF
 sed -i 's/\r$//' /etc/apk/repositories 2>/dev/null || true
 
@@ -101,12 +196,6 @@ if ! command -v resize2fs >/dev/null 2>&1 || ! command -v tune2fs >/dev/null 2>&
     apk add --no-cache e2fsprogs e2fsprogs-extra >/dev/null 2>&1 || true
 fi
 expand_rootfs
-
-# ---------------------------------------------------------------------------
-# Set root password
-# ---------------------------------------------------------------------------
-echo "root:alpine" | chpasswd 2>/dev/null || true
-echo "Root password set to: alpine"
 
 # ---------------------------------------------------------------------------
 # Install and configure OpenSSH
@@ -331,7 +420,7 @@ elif command -v dropbear >/dev/null 2>&1; then
     if pgrep dropbear >/dev/null 2>&1; then
         echo "=== Dropbear is already running on port 22 ==="
     else
-        /usr/sbin/dropbear -E -p 22
+        restart_dropbear
         sleep 1
         if pgrep dropbear >/dev/null 2>&1; then
             echo "=== Dropbear started on port 22 ==="
@@ -452,6 +541,37 @@ cat > /etc/profile.d/k3s.sh <<'PROFEIO'
 export GODEBUG="tlsmlkem=0"
 PROFEIO
 chmod +x /etc/profile.d/k3s.sh
+
+# ---------------------------------------------------------------------------
+# Start k3s again after a VM reboot
+# ---------------------------------------------------------------------------
+# The custom /sbin/init never runs OpenRC, so the k3s service the installer
+# registered is not started on boot. Start the server here when k3s is
+# installed and not already running, with the same environment file the
+# OpenRC service uses (GODEBUG above) and the same --disable traefik choice
+# when the installed service has it.
+start_k3s() {
+    K3S_BIN=/usr/local/bin/k3s
+    [ -x "$K3S_BIN" ] || return 0
+    if pgrep -f "k3s server" >/dev/null 2>&1; then
+        echo "k3s server already running."
+        return 0
+    fi
+    k3s_args="server"
+    if grep -q "traefik" /etc/init.d/k3s 2>/dev/null; then
+        k3s_args="$k3s_args --disable traefik"
+    fi
+    echo "Starting k3s ($k3s_args) in the background (log: /var/log/k3s.log)"
+    (
+        set -a
+        # shellcheck disable=SC1090 # written by the k3s installer and above
+        [ -f "$K3S_ENV_FILE" ] && . "$K3S_ENV_FILE"
+        set +a
+        # shellcheck disable=SC2086 # k3s_args is a list of options
+        exec "$K3S_BIN" $k3s_args >>/var/log/k3s.log 2>&1
+    ) &
+}
+start_k3s
 
 # Install Linxr Virtual Desktop tool
 if [ -f /bootstrap/linxr-desktop.sh ]; then

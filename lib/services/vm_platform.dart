@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import '../constants.dart';
+import 'ssh_credentials.dart';
 
 class VmPlatform {
   static const _channel = MethodChannel('com.ai2th.linxr/vm');
@@ -32,6 +32,7 @@ class VmPlatform {
         cores:         (raw['cores']         as num?)?.toInt() ?? 4,
         totalRamMb:    (raw['totalRamMb']    as num?)?.toInt() ?? 4096,
         freeStorageGb: (raw['freeStorageGb'] as num?)?.toInt() ?? 32,
+        autoDiskGb:    (raw['autoDiskGb']    as num?)?.toInt() ?? DeviceInfo.defaultAutoDiskGb,
       );
     } on PlatformException {
       return const DeviceInfo(cores: 4, totalRamMb: 4096, freeStorageGb: 32);
@@ -80,17 +81,7 @@ class VmPlatform {
   static Future<bool> pingSsh() async {
     SSHClient? client;
     try {
-      final socket = await SSHSocket.connect(
-        SshDefaults.host,
-        SshDefaults.port,
-        timeout: const Duration(seconds: 10),
-      );
-      client = SSHClient(
-        socket,
-        username: SshDefaults.username,
-        onPasswordRequest: () => SshDefaults.password,
-      );
-      await client.authenticated.timeout(const Duration(seconds: 25));
+      client = await SshCredentials.connect();
       return true;
     } catch (_) {
       return false;
@@ -340,6 +331,20 @@ class VmPlatform {
     }
   }
 
+  /// Alpine and kernel versions inside the running VM (from
+  /// /etc/linxr-release through the VM API). Null when the VM is not
+  /// reachable.
+  static Future<Map<String, dynamic>?> getVmRelease() async {
+    try {
+      final result = await _channel.invokeMapMethod<String, dynamic>('getVmRelease');
+      return result;
+    } on PlatformException {
+      return null;
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
   static Future<bool> checkHealth() async {
     try {
       final bool? result = await _channel.invokeMethod<bool>('checkHealth');
@@ -425,10 +430,20 @@ class DeviceInfo {
   final int cores;
   final int totalRamMb;
   final int freeStorageGb;
+
+  /// Virtual disk size the VM gets when the Disk Cap setting is "Auto"
+  /// (the base image size, VM_DISK_SIZE_GB in VmManager.kt).
+  final int autoDiskGb;
+
+  /// Same value as VM_DISK_SIZE_GB in VmManager.kt, for when the platform
+  /// call fails.
+  static const defaultAutoDiskGb = 4;
+
   const DeviceInfo({
     required this.cores,
     required this.totalRamMb,
     required this.freeStorageGb,
+    this.autoDiskGb = defaultAutoDiskGb,
   });
 }
 

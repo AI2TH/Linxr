@@ -413,6 +413,18 @@ class VmPlatform {
     }
   }
 
+  /// Plain-text desktop log from the guest ("all" = every component log).
+  static Future<String> getDesktopLog({String name = 'all', int lines = 300}) async {
+    try {
+      final String? text = await _channel.invokeMethod<String>(
+          'getDesktopLog', {'name': name, 'lines': lines});
+      return text ?? '';
+    } on PlatformException catch (e) {
+      debugPrint("Failed to getDesktopLog: ${e.message}");
+      rethrow;
+    }
+  }
+
   static Future<Map<String, dynamic>> launchDesktopApp(String app) async {
     try {
       final Map<Object?, Object?>? result =
@@ -592,7 +604,13 @@ class VmState extends ChangeNotifier {
     try {
       final res = await VmPlatform.startDesktop(resolution: resolution, wm: wm);
       _desktopStatus = res;
-      _isDesktopRunning = res['running'] == true || res['status'] == 'started';
+      // The API answers 200 only when every component is up; trust the
+      // reported state rather than the fact that the call returned.
+      _isDesktopRunning = res['running'] == true;
+    } catch (_) {
+      // Show the failed state (and its error) the guest recorded.
+      await refreshDesktopStatus(force: true);
+      rethrow;
     } finally {
       _isDesktopLoading = false;
       notifyListeners();

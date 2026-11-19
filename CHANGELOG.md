@@ -15,12 +15,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Recipe port forwards:** after a recipe deploys, the Marketplace offers to add its declared ports as port forwards, skipping ports already forwarded and reporting collisions. UDP ports are not supported; the dialog says so (for example SIP on 5060) ([#31](https://github.com/AI2TH/Linxr/issues/31)).
 - **CI:** a GitHub Actions workflow runs `flutter analyze`, `flutter test`, shellcheck on `scripts/` and the VM bootstrap, pyflakes on the VM API server, and a Kotlin compile.
 - **Disk resize test:** `VmDiskResizeTest` (instrumentation) boots with a 16 GB disk and checks that `df /` reports more than 15 GB ([#27](https://github.com/AI2TH/Linxr/issues/27)).
+- **Virtual Desktop log:** a failed start, install or recovery shows its reason on the Desktop screen with a **View desktop log** button. The log combines the launcher log and the Xvfb, window manager, panel, x11vnc, websockify and install logs (`GET /desktop/log`).
+- **Install progress:** installing the desktop shows apk's real progress (`37/199`, current package) and a progress bar, and reports apk's error (for example an unreachable mirror or a full disk) instead of a success message.
+- **Fit this screen** resolution, computed from the phone's aspect ratio (for example 1600×720 on a 20:9 phone), next to the existing presets.
+- **Calculator** (`galculator`), `dbus-x11` and a per-session D-Bus bus in both desktops, so GTK apps start cleanly.
 
 ### Changed
+- **Honest start:** `linxr-desktop start` returns only when Xvfb has opened display `:1`, the window manager is running, x11vnc listens on 5900 and websockify listens on 6080. Otherwise it fails with the component that is not up, its last log lines, and leaves nothing half-running. `/desktop/start` returns that error and the app shows it ([#26](https://github.com/AI2TH/Linxr/issues/26)).
+- **Supervised desktop:** one supervisor process owns the desktop. It restarts a crashed window manager, panel, x11vnc or websockify (up to 5 times in 10 minutes), ends the session cleanly if Xvfb dies, and records the state in `/run/linxr-desktop`. Start, stop and restart are idempotent and can be repeated. State lives on tmpfs, so a VM reboot leaves no stale locks, and Start brings the desktop back with the saved resolution and environment (`/etc/linxr/desktop.conf`).
+- **Desktop install runs in the background** (`/desktop/install` returns 202) so a long XFCE install under TCG no longer hits the 600 s API timeout, and it waits for the apk lock instead of killing a running apk.
+- **noVNC viewer** opens `127.0.0.1` (the port forward is IPv4-only) with `reconnect_delay`, and only after checking the desktop is really up. The touch tips describe noVNC's real gestures and the on-screen keyboard.
+- **x11vnc** runs with `-noncache -noxrecord -nowf -noscr -xkb` to cut CPU under TCG and map phone-keyboard symbols correctly.
+- Host ports 2222, 7081, 6080 and 5900 can no longer be taken by a custom port forward, which silently broke SSH, the VM API or the desktop.
 - **Docker daemon only in Docker mode:** the custom `/sbin/init` no longer starts `dockerd` on every boot; the bootstrap starts it only when the Docker engine is selected. `buildah` is no longer installed (`podman build` covers image builds) ([#29](https://github.com/AI2TH/Linxr/issues/29)).
 - **Zyvr recipes:** Asterisk's HTTP/ARI port 8088 is mapped to host port 8089, because host 8088 is Linxr's default forward to guest port 80 ([#31](https://github.com/AI2TH/Linxr/issues/31)).
 
 ### Fixed
+- **Home screen Start Desktop** always started 1280×720 Openbox, even when only XFCE was set up (the old launcher then began installing Openbox without saying so). It now uses the last session's settings and shows the reason when the start fails.
+- **Calculator** quick-launch button did nothing (the app sent `calc`, the guest expected `calculator`, and no calculator was installed).
+- **Desktop install** used the `v3.20` repositories on 3.24 images when the bootstrap had written them, which breaks dependency resolution; the installer now points apk at the image's own branch.
 - **Disk resize:** a larger disk chosen in Settings is now usable. The bootstrap compares the block device size with the ext4 size on every boot and grows the filesystem in the background; the image no longer ships `/etc/.disk_expanded` and the unused `diskexpand` OpenRC service is gone. The overlay size is capped to free storage ([#27](https://github.com/AI2TH/Linxr/issues/27)).
 - **k3s TLS tuning:** `GODEBUG=tlsmlkem=0` now reaches the k3s server through `/etc/rancher/k3s/k3s.env`, not only login shells. The 3.2.0 note below about "RSA 2048 cluster certificates" was wrong: only the kube-apiserver cipher suites are restricted and k3s keeps its ECDSA certificates ([#30](https://github.com/AI2TH/Linxr/issues/30)).
 - **FastTrack container actions:** pull, logs, inspect, exec, update, export, import, save and load use `podman` in FastTrack mode instead of the stopped Docker daemon.
@@ -34,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Foreground service:** at Android 15's 6-hour `dataSync` limit the app now also notifies the user and starts the service again when the app is opened; a `START_STICKY` restart without a running VM stops the service instead of showing "VM is running". The service type stays `dataSync` (see the comment in `AndroidManifest.xml`).
 
 ### Security
+- `linxr-desktop app` no longer runs `eval "$APP"`: apps come from an allow-list (`terminal`, `files`, `editor`, `calculator`), and the API validates the app, resolution and environment before calling the script. Status JSON from the script is escaped.
 - The VM API token is no longer written to the shared folder on external storage or logged in the QEMU command line.
 - The VM API validates container names and image references (no option injection into the CLI, no header injection into `docker.sock` requests), compares the token in constant time, requires the token for `/engine` and `/desktop/status`, and resolves shared-folder paths safely.
 - Commas in the shared-folder path are escaped in QEMU options.

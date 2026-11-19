@@ -504,26 +504,38 @@ class _VirtualDesktopCard extends StatelessWidget {
                                 );
                                 return;
                               }
+                              void showFailure(String reason) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Failed to start Virtual Desktop: $reason'),
+                                    backgroundColor: AppColors.danger,
+                                    duration: const Duration(seconds: 8),
+                                    action: SnackBarAction(
+                                      label: 'Details',
+                                      textColor: Colors.white,
+                                      onPressed: () => Navigator.of(context).push(
+                                        MaterialPageRoute(builder: (_) => const DesktopScreen()),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }
                               try {
-                                await vm.startDesktop();
+                                // Start with the settings of the last session
+                                // (resolution and Openbox/XFCE), not the defaults.
+                                await vm.startDesktop(
+                                  resolution: status['resolution']?.toString() ?? '1280x720',
+                                  wm: status['wm']?.toString() ?? 'openbox',
+                                );
                                 await vm.refreshDesktopStatus(force: true);
                                 if (context.mounted && !vm.isDesktopRunning) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('Failed to start Virtual Desktop: ${vm.desktopStatus['error'] ?? 'Unknown error'}'),
-                                      backgroundColor: AppColors.danger,
-                                    ),
-                                  );
+                                  final err = vm.desktopStatus['error']?.toString() ?? '';
+                                  showFailure(err.isNotEmpty ? err : 'Unknown error');
                                 }
+                              } on PlatformException catch (e) {
+                                if (context.mounted) showFailure(e.message ?? e.code);
                               } catch (e) {
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('Failed to start Virtual Desktop: $e'),
-                                      backgroundColor: AppColors.danger,
-                                    ),
-                                  );
-                                }
+                                if (context.mounted) showFailure('$e');
                               }
                             },
                     ),

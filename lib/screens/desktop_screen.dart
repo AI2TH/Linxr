@@ -12,97 +12,194 @@ class DesktopScreen extends StatefulWidget {
   State<DesktopScreen> createState() => _DesktopScreenState();
 }
 
-class _DesktopScreenState extends State<DesktopScreen> {
+class _DesktopScreenState extends State<DesktopScreen> with WidgetsBindingObserver {
   String _selectedResolution = '1280x720';
   String _selectedWm = 'openbox';
   bool _isActionInProgress = false;
   String? _statusMessage;
+  // Install progress 0..1 while packages are being installed.
+  double? _installFraction;
+  // Last start/install/app failure, shown until dismissed or a later success.
+  String? _lastError;
+  // Take the resolution and environment of the last session from the guest
+  // once, instead of always showing the defaults.
+  bool _selectionFromStatus = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        context.read<VmState>().refreshDesktopStatus();
-      }
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await context.read<VmState>().refreshDesktopStatus();
+      _adoptStatusSelection();
+      _resumeInstallIfRunning();
     });
   }
 
-  Future<void> _startOrInstallDesktop() async {
-    final vm = context.read<VmState>();
-    if (!vm.isRunning) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please start the Alpine Linux VM first.'),
-          backgroundColor: AppColors.warning,
-        ),
-      );
-      return;
-    }
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Coming back from the noVNC tab or from the background: the desktop may
+    // have stopped meanwhile, so show its real state.
+    if (state == AppLifecycleState.resumed && mounted) {
+      context.read<VmState>().refreshDesktopStatus();
+    }
+  }
+
+  void _adoptStatusSelection() {
+    if (_selectionFromStatus || !mounted) return;
+    final status = context.read<VmState>().desktopStatus;
+    if (status.isEmpty) return;
+    _selectionFromStatus = true;
+    final res = status['resolution']?.toString() ?? '';
+    final wm = status['wm']?.toString() ?? '';
+    setState(() {
+      if (DesktopService.isValidResolution(res)) _selectedResolution = res;
+      if (DesktopService.windowManagers.any((w) => w.value == wm)) _selectedWm = wm;
+    });
+  }
+
+  // An install started earlier (or from another screen) is still running:
+  // follow it instead of offering a second one.
+  Future<void> _resumeInstallIfRunning() async {
+    if (!mounted || _isActionInProgress) return;
+    final status = context.read<VmState>().desktopStatus;
+    if (status['install_state'] != 'running') return;
+    setState(() => _isActionInProgress = true);
+    try {
+      await _followInstall();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isActionInProgress = false;
+          _statusMessage = null;
+          _installFraction = null;
+        });
+      }
+    }
+  }
+
+  String _errorText(Object e) {
+    if (e is PlatformException) return e.message ?? e.code;
+    return e.toString();
+  }
+
+  void _showSnack(String text, {Color? color, Duration? duration}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text),
+        backgroundColor: color,
+        duration: duration ?? const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  bool _vmReady() {
+    if (context.read<VmState>().isRunning) return true;
+    _showSnack('Please start the Alpine Linux VM first.', color: AppColors.warning);
+    return false;
+  }
+
+  /// Polls the running install until it ends. Returns true if it succeeded.
+  Future<bool> _followInstall() async {
+    final vm = context.read<VmState>();
+    final status = await DesktopService.waitForInstall(onProgress: (st) {
+      if (!mounted) return;
+      setState(() {
+        _statusMessage = DesktopService.installProgressText(st);
+        _installFraction = DesktopService.installFraction(st);
+      });
+    });
+    await vm.refreshDesktopStatus(force: true);
+    final state = status['install_state']?.toString();
+    if (state == 'ok') return true;
+    if (mounted) {
+      setState(() {
+        _lastError = state == 'running'
+            ? 'The install is still running after 45 minutes. Check the desktop log.'
+            : 'Install failed: ${status['install_error'] ?? 'unknown error'}';
+      });
+    }
+    return false;
+  }
+
+  /// Starts the package install and follows it. Returns true on success.
+  Future<bool> _runInstall(String mode) async {
+    setState(() {
+      _statusMessage = 'Starting the $mode package install...';
+      _installFraction = null;
+      _lastError = null;
+    });
+    try {
+      final res = await DesktopService.install(mode: mode);
+      if (!mounted) return false;
+      if (res['install_state'] == 'ok') {
+        await context.read<VmState>().refreshDesktopStatus(force: true);
+        return true;
+      }
+    } catch (e) {
+      if (mounted) setState(() => _lastError = 'Install failed: ${_errorText(e)}');
+      return false;
+    }
+    if (!mounted) return false;
+    return _followInstall();
+  }
+
+  Future<void> _startOrInstallDesktop() async {
+    if (!_vmReady()) return;
+    final vm = context.read<VmState>();
     final status = vm.desktopStatus;
-    final isXfce = _selectedWm == 'xfce4' || _selectedWm == 'xfce' || _selectedWm == 'full';
+    final isXfce = _selectedWm == 'xfce4';
     final isInstalled = isXfce
         ? (status['xfce_installed'] == true)
         : (status['openbox_installed'] == true);
 
     setState(() {
       _isActionInProgress = true;
-      _statusMessage = isInstalled
-          ? 'Starting Virtual Desktop server...'
-          : 'Installing $_selectedWm desktop packages (this may take 1-2 min)...';
+      _lastError = null;
     });
 
     try {
       if (!isInstalled) {
-        await DesktopService.install(mode: _selectedWm);
-        await vm.refreshDesktopStatus(force: true);
-        if (mounted) {
-          setState(() {
-            _statusMessage = 'Starting Virtual Desktop server...';
-          });
-        }
+        if (!await _runInstall(_selectedWm)) return;
       }
+      if (!mounted) return;
+      setState(() {
+        _installFraction = null;
+        _statusMessage = 'Starting the desktop: Xvfb, ${isXfce ? 'XFCE4' : 'Openbox'}, '
+            'x11vnc and noVNC. This can take a minute under emulation...';
+      });
 
       await vm.startDesktop(
         resolution: _selectedResolution,
         wm: _selectedWm,
       );
 
-      await vm.refreshDesktopStatus(force: true);
-
-      if (mounted) {
-        if (vm.isDesktopRunning) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Virtual Desktop started successfully!'),
-              backgroundColor: AppColors.secondary,
-            ),
-          );
-        } else {
-          final err = vm.desktopStatus['error'] ?? 'Window manager failed to initialize.';
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Virtual Desktop failed to start: $err'),
-              backgroundColor: AppColors.danger,
-            ),
-          );
-        }
+      if (!mounted) return;
+      if (vm.isDesktopRunning) {
+        _showSnack('Virtual Desktop is running.', color: AppColors.secondary);
+      } else {
+        setState(() {
+          _lastError = vm.desktopStatus['error']?.toString().isNotEmpty == true
+              ? vm.desktopStatus['error'].toString()
+              : 'The desktop did not report all components running.';
+        });
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed: $e'),
-            backgroundColor: AppColors.danger,
-          ),
-        );
-      }
+      if (mounted) setState(() => _lastError = 'Desktop failed to start: ${_errorText(e)}');
     } finally {
       if (mounted) {
         setState(() {
           _isActionInProgress = false;
           _statusMessage = null;
+          _installFraction = null;
         });
       }
     }
@@ -117,22 +214,10 @@ class _DesktopScreenState extends State<DesktopScreen> {
 
     try {
       await vm.stopDesktop();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Virtual Desktop stopped.'),
-          ),
-        );
-      }
+      if (mounted) setState(() => _lastError = null);
+      _showSnack('Virtual Desktop stopped.');
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to stop desktop: $e'),
-            backgroundColor: AppColors.danger,
-          ),
-        );
-      }
+      if (mounted) setState(() => _lastError = 'Failed to stop the desktop: ${_errorText(e)}');
     } finally {
       if (mounted) {
         setState(() {
@@ -144,73 +229,114 @@ class _DesktopScreenState extends State<DesktopScreen> {
   }
 
   Future<void> _installDesktop(String mode) async {
-    final vm = context.read<VmState>();
-    if (!vm.isRunning) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please start the Alpine Linux VM first.'),
-          backgroundColor: AppColors.warning,
-        ),
-      );
-      return;
-    }
-
-    setState(() {
-      _isActionInProgress = true;
-      _statusMessage = 'Installing $mode desktop packages (this may take 1-2 min)...';
-    });
-
+    if (!_vmReady()) return;
+    setState(() => _isActionInProgress = true);
     try {
-      await DesktopService.install(mode: mode);
-      await vm.refreshDesktopStatus();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$mode desktop packages installed successfully!'),
-            backgroundColor: AppColors.secondary,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Installation failed: $e'),
-            backgroundColor: AppColors.danger,
-          ),
-        );
+      if (await _runInstall(mode)) {
+        _showSnack('$mode desktop packages installed.', color: AppColors.secondary);
       }
     } finally {
       if (mounted) {
         setState(() {
           _isActionInProgress = false;
           _statusMessage = null;
+          _installFraction = null;
         });
       }
     }
   }
 
-  Future<void> _launchApp(String appName) async {
-    try {
-      await DesktopService.launchApp(appName);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Launched $appName in Virtual Desktop!'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not launch $appName: $e'),
-            backgroundColor: AppColors.danger,
-          ),
-        );
-      }
+  /// Opens noVNC only if the desktop is really up, so the user never lands
+  /// on a "Failed to connect to server" page without an explanation.
+  Future<void> _openViewer({bool external = false}) async {
+    final vm = context.read<VmState>();
+    await vm.refreshDesktopStatus(force: true);
+    if (!mounted) return;
+    if (!vm.isDesktopRunning) {
+      final err = vm.desktopStatus['error']?.toString() ?? '';
+      setState(() {
+        _lastError = err.isNotEmpty
+            ? 'The desktop is not running: $err'
+            : 'The desktop is not running any more. Start it again.';
+      });
+      return;
     }
+    final port = (vm.desktopStatus['web_port'] as num?)?.toInt() ?? DesktopService.defaultWebPort;
+    if (external) {
+      await DesktopService.launchDesktopExternal(port: port);
+    } else {
+      await DesktopService.launchDesktopInApp(port: port, context: context);
+    }
+  }
+
+  Future<void> _launchApp(String appId, String label) async {
+    try {
+      await DesktopService.launchApp(appId);
+      _showSnack('Opened $label in the Virtual Desktop.', duration: const Duration(seconds: 2));
+    } catch (e) {
+      _showSnack('Could not open $label: ${_errorText(e)}', color: AppColors.danger);
+    }
+  }
+
+  Future<void> _showLog() async {
+    String text = 'Loading...';
+    var loading = false;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(builder: (ctx, setDialogState) {
+          Future<void> load() async {
+            if (loading) return;
+            loading = true;
+            String result;
+            try {
+              result = await DesktopService.getLog(name: 'all', lines: 300);
+            } catch (e) {
+              result = 'Could not read the desktop log: ${_errorText(e)}';
+            }
+            loading = false;
+            if (ctx.mounted) setDialogState(() => text = result);
+          }
+
+          if (text == 'Loading...' && !loading) load();
+          return AlertDialog(
+            backgroundColor: AppColors.surface,
+            title: const Text('Virtual Desktop log', style: TextStyle(color: Colors.white, fontSize: 16)),
+            content: SizedBox(
+              width: double.maxFinite,
+              height: MediaQuery.of(ctx).size.height * 0.6,
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  text,
+                  style: const TextStyle(color: Colors.white70, fontSize: 11, fontFamily: 'monospace'),
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: text));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Desktop log copied'), duration: Duration(seconds: 2)),
+                  );
+                },
+                child: const Text('Copy'),
+              ),
+              TextButton(
+                onPressed: () {
+                  setDialogState(() => text = 'Loading...');
+                },
+                child: const Text('Refresh'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Close'),
+              ),
+            ],
+          );
+        });
+      },
+    );
   }
 
   void _copyToClipboard(String text, String label) {
@@ -223,18 +349,78 @@ class _DesktopScreenState extends State<DesktopScreen> {
     );
   }
 
+  Widget _buildErrorCard({required String message, required bool isWarning}) {
+    final color = isWarning ? AppColors.warning : AppColors.danger;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(isWarning ? Icons.warning_amber_rounded : Icons.error_outline, color: color, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: SelectableText(
+                  message,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton.icon(
+                icon: const Icon(Icons.article_outlined, size: 16),
+                label: const Text('View desktop log'),
+                onPressed: _showLog,
+              ),
+              if (_lastError != null)
+                TextButton(
+                  onPressed: () => setState(() => _lastError = null),
+                  child: const Text('Dismiss'),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<VmState>();
     final isVmRunning = vm.isRunning;
     final isDesktopRunning = vm.isDesktopRunning;
     final status = vm.desktopStatus;
-    final isXfce = _selectedWm == 'xfce4' || _selectedWm == 'xfce' || _selectedWm == 'full';
+    final isXfce = _selectedWm == 'xfce4';
     final isSelectedWmInstalled = isXfce
         ? (status['xfce_installed'] == true)
         : (status['openbox_installed'] == true);
     final currentRes = status['resolution'] ?? _selectedResolution;
     final currentWm = status['wm'] ?? _selectedWm;
+    final webPort = (status['web_port'] as num?)?.toInt() ?? DesktopService.defaultWebPort;
+    final desktopState = status['state']?.toString() ?? '';
+    final statusError = status['error']?.toString() ?? '';
+    // A failure recorded by the guest (for example Xvfb crashed while the
+    // app was in the background) is shown even if this screen did not start it.
+    final String? errorMessage = _lastError ??
+        (isVmRunning && statusError.isNotEmpty && (desktopState == 'failed' || desktopState == 'degraded')
+            ? (desktopState == 'degraded'
+                ? 'The desktop is degraded: $statusError'
+                : 'The desktop stopped: $statusError')
+            : null);
+    if (!_selectionFromStatus && status.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _adoptStatusSelection());
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -257,7 +443,7 @@ class _DesktopScreenState extends State<DesktopScreen> {
             IconButton(
               icon: const Icon(Icons.open_in_new),
               tooltip: 'Open in External Browser',
-              onPressed: () => DesktopService.launchDesktopExternal(),
+              onPressed: () => _openViewer(external: true),
             ),
         ],
       ),
@@ -275,7 +461,15 @@ class _DesktopScreenState extends State<DesktopScreen> {
               selectedWm: _selectedWm,
               currentRes: currentRes.toString(),
               currentWm: currentWm.toString(),
+              desktopState: desktopState,
             ),
+            if (errorMessage != null) ...[
+              const SizedBox(height: 12),
+              _buildErrorCard(
+                message: errorMessage,
+                isWarning: _lastError == null && desktopState == 'degraded',
+              ),
+            ],
             const SizedBox(height: 16),
 
             // Display Configuration
@@ -298,6 +492,7 @@ class _DesktopScreenState extends State<DesktopScreen> {
             _buildConnectionCard(
               context: context,
               isDesktopRunning: isDesktopRunning,
+              webPort: webPort,
             ),
             const SizedBox(height: 16),
 
@@ -317,6 +512,7 @@ class _DesktopScreenState extends State<DesktopScreen> {
     required String selectedWm,
     required String currentRes,
     required String currentWm,
+    required String desktopState,
   }) {
     Color statusColor;
     String statusTitle;
@@ -329,10 +525,15 @@ class _DesktopScreenState extends State<DesktopScreen> {
       statusSubtitle = 'Start Alpine Linux VM to enable the Virtual Desktop.';
       statusIcon = Icons.power_settings_new;
     } else if (isDesktopRunning) {
-      statusColor = AppColors.secondary;
-      statusTitle = 'Virtual Desktop Active';
+      statusColor = desktopState == 'degraded' ? AppColors.warning : AppColors.secondary;
+      statusTitle = desktopState == 'degraded' ? 'Virtual Desktop Degraded' : 'Virtual Desktop Active';
       statusSubtitle = '$currentRes · ${currentWm.toUpperCase()} · Port 6080';
       statusIcon = Icons.check_circle;
+    } else if (desktopState == 'starting' || desktopState == 'degraded') {
+      statusColor = AppColors.warning;
+      statusTitle = desktopState == 'starting' ? 'Desktop Starting' : 'Desktop Recovering';
+      statusSubtitle = 'Waiting for every component to come up...';
+      statusIcon = Icons.hourglass_top;
     } else if (isSelectedWmInstalled) {
       statusColor = AppColors.warning;
       statusTitle = 'Desktop Stopped';
@@ -410,10 +611,20 @@ class _DesktopScreenState extends State<DesktopScreen> {
                     child: Text(
                       _statusMessage!,
                       style: const TextStyle(color: AppColors.primary, fontSize: 13),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
               ),
+              if (_installFraction != null) ...[
+                const SizedBox(height: 10),
+                LinearProgressIndicator(
+                  value: _installFraction,
+                  color: AppColors.primary,
+                  backgroundColor: Colors.white12,
+                ),
+              ],
             ],
             const SizedBox(height: 20),
 
@@ -433,9 +644,7 @@ class _DesktopScreenState extends State<DesktopScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                onPressed: _isActionInProgress
-                    ? null
-                    : () => DesktopService.launchDesktopInApp(context: context),
+                onPressed: _isActionInProgress ? null : () => _openViewer(),
               ),
               const SizedBox(height: 10),
               Row(
@@ -452,7 +661,7 @@ class _DesktopScreenState extends State<DesktopScreen> {
                           borderRadius: BorderRadius.circular(10),
                         ),
                       ),
-                      onPressed: () => DesktopService.launchDesktopExternal(),
+                      onPressed: _isActionInProgress ? null : () => _openViewer(external: true),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -548,7 +757,10 @@ class _DesktopScreenState extends State<DesktopScreen> {
                   value: _selectedResolution,
                   isExpanded: true,
                   dropdownColor: AppColors.surface,
-                  items: DesktopService.resolutions.map((r) {
+                  items: DesktopService.resolutionOptions(
+                    screen: MediaQuery.of(context).size,
+                    current: _selectedResolution,
+                  ).map((r) {
                     return DropdownMenuItem<String>(
                       value: r.value,
                       child: Column(
@@ -665,7 +877,7 @@ class _DesktopScreenState extends State<DesktopScreen> {
       {'id': 'terminal', 'label': 'Terminal', 'icon': Icons.terminal, 'color': AppColors.primary},
       {'id': 'files', 'label': 'File Manager', 'icon': Icons.folder_open, 'color': Colors.amber},
       {'id': 'editor', 'label': 'Text Editor', 'icon': Icons.edit_note, 'color': Colors.greenAccent},
-      {'id': 'calc', 'label': 'Calculator', 'icon': Icons.calculate, 'color': Colors.purpleAccent},
+      {'id': 'calculator', 'label': 'Calculator', 'icon': Icons.calculate, 'color': Colors.purpleAccent},
     ];
 
     return Card(
@@ -696,7 +908,7 @@ class _DesktopScreenState extends State<DesktopScreen> {
               children: apps.map((app) {
                 return InkWell(
                   borderRadius: BorderRadius.circular(12),
-                  onTap: () => _launchApp(app['id'] as String),
+                  onTap: () => _launchApp(app['id'] as String, app['label'] as String),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                     child: Column(
@@ -733,7 +945,9 @@ class _DesktopScreenState extends State<DesktopScreen> {
   Widget _buildConnectionCard({
     required BuildContext context,
     required bool isDesktopRunning,
+    required int webPort,
   }) {
+    final webUrl = DesktopService.buildViewerUri(port: webPort).toString();
     return Card(
       color: AppColors.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -759,9 +973,9 @@ class _DesktopScreenState extends State<DesktopScreen> {
             const SizedBox(height: 14),
             _buildConnectionRow(
               label: 'Web noVNC URL',
-              value: DesktopService.defaultWebUrl,
+              value: webUrl,
               hint: 'In-app or Chrome browser view',
-              onCopy: () => _copyToClipboard(DesktopService.defaultWebUrl, 'Web URL'),
+              onCopy: () => _copyToClipboard(webUrl, 'Web URL'),
             ),
             const Divider(color: Colors.white10, height: 20),
             _buildConnectionRow(
@@ -832,10 +1046,13 @@ class _DesktopScreenState extends State<DesktopScreen> {
               ],
             ),
             const SizedBox(height: 10),
-            _buildTipRow('👆 Single Tap', 'Left mouse click & focus application'),
-            _buildTipRow('✌️ Two-finger Tap', 'Right click (context menu)'),
-            _buildTipRow('🖐️ Pan & Drag', 'Move windows, drag objects, scroll canvas'),
-            _buildTipRow('📱 Left Edge Tab', 'Expands noVNC toolbar: On-screen Keyboard, Zoom, Fullscreen'),
+            _buildTipRow('👆 Tap', 'Left click (double-tap to double-click)'),
+            _buildTipRow('✌️ Two-finger tap', 'Right click (context / Openbox menu)'),
+            _buildTipRow('👇 Long press', 'Right click and hold'),
+            _buildTipRow('🖐️ Drag', 'Move windows, select text, drag files'),
+            _buildTipRow('↕️ Two-finger drag', 'Scroll'),
+            _buildTipRow('⌨️ Left-edge tab', 'noVNC toolbar: keyboard icon opens the phone keyboard; also clipboard, Ctrl/Alt/Esc keys and fullscreen'),
+            _buildTipRow('🔄 Back in the app', 'The viewer reconnects by itself; if the desktop stopped, this screen shows why'),
           ],
         ),
       ),

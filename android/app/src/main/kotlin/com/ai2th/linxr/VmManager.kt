@@ -49,6 +49,11 @@ class VmManager(private val context: Context) {
             PortForward(6080, 6080, "Virtual Desktop (Web noVNC)"),
             PortForward(5900, 5900, "Virtual Desktop (VNC Server)"),
         )
+
+        // Host ports the app itself connects to. A custom forward on one of
+        // these would silently replace it (SSH, the API, or the desktop viewer
+        // would stop working), so they cannot be overridden.
+        val RESERVED_HOST_PORTS = setOf(2222, 7081, 6080, 5900)
     }
 
     @Volatile private var vmProcess: Process? = null
@@ -190,11 +195,12 @@ class VmManager(private val context: Context) {
     fun stopDesktop(): Map<String, Any> = apiClient.stopDesktop()
     fun installDesktop(mode: String): Map<String, Any> = apiClient.installDesktop(mode)
     fun launchDesktopApp(app: String): Map<String, Any> = apiClient.launchDesktopApp(app)
+    fun getDesktopLog(name: String, lines: Int): String = apiClient.getDesktopLog(name, lines)
 
     // ── Network / port forwarding ───────────────────────────────────────────
 
     fun getPortForwards(): List<Map<String, Any>> {
-        val customs = getCustomPortForwards()
+        val customs = getCustomPortForwards().filter { it.host !in RESERVED_HOST_PORTS }
         val customHostSet = customs.map { it.host }.toSet()
         val defaults = portForwards.filter { it.host !in customHostSet }.map {
             mapOf("host" to it.host, "guest" to it.guest, "desc" to it.desc, "custom" to false)
@@ -591,7 +597,8 @@ class VmManager(private val context: Context) {
         // Default is loopback (127.0.0.1) so ports — especially SSH with the known
         // default root password — are not exposed to the local network.
         val bindHost = if (getFlutterBool("flutter.lan_access", false)) "0.0.0.0" else "127.0.0.1"
-        val allPortForwards = (getCustomPortForwards() + portForwards).distinctBy { it.host }
+        val customForwards = getCustomPortForwards().filter { it.host !in RESERVED_HOST_PORTS }
+        val allPortForwards = (customForwards + portForwards).distinctBy { it.host }
         val defaultPortForwards = allPortForwards.joinToString(",") { pf ->
             "hostfwd=tcp:$bindHost:${pf.host}-:${pf.guest}"
         }

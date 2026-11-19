@@ -1,0 +1,5 @@
+# Ensure Linux shell and bootstrap scripts always use LF line endings
+* text=auto
+*.sh text eol=lf
+*.py text eol=lf
+android/app/src/main/assets/bootstrap/* text eol=lf

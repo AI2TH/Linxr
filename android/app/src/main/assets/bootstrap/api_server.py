@@ -506,12 +506,20 @@ def _resolve_desktop_bin() -> str:
                         needs_sync = True
                 if needs_sync:
                     import shutil
+                    os.makedirs(os.path.dirname(target), exist_ok=True)
                     shutil.copyfile(src, target)
                     os.chmod(target, 0o755)
                 if os.path.isfile(target) and os.access(target, os.X_OK):
                     return target
             except Exception as e:
                 logger.warning("Could not sync %s to %s: %s", src, target, e)
+            if os.path.isfile(src) and os.access(src, os.X_OK):
+                return src
+    if os.path.isfile(target) and os.access(target, os.X_OK):
+        return target
+    for src in ["/bootstrap/linxr-desktop.sh", "/mnt/sdcard/bootstrap/linxr-desktop.sh"]:
+        if os.path.isfile(src):
+            return src
     return target
 
 ENGINE_MODE_FILE = "/etc/linxr_engine.mode"

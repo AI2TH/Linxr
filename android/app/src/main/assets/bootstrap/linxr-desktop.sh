@@ -52,7 +52,7 @@ DEFAULT_RES="1280x720"
 DEFAULT_WM="openbox"
 # Seconds "start" waits for every component. XFCE under QEMU TCG can take a
 # minute or more on a slow phone.
-START_TIMEOUT="${LINXR_DESKTOP_START_TIMEOUT:-180}"
+START_TIMEOUT="${LINXR_DESKTOP_START_TIMEOUT:-300}"
 # A crashed component is restarted at most this many times within 10 minutes.
 MAX_RESTARTS=5
 MANAGED_MARK="linxr-desktop:managed"
